@@ -314,6 +314,10 @@
 				<param name="Local" value="B2SPro.htm#flashers">
 				</object>
 	</li><li> <object type="text/sitemap">
+				<param name="Name" value="Realistic backlit 3D EM reels">
+				<param name="Local" value="B2SPro.htm#reel-3d">
+				</object>
+	</li><li> <object type="text/sitemap">
 				<param name="Name" value="Scores, reels, and LEDs">
 				<param name="Local" value="B2SPro.htm#scores">
 				</object>

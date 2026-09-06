@@ -19,7 +19,7 @@
         <a href="#picture-animation">Picture animation</a> · <a href="#rotation">Rotation</a> ·
         <a href="#motion">Motion paths</a> · <a href="#trough">Troughs</a> · <a href="#pivot">Pivots</a> ·
         <a href="#physics">Physics</a> · <a href="#lamps">Lamps</a> · <a href="#flashers">Flashers</a> ·
-        <a href="#scores">Scores</a> · <a href="#compatibility">Saving</a>
+        <a href="#reel-3d">3D EM reels</a> · <a href="#scores">Scores</a> · <a href="#compatibility">Saving</a>
       </div>
     </section>
 
@@ -260,6 +260,34 @@
       <p>Like snippets and lamps, flashers rotate live with their handle and retain a correctly sized rotated selection box.</p>
     </section>
 
+    <section class="topic" id="reel-3d">
+      <span class="tag">3D EM REELS</span><span class="tag">REAL BACKLIGHT</span><span class="tag">GLASS REFLECTION</span><span class="tag">LIVE PREVIEW</span>
+      <h2>Make EM score reels look deep and backlit</h2>
+      <p>B2S Pro can turn an ordinary flat EM reel into a drum-shaped reel behind reflective glass. The printed black number stays dark while the pale reel material receives warm, neutral, or cool light from behind.</p>
+      <ol class="steps">
+        <li>Create or select an <strong>EM reel score frame</strong> on the backglass.</li>
+        <li>In the <strong>Reels &amp; LEDs</strong> window, click <strong>Reel Lighting &amp; 3D...</strong>.</li>
+        <li>Enable <strong>Realistic 3D backlighting</strong>. The complete selected score display updates immediately.</li>
+        <li>Set <strong>Backlight brightness</strong> for the lamp strength and <strong>Color temperature</strong> for warm incandescent through cool LED-style light.</li>
+        <li>Raise <strong>3D depth</strong> to exaggerate drum curvature and the recessed window shadow.</li>
+        <li>Raise <strong>Glass reflection</strong> to add the highlight that runs continuously across the whole score window.</li>
+        <li>Save the settings. They remain attached to that score frame in the project and exported DirectB2S file.</li>
+      </ol>
+      <table>
+        <tr><th>Control</th><th>Effect</th></tr>
+        <tr><td>Backlight brightness</td><td>Controls how strongly the translucent reel paper glows while the printed number remains dark.</td></tr>
+        <tr><td>Color temperature</td><td>Runs from 2000 K warm incandescent light to 6500 K cool light, matching the illumination tools.</td></tr>
+        <tr><td>3D depth</td><td>Adds drum curvature, edge shading, and recessed depth to each reel opening.</td></tr>
+        <tr><td>Glass reflection</td><td>Adds a restrained reflection across the complete score display instead of repeating it separately on every digit.</td></tr>
+      </table>
+      <figure>
+        <img src="pro-images/current-ui/reel-3d-comparison.png" alt="Flat EM reels compared with B2S Pro 3D backlit EM reels">
+        <figcaption>The same reel artwork before and after B2S Pro adds backlighting, drum depth, recessed shadows, and one continuous glass reflection.</figcaption>
+      </figure>
+      <div class="note">For the strongest behind-glass effect, place the score frame behind the canvas and use a transparent score-window opening. B2S Pro's neutral transparency backing preserves lighting headroom in both the editor and the B2S Pro Server.</div>
+      <div class="compat">3D reel settings are opt-in. Existing EM reels without the new settings continue through the original reel-rendering path unchanged.</div>
+    </section>
+
     <section class="topic" id="scores">
       <span class="tag">SCORE ROTATION</span><span class="tag">BEHIND CANVAS</span><span class="tag">LED COLOR</span>
       <h2>Scores, reels, and LEDs</h2>
@@ -310,6 +338,7 @@
         <li>Ball physics, boundaries, bumpers, switches, flippers, and launcher</li>
         <li>Natural lamp lighting</li>
         <li>Dedicated artwork flashers and mask refinement</li>
+        <li>Realistic backlit 3D EM reels</li>
         <li>Score rotation, LED color, and behind-canvas placement</li>
         <li>Saving, exporting, testing, and compatibility</li>
       </ol>
