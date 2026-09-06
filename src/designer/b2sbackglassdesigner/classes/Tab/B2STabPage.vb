@@ -914,12 +914,23 @@ Public Class B2STabPage
             Dim reelillub2sidtype As eB2SIDType = SelectedScore.ReelIlluB2SIDType
             Dim reelillub2svalue As Integer = SelectedScore.ReelIlluB2SValue
             Dim reelilluintensity As Integer = SelectedScore.ReelIlluIntensity
-            If formSetReelIllumination.ShowDialog(Me, reelillulocation, reelillub2sid, reelillub2sidtype, reelillub2svalue, reelilluintensity) Then
+            Dim reel3Denabled As Boolean = SelectedScore.Reel3DEnabled
+            Dim reel3Dbrightness As Integer = SelectedScore.Reel3DBrightness
+            Dim reel3Dtemperature As Integer = SelectedScore.Reel3DTemperature
+            Dim reel3Ddepth As Integer = SelectedScore.Reel3DDepth
+            Dim reel3Dglass As Integer = SelectedScore.Reel3DGlass
+            If formSetReelIllumination.ShowDialog(Me, reelillulocation, reelillub2sid, reelillub2sidtype, reelillub2svalue, reelilluintensity,
+                                                  reel3Denabled, reel3Dbrightness, reel3Dtemperature, reel3Ddepth, reel3Dglass) Then
                 SelectedScore.ReelIlluLocation = reelillulocation
                 SelectedScore.ReelIlluB2SID = reelillub2sid
                 SelectedScore.ReelIlluB2SIDType = reelillub2sidtype
                 SelectedScore.ReelIlluB2SValue = reelillub2svalue
                 SelectedScore.ReelIlluIntensity = reelilluintensity
+                SelectedScore.Reel3DEnabled = reel3Denabled
+                SelectedScore.Reel3DBrightness = reel3Dbrightness
+                SelectedScore.Reel3DTemperature = reel3Dtemperature
+                SelectedScore.Reel3DDepth = reel3Ddepth
+                SelectedScore.Reel3DGlass = reel3Dglass
                 BackglassData.IsDirty = True
             End If
         End If
@@ -1077,10 +1088,20 @@ Public Class B2STabPage
     End Sub
 
     Private Sub ReelIllumination_LivePreviewChanged(ByVal location As eReelIlluminationLocation,
-                                                    ByVal intensity As Integer) Handles formSetReelIllumination.LivePreviewChanged
+                                                    ByVal intensity As Integer,
+                                                    ByVal reel3DEnabled As Boolean,
+                                                    ByVal reel3DBrightness As Integer,
+                                                    ByVal reel3DTemperature As Integer,
+                                                    ByVal reel3DDepth As Integer,
+                                                    ByVal reel3DGlass As Integer) Handles formSetReelIllumination.LivePreviewChanged
         If SelectedScore Is Nothing Then Return
         SelectedScore.ReelIlluLocation = location
         SelectedScore.ReelIlluIntensity = Math.Max(0, Math.Min(100, intensity))
+        SelectedScore.Reel3DEnabled = reel3DEnabled
+        SelectedScore.Reel3DBrightness = Math.Max(0, Math.Min(200, reel3DBrightness))
+        SelectedScore.Reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
+        SelectedScore.Reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
+        SelectedScore.Reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
         Me.Refresh()
     End Sub
     Public Sub Illumination_DodgeColor(ByVal color As Color)

@@ -373,6 +373,11 @@ Public Class B2SPictureBox
                 hash = MixVisualHash(hash, score.ReelColor.ToArgb())
                 hash = MixVisualHash(hash, CInt(score.ReelIlluLocation))
                 hash = MixVisualHash(hash, score.ReelIlluIntensity)
+                hash = MixVisualHash(hash, If(score.Reel3DEnabled, 1, 0))
+                hash = MixVisualHash(hash, score.Reel3DBrightness)
+                hash = MixVisualHash(hash, score.Reel3DTemperature)
+                hash = MixVisualHash(hash, score.Reel3DDepth)
+                hash = MixVisualHash(hash, score.Reel3DGlass)
                 hash = MixVisualHash(hash, CInt(score.DisplayState))
                 hash = MixVisualHash(hash, If(LayerManager.IsVisible(score), 1, 0))
             Next
@@ -1266,6 +1271,16 @@ Public Class B2SPictureBox
                     reelImage = illuminated
                 End If
             End If
+            If score.Reel3DEnabled Then
+                Dim enhanced As Bitmap = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
+                                                                           score.Reel3DBrightness,
+                                                                           score.Reel3DTemperature,
+                                                                           score.Reel3DDepth)
+                If enhanced IsNot Nothing Then
+                    reelImage.Dispose()
+                    reelImage = enhanced
+                End If
+            End If
             Using scoreBitmap As New Bitmap(Math.Max(2, rect.Width), Math.Max(2, rect.Height), Imaging.PixelFormat.Format32bppArgb)
                 Using sg As Graphics = Graphics.FromImage(scoreBitmap)
                     sg.Clear(Color.Transparent)
@@ -1285,6 +1300,18 @@ Public Class B2SPictureBox
                 Finally
                     If clippedScore IsNot Nothing Then clippedScore.Dispose()
                 End Try
+                If score.Reel3DEnabled Then
+                    Using glassOverlay As New Bitmap(scoreBitmap.Width, scoreBitmap.Height, Imaging.PixelFormat.Format32bppArgb)
+                        Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
+                            overlayGraphics.Clear(Color.Transparent)
+                            ReelAndLED.Reel3DEffect.DrawWindowOverlay(overlayGraphics,
+                                                                     New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height),
+                                                                     score.Reel3DDepth,
+                                                                     score.Reel3DGlass)
+                        End Using
+                        DrawPerspectiveBitmap(graphics, glassOverlay, ScorePerspectivePoints(score, 1.0F))
+                    End Using
+                End If
             End Using
         Finally
             reelImage.Dispose()

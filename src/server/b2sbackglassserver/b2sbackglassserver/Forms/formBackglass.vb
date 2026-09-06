@@ -3054,6 +3054,21 @@ Public Class formBackglass
                         If innerNode.Attributes("BehindCanvas") IsNot Nothing Then
                             behindCanvas = (innerNode.Attributes("BehindCanvas").InnerText = "1")
                         End If
+                        Dim reel3DEnabled As Boolean = False
+                        Dim reel3DBrightness As Integer = 100
+                        Dim reel3DTemperature As Integer = 4000
+                        Dim reel3DDepth As Integer = 100
+                        Dim reel3DGlass As Integer = 55
+                        If innerNode.Attributes("Reel3DEnabled") IsNot Nothing Then reel3DEnabled = (innerNode.Attributes("Reel3DEnabled").InnerText = "1")
+                        Dim parsedReel3DValue As Integer
+                        If innerNode.Attributes("Reel3DBrightness") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DBrightness").InnerText, parsedReel3DValue) Then reel3DBrightness = parsedReel3DValue
+                        If innerNode.Attributes("Reel3DTemperature") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DTemperature").InnerText, parsedReel3DValue) Then reel3DTemperature = parsedReel3DValue
+                        If innerNode.Attributes("Reel3DDepth") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DDepth").InnerText, parsedReel3DValue) Then reel3DDepth = parsedReel3DValue
+                        If innerNode.Attributes("Reel3DGlass") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DGlass").InnerText, parsedReel3DValue) Then reel3DGlass = parsedReel3DValue
+                        reel3DBrightness = Math.Max(0, Math.Min(200, reel3DBrightness))
+                        reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
+                        reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
+                        reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
                         Dim loc As Point = New Point(CInt(innerNode.Attributes("LocX").InnerText) - 1, CInt(innerNode.Attributes("LocY").InnerText))
                         Dim size As Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
                         Dim b2sstartdigit As Integer = 0
@@ -3296,6 +3311,13 @@ Public Class formBackglass
                                 reel.RomIDType = romidtype
                                 reel.RomIDValue = romidvalue
                                 reel.BehindCanvas = behindCanvas
+                                reel.Reel3DEnabled = reel3DEnabled
+                                reel.Reel3DBrightness = reel3DBrightness
+                                reel.Reel3DTemperature = reel3DTemperature
+                                reel.Reel3DDepth = reel3DDepth
+                                reel.Reel3DGlass = reel3DGlass
+                                reel.Reel3DDisplayWidth = size.Width
+                                reel.Reel3DDisplayOffsetX = x - loc.X
                                 reel.Location = New Point(x, loc.Y)
                                 reel.Size = New Size(width, size.Height)
                                 reel.ReelType = reeltype.Substring(0, reeltype.Length - 2)

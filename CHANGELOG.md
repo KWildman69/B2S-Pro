@@ -32,6 +32,13 @@ First public B2S Pro baseline.
 - Corrected behind-canvas lighting so transparent score windows transmit light while opaque black artwork keeps its contrast.
 - Transparent pixels anywhere in the imported backglass canvas now display over a neutral-gray editor backing in the main, drag, animation, and light/flasher preview views, leaving visible headroom for light brightness and temperature while opaque black artwork remains black.
 
+### EM score reels
+
+- Added optional realistic 3D EM reel rendering with adjustable backlight brightness, the same 2000–6500 K color-temperature range used by illumination, exaggerated drum depth, and glass reflection.
+- Kept black digit ink dark while allowing the reel material around it to transmit the simulated backlight.
+- Composited the reel behind the backglass canvas and aligned one continuous reflection across the complete score display so each digit reads as part of the same glass-covered window.
+- Stored the new settings as optional project and `directB2S` attributes; existing backglasses without them continue through the original rendering path unchanged.
+
 ### Animation and motion
 
 - Redesigned the animation section for more natural motion and easier setup.

@@ -287,6 +287,13 @@ Public Class Coding
                             If Math.Abs(.PerspectiveDepth) > 0.001F Then nodeScore.SetAttribute("PerspectiveDepth", .PerspectiveDepth.ToString(Globalization.CultureInfo.InvariantCulture))
                             If Math.Abs(.PerspectiveLeftScale - 1.0F) > 0.001F Then nodeScore.SetAttribute("PerspectiveLeftScale", .PerspectiveLeftScale.ToString(Globalization.CultureInfo.InvariantCulture))
                             If Math.Abs(.PerspectiveRightScale - 1.0F) > 0.001F Then nodeScore.SetAttribute("PerspectiveRightScale", .PerspectiveRightScale.ToString(Globalization.CultureInfo.InvariantCulture))
+                    If .Reel3DEnabled Then
+                        nodeScore.SetAttribute("Reel3DEnabled", "1")
+                        nodeScore.SetAttribute("Reel3DBrightness", Math.Max(0, Math.Min(200, .Reel3DBrightness)).ToString())
+                        nodeScore.SetAttribute("Reel3DTemperature", Math.Max(2000, Math.Min(6500, .Reel3DTemperature)).ToString())
+                        nodeScore.SetAttribute("Reel3DDepth", Math.Max(0, Math.Min(200, .Reel3DDepth)).ToString())
+                        nodeScore.SetAttribute("Reel3DGlass", Math.Max(0, Math.Min(200, .Reel3DGlass)).ToString())
+                    End If
                     nodeScore.SetAttribute("LocX", .Location.X)
                     nodeScore.SetAttribute("LocY", .Location.Y)
                     nodeScore.SetAttribute("Width", .Size.Width)
@@ -1033,6 +1040,11 @@ Public Class Coding
                             If innerNode.Attributes("ReelIlluB2SIDType") IsNot Nothing Then score.ReelIlluB2SIDType = CInt(innerNode.Attributes("ReelIlluB2SIDType").InnerText)
                             If innerNode.Attributes("ReelIlluB2SValue") IsNot Nothing Then score.ReelIlluB2SValue = CInt(innerNode.Attributes("ReelIlluB2SValue").InnerText)
                             If innerNode.Attributes("ReelIlluIntensity") IsNot Nothing Then score.ReelIlluIntensity = CInt(innerNode.Attributes("ReelIlluIntensity").InnerText)
+                            If innerNode.Attributes("Reel3DEnabled") IsNot Nothing Then score.Reel3DEnabled = (innerNode.Attributes("Reel3DEnabled").InnerText = "1")
+                            If innerNode.Attributes("Reel3DBrightness") IsNot Nothing Then score.Reel3DBrightness = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DBrightness").InnerText)))
+                            If innerNode.Attributes("Reel3DTemperature") IsNot Nothing Then score.Reel3DTemperature = Math.Max(2000, Math.Min(6500, CInt(innerNode.Attributes("Reel3DTemperature").InnerText)))
+                            If innerNode.Attributes("Reel3DDepth") IsNot Nothing Then score.Reel3DDepth = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DDepth").InnerText)))
+                            If innerNode.Attributes("Reel3DGlass") IsNot Nothing Then score.Reel3DGlass = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DGlass").InnerText)))
                             score.Location = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                             score.Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
                             If score.Size.Width < 10 Then score.Size.Width = 10

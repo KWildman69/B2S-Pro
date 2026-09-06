@@ -35,6 +35,14 @@
         Public ReelIlluB2SValue As Integer = 0
         Public ReelIlluIntensity As Integer = 1
 
+        ' Optional B2S Pro mechanical-reel treatment. Disabled is the exact
+        ' legacy path, so existing projects and directB2S files are unchanged.
+        Public Reel3DEnabled As Boolean = False
+        Public Reel3DBrightness As Integer = 100
+        Public Reel3DTemperature As Integer = 4000
+        Public Reel3DDepth As Integer = 100
+        Public Reel3DGlass As Integer = 55
+
         Public SingleReelSize As SizeF = Nothing
         Public IsSingleReelSizeDirty As Boolean = True
         Public SingleReelFactor As Double = 1

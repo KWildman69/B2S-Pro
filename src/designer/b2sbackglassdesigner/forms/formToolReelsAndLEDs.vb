@@ -70,6 +70,7 @@ Public Class formToolReelsAndLEDs
     Private Sub formToolReelsAndLEDs_Load(sender As Object, e As System.EventArgs) Handles Me.Load
 
         ReloadReels()
+        btnReelIllumination.Text = "Reel Lighting && 3D..."
 
         cmbNumberOfPlayers.SelectionLength = 0
 

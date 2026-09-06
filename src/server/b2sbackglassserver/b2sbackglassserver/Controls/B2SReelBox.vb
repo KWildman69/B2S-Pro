@@ -34,6 +34,9 @@ Public Class B2SReelBox
 
     Private intermediates As Integer = -1
     Private intermediates2go As Integer = 0
+    Private ReadOnly reel3DImageCache As New Generic.Dictionary(Of String, Bitmap)()
+    Private reel3DOverlayCache As Bitmap = Nothing
+    Private reel3DOverlayCacheKey As String = String.Empty
 
     Protected Overrides Sub Dispose(disposing As Boolean)
         MyBase.Dispose(disposing)
@@ -45,6 +48,7 @@ Public Class B2SReelBox
                 timer.Dispose()
             End If
             timer = Nothing
+            ClearReel3DCache()
         End If
     End Sub
 
@@ -58,30 +62,45 @@ Public Class B2SReelBox
                 Static firstintermediatecount As Integer = 1
                 name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "") & "_" & firstintermediatecount.ToString()
                 If intimages.ContainsKey(name) Then
-                    DrawReelImage(e.Graphics, intimages(name))
+                    DrawReelImage(e.Graphics, intimages(name), name)
                     firstintermediatecount += 1
                     intermediates2go = 2
                 Else
                     name = _ReelType & "_" & ConvertText(_CurrentText + 1) & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "")
-                    If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name))
+                    If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name), name)
                     intermediates = firstintermediatecount - 1
                     intermediates2go = 1
                 End If
             ElseIf intermediates2go > 0 Then
                 name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "") & "_" & (intermediates - intermediates2go + 1).ToString()
-                If intimages.ContainsKey(name) Then DrawReelImage(e.Graphics, intimages(name))
+                If intimages.ContainsKey(name) Then DrawReelImage(e.Graphics, intimages(name), name)
             Else
                 name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "")
-                If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name))
+                If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name), name)
             End If
         End If
 
     End Sub
 
-    Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image)
+    Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         If graphics Is Nothing OrElse reelImage Is Nothing Then Return
 
-        graphics.DrawImage(reelImage, Me.ClientRectangle)
+        Dim imageToDraw As Image = reelImage
+        If Reel3DEnabled Then
+            Dim cacheKey As String = cacheName & "|" & ClientSize.Width.ToString() & "x" & ClientSize.Height.ToString() &
+                                     "|" & Reel3DBrightness.ToString() & "|" & Reel3DTemperature.ToString() & "|" & Reel3DDepth.ToString()
+            If Not reel3DImageCache.ContainsKey(cacheKey) Then
+                Dim enhanced As Bitmap = Reel3DEffect.RenderReel(reelImage,
+                                                                 ClientSize,
+                                                                 Reel3DBrightness,
+                                                                 Reel3DTemperature,
+                                                                 Reel3DDepth)
+                If enhanced IsNot Nothing Then reel3DImageCache.Add(cacheKey, enhanced)
+            End If
+            If reel3DImageCache.ContainsKey(cacheKey) Then imageToDraw = reel3DImageCache(cacheKey)
+        End If
+
+        graphics.DrawImage(imageToDraw, Me.ClientRectangle)
 
         ' Score controls are WinForms child controls and normally always appear
         ' above their parent's background. For a reel placed behind the canvas,
@@ -92,6 +111,50 @@ Public Class B2SReelBox
             Dim source As New Rectangle(Me.Left, Me.Top, Me.Width, Me.Height)
             graphics.DrawImage(canvas, Me.ClientRectangle, source, GraphicsUnit.Pixel)
         End If
+
+        ' Glass sits in front of both the reel and the canvas. Each digit crops
+        ' its aligned piece from one display-wide overlay, so the reflection is
+        ' continuous across the complete score window.
+        If Reel3DEnabled AndAlso Reel3DDisplayWidth > 2 Then
+            Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & ClientSize.Height.ToString() &
+                                       "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString()
+            If reel3DOverlayCache Is Nothing OrElse reel3DOverlayCacheKey <> overlayKey Then
+                If reel3DOverlayCache IsNot Nothing Then reel3DOverlayCache.Dispose()
+                reel3DOverlayCache = Reel3DEffect.CreateWindowOverlay(New Size(Reel3DDisplayWidth, ClientSize.Height),
+                                                                      Reel3DDepth,
+                                                                      Reel3DGlass)
+                reel3DOverlayCacheKey = overlayKey
+            End If
+            If reel3DOverlayCache IsNot Nothing Then
+                Dim sourceX As Integer = Math.Max(0, Math.Min(reel3DOverlayCache.Width - 1, Reel3DDisplayOffsetX))
+                Dim sourceWidth As Integer = Math.Min(ClientSize.Width, reel3DOverlayCache.Width - sourceX)
+                If sourceWidth > 0 Then
+                    graphics.DrawImage(reel3DOverlayCache,
+                                       New Rectangle(0, 0, sourceWidth, ClientSize.Height),
+                                       New Rectangle(sourceX, 0, sourceWidth, reel3DOverlayCache.Height),
+                                       GraphicsUnit.Pixel)
+                End If
+            End If
+        End If
+    End Sub
+
+    Private Sub ClearReel3DCache()
+        If reel3DImageCache IsNot Nothing Then
+            For Each image As Bitmap In reel3DImageCache.Values
+                image.Dispose()
+            Next
+            reel3DImageCache.Clear()
+        End If
+        If reel3DOverlayCache IsNot Nothing Then
+            reel3DOverlayCache.Dispose()
+            reel3DOverlayCache = Nothing
+        End If
+        reel3DOverlayCacheKey = String.Empty
+    End Sub
+
+    Protected Overrides Sub OnSizeChanged(ByVal e As EventArgs)
+        ClearReel3DCache()
+        MyBase.OnSizeChanged(e)
     End Sub
 
     Private _BehindCanvas As Boolean = False
@@ -106,6 +169,14 @@ Public Class B2SReelBox
             End If
         End Set
     End Property
+
+    Public Property Reel3DEnabled As Boolean = False
+    Public Property Reel3DBrightness As Integer = 100
+    Public Property Reel3DTemperature As Integer = 4000
+    Public Property Reel3DDepth As Integer = 100
+    Public Property Reel3DGlass As Integer = 55
+    Public Property Reel3DDisplayWidth As Integer = 0
+    Public Property Reel3DDisplayOffsetX As Integer = 0
     'Protected Overrides Sub OnPaintBackground(pevent As System.Windows.Forms.PaintEventArgs)
 
     '    ' nothing to do but important

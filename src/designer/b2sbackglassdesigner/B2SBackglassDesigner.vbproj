@@ -165,6 +165,7 @@
     <Compile Include="Classes\Recent.vb" />
     <Compile Include="Classes\Reels\ScoreCollection.vb" />
     <Compile Include="Classes\Reels\ScoreInfo.vb" />
+    <Compile Include="Classes\Reels\Reel3DEffect.vb" />
     <Compile Include="Classes\Save.vb" />
     <Compile Include="Classes\Illumination\Lights.vb" />
     <Compile Include="Classes\Illumination\LightPropertyClipboard.vb" />

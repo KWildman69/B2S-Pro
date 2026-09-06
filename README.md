@@ -19,6 +19,7 @@ The tested runtime and source packages are distributed from the [B2S Pro Release
 - Add Snippet, Make Snippet, and Quick Selection workflows
 - One-picture and animated-GIF animation creation
 - One-image rotation, score rotation, pivot animation, and mechanical-wheel animation
+- Optional realistic 3D EM score reels with adjustable backlighting, light temperature, drum depth, and glass reflection
 - Motion paths with editable entry and exit behavior
 - Trough animation with live ball-count updates, custom PNG artwork per ball, rolling, and feeder respawn
 - Physics boundaries, bumpers, switches, flippers, and launcher support

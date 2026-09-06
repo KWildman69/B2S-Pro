@@ -11,6 +11,10 @@ docs/help-source/B2SProHelp.chm
 # Local release-upload staging
 release-assets/
 
+# Local prototypes and validation output
+prototypes/
+artifacts/
+
 # Local packages and checksums belong in GitHub Releases
 *.zip
 *.zip.sha256
