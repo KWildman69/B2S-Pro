@@ -60,12 +60,14 @@ Public Class formBackglass
     Private behindCanvasCacheBackground As Image = Nothing
     Private behindCanvasCacheBounds As Rectangle = Rectangle.Empty
     Private behindCanvasCacheAngle As Single = Single.NaN
+    Private b2sProTransparentCanvasBacking As Nullable(Of Color) = Nothing
 
     Private Sub ApplyB2SProTransparentCanvasBacking(ByVal imagesNode As Xml.XmlElement)
         ' Legacy directB2S files have no marker and keep the established black
         ' form backing. New B2S Pro exports opt in to the same neutral backing
         ' shown by the Designer preview so transparent canvas openings do not
         ' collapse to black at runtime.
+        b2sProTransparentCanvasBacking = Nothing
         Me.BackColor = Color.Black
         If imagesNode Is Nothing OrElse imagesNode.Attributes("B2SProTransparentCanvasBacking") Is Nothing Then Return
 
@@ -75,7 +77,8 @@ Public Class formBackglass
         Dim green As Byte
         Dim blue As Byte
         If Byte.TryParse(parts(0), red) AndAlso Byte.TryParse(parts(1), green) AndAlso Byte.TryParse(parts(2), blue) Then
-            Me.BackColor = Color.FromArgb(red, green, blue)
+            b2sProTransparentCanvasBacking = Color.FromArgb(red, green, blue)
+            Me.BackColor = b2sProTransparentCanvasBacking.Value
         End If
     End Sub
 
@@ -442,6 +445,15 @@ Public Class formBackglass
         ' some rendering hints
         e.Graphics.PageUnit = GraphicsUnit.Pixel
         e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+
+        ' Normal form background painting is intentionally suppressed below.
+        ' Paint the B2S Pro opt-in backing here so transparent canvas pixels
+        ' composite over the neutral backing instead of the native black surface.
+        If b2sProTransparentCanvasBacking.HasValue Then
+            Using backingBrush As New SolidBrush(b2sProTransparentCanvasBacking.Value)
+                e.Graphics.FillRectangle(backingBrush, e.ClipRectangle)
+            End Using
+        End If
 
         ' draw background and illumination images
         If Me.BackgroundImage IsNot Nothing Then
