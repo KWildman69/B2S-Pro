@@ -65,9 +65,7 @@
             PerspectiveRightScale = source.PerspectiveRightScale
             BehindCanvas = source.BehindCanvas
 
-            B2SStartDigit = source.B2SStartDigit
             B2SScoreType = source.B2SScoreType
-            B2SPlayerNo = source.B2SPlayerNo
 
             ReelIlluLocation = source.ReelIlluLocation
             ReelIlluB2SID = source.ReelIlluB2SID
@@ -81,9 +79,10 @@
             Reel3DDepth = source.Reel3DDepth
             Reel3DGlass = source.Reel3DGlass
 
-            ' The new reel receives its own ID, location, parent and Z layer
-            ' from the normal Add Reel path. Only its configured setup is
-            ' duplicated, and its render cache starts clean.
+            ' The new reel receives its own ID, player/start-digit routing,
+            ' location, parent and Z layer from the normal Add Reel path. Only
+            ' its reusable configuration is duplicated, and its render cache
+            ' starts clean.
             SingleReelSize = Nothing
             IsSingleReelSizeDirty = True
             SingleReelFactor = 1
