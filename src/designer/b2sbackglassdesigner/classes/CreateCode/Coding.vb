@@ -817,6 +817,10 @@ Public Class Coding
 
             ' add images
             nodeHeader.AppendChild(nodeImages)
+            ' B2S Pro previews transparent canvas openings over this neutral
+            ' backing. Carry that intent into new directB2S exports so the
+            ' server result matches the editor without changing legacy files.
+            nodeImages.SetAttribute("B2SProTransparentCanvasBacking", "96.96.96")
             If offimage IsNot Nothing Then
                 AddXMLAttribute(XML, nodeImages, "BackglassOffImage", "Value", ImageToBase64(offimage))
                 AddXMLAttribute(XML, nodeImages, "BackglassOnImage", "Value", ImageToBase64(image))

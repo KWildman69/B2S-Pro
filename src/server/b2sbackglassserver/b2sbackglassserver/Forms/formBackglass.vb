@@ -61,6 +61,24 @@ Public Class formBackglass
     Private behindCanvasCacheBounds As Rectangle = Rectangle.Empty
     Private behindCanvasCacheAngle As Single = Single.NaN
 
+    Private Sub ApplyB2SProTransparentCanvasBacking(ByVal imagesNode As Xml.XmlElement)
+        ' Legacy directB2S files have no marker and keep the established black
+        ' form backing. New B2S Pro exports opt in to the same neutral backing
+        ' shown by the Designer preview so transparent canvas openings do not
+        ' collapse to black at runtime.
+        Me.BackColor = Color.Black
+        If imagesNode Is Nothing OrElse imagesNode.Attributes("B2SProTransparentCanvasBacking") Is Nothing Then Return
+
+        Dim parts() As String = imagesNode.Attributes("B2SProTransparentCanvasBacking").InnerText.Split("."c)
+        If parts.Length <> 3 Then Return
+        Dim red As Byte
+        Dim green As Byte
+        Dim blue As Byte
+        If Byte.TryParse(parts(0), red) AndAlso Byte.TryParse(parts(1), green) AndAlso Byte.TryParse(parts(2), blue) Then
+            Me.BackColor = Color.FromArgb(red, green, blue)
+        End If
+    End Sub
+
     Private Const MA_NOACTIVATE As System.Int32 = 3
     Private Const WM_MOUSEACTIVATE As Integer = &H21
 
@@ -3506,6 +3524,8 @@ Public Class formBackglass
 
                 ' get background and maybe DMD image(s)
                 If topnode.SelectSingleNode("Images") IsNot Nothing Then
+
+                    ApplyB2SProTransparentCanvasBacking(DirectCast(topnode.SelectSingleNode("Images"), Xml.XmlElement))
 
                     ' backglass image
                     Dim offimagenode As Xml.XmlElement = topnode.SelectSingleNode("Images/BackglassOffImage")
