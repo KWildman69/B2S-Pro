@@ -6,10 +6,11 @@ Public Class B2SPictureBox
     Inherits PictureBox
 
     ' A transparent backglass pixel is an opening in the printed canvas. Show
-    ' that opening over a neutral white backing in the editor so every PNG
-    ' transparency is visible and can be used for behind-canvas lighting.
-    ' Opaque artwork, including true black pixels, is still drawn unchanged.
-    Private Shared ReadOnly EditorCanvasUnderlayColor As Color = Color.White
+    ' that opening over a neutral mid-gray backing in the editor. This leaves
+    ' visible headroom for behind-canvas brightness, highlights, color and light
+    ' temperature while the renderer still treats transparency as transmissive.
+    ' Opaque artwork, including true black pixels, is drawn unchanged.
+    Private Shared ReadOnly EditorCanvasUnderlayColor As Color = Color.FromArgb(96, 96, 96)
 
     Private ReadOnly lightBlinkTimer As Windows.Forms.Timer
     Private ReadOnly lightBlinkStartedAt As Long = Diagnostics.Stopwatch.GetTimestamp()

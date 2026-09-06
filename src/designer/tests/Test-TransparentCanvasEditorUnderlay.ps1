@@ -32,8 +32,9 @@ try {
     $transparentPixel = $preview.GetPixel(0, 0)
     $opaqueBlackPixel = $preview.GetPixel(1, 0)
 
-    if ($transparentPixel.ToArgb() -ne [System.Drawing.Color]::White.ToArgb()) {
-        throw "Transparent canvas pixel was not displayed over white: $transparentPixel"
+    $neutralUnderlay = [System.Drawing.Color]::FromArgb(255, 96, 96, 96)
+    if ($transparentPixel.ToArgb() -ne $neutralUnderlay.ToArgb()) {
+        throw "Transparent canvas pixel was not displayed over neutral gray: $transparentPixel"
     }
     if ($opaqueBlackPixel.ToArgb() -ne [System.Drawing.Color]::Black.ToArgb()) {
         throw "Opaque black artwork changed unexpectedly: $opaqueBlackPixel"
@@ -41,7 +42,7 @@ try {
 
     Write-Host "Transparent canvas pixel: $transparentPixel"
     Write-Host "Opaque black artwork: $opaqueBlackPixel"
-    Write-Host 'PASS: editor canvas uses a white transparency underlay without changing opaque black artwork.'
+    Write-Host 'PASS: editor canvas uses a neutral-gray transparency underlay without changing opaque black artwork.'
 }
 finally {
     if ($null -ne $preview) { $preview.Dispose() }

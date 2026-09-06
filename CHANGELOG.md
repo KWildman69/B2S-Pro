@@ -30,7 +30,7 @@ First public B2S Pro baseline.
 - Added mask-aware rendering and corrected light/flasher drag artifacts.
 - Added rotation behavior matching snippets for both lamps and flashers.
 - Corrected behind-canvas lighting so transparent score windows transmit light while opaque black artwork keeps its contrast.
-- Transparent pixels anywhere in the imported backglass canvas now display over a white editor backing in the main, drag, animation, and light/flasher preview views; opaque black artwork remains black.
+- Transparent pixels anywhere in the imported backglass canvas now display over a neutral-gray editor backing in the main, drag, animation, and light/flasher preview views, leaving visible headroom for light brightness and temperature while opaque black artwork remains black.
 
 ### Animation and motion
 
