@@ -1,0 +1,943 @@
+B2S Backglass Server - Complete Custom Change Record
+====================================================
+
+Base version: B2S Backglass Server 2.1.6
+Custom build version: 3.0.0
+Updated through: September 6, 2026
+
+This document records the custom SERVER-SIDE changes in this build. Major
+designer-only package changes are included in clearly labeled sections.
+
+
+September 6, 2026 - B2S Pro 1.0.1 release consolidation
+-----------------------------------------------------------
+
+- Added snippet-style live rotation handles to lamps and flashers. Their visual
+  field, selection frame, resize behavior, saved project data, DirectB2S output,
+  and server rendering now retain the same authored angle and rotated bounds.
+- Added the existing light-temperature control to the dedicated flasher editor
+  without changing the accepted flasher brightness, mask, diffusion, radial
+  splash, or fixed Test Pulse behavior.
+- Physics launchers can now operate without an assigned flipper. Launcher-only
+  balls are registered and run from their authored launcher settings while
+  existing flipper-driven physics remains unchanged.
+- Kept every visible trough slot inside the Trough Animation canvas so the FIRST
+  and LAST handles remain usable even when the authored line reaches an edge.
+- Simplified the main editor menus and Layers context menu: Edit Selected Object
+  is first, duplicate Arrange and View > Layers entries are removed, and the
+  existing backglass Brightness command now sits between Import Backglass Image
+  and Show Illumination Frames.
+- Replaced the About screen with the approved compact B2S Pro identity, animated
+  Ken Wildman avatar, 1.0.1 version, copyright, and original Herweh/B2S Team
+  creator credit.
+- Embedded the expanded illustrated B2S Pro help manual directly in the editor.
+  The original manual content remains intact, while new feature sections include
+  current UI pictures and a clear flipper-based Pivot Animation example.
+- Cleaned the Release configuration by removing developer-only PDB/XML output,
+  losslessly recompressing the new help screenshots, and removing the obsolete
+  hidden About-screen resource. The shipping editor is smaller with no feature
+  or image-quality loss.
+- Rebuilt and verified x64 and x86 B2S Pro plus the B2S Server DLL and EXE. Both
+  editor builds started and responded normally; embedded-help hashes matched.
+
+Designer source files changed:
+- B2SBackglassDesigner.vbproj
+- Modules/B2SProMainToolbar.vb
+- My Project/AssemblyInfo.vb
+- classes/CreateCode/Coding.vb
+- classes/Illumination/BulbInfo.vb
+- classes/Illumination/Lights.vb
+- classes/Illumination/LightsCreation.vb
+- classes/PictureBox/B2SPictureBox.vb
+- classes/PictureBox/Mouse.vb
+- classes/Save.vb
+- formDesigner.vb
+- forms/formAbout.vb
+- forms/formLightDiffusionEditor.vb
+- forms/formMotionPathTest.vb
+- forms/formToolLayers.vb
+- Resources/B2SAboutAvatar.gif
+- Resources/B2SProHelp.chm
+
+Server source files changed:
+- Classes/B2SData.vb
+- Forms/formBackglass.vb
+
+
+September 4, 2026 - Dedicated artwork flashers and editor performance
+-----------------------------------------------------------------------
+
+- Added a dedicated Add Flasher workflow. Add Flasher now places a movable
+  flasher box without interrupting placement; its complete editor opens only
+  when that box is double-clicked.
+- Rebuilt the flasher editor as one resizable, persistent window containing the
+  flash controls, Quick Selection mask controls, and a full-backglass live
+  preview. Radius, smooth, feather, contrast, shift edge, diffusion, brightness,
+  and radial-spike changes update live and retain their authored values.
+- Added pixel-aware artwork illumination for lamps and flashers while preserving
+  dark/black contrast. Flashers retain the stronger 1600-percent range and
+  dedicated diffusion, highlight protection, saturation, hotspot, and radial
+  splash treatment.
+- Corrected Quick Selection and inverted-mask composition so applying a mask
+  clips the established flasher result instead of replacing or weakening its
+  brightness, diffusion, feather, contrast, or spike settings.
+- Simplified testing controls. A flasher Test Pulse toggles a fixed 75 ms flash
+  once per second; the redundant Blink and On/Off controls were removed. Normal
+  lights retain only their Blinker Runtime controls.
+- Isolated live editing to the selected light or flasher and cached the all-off
+  preview base. Other flashers remain dark while sliders or positions are
+  adjusted, keeping multi-flasher editing responsive.
+- Corrected editor drag painting for lights and flashers. Movable previews no
+  longer expose opaque generated-image rectangles, the dirty region covers the
+  complete glow rather than only the blue selection box, and mouse release
+  performs one final clean repaint without trails or dark blocks.
+- Added optional server-side flasher pulse hold. New DirectB2S files can retain
+  a momentary flasher for the authored duration; a missing or zero value keeps
+  the legacy trigger-following behavior unchanged.
+- Rebuilt and verified x64 and x86 B2S Pro plus the B2S Server DLL and EXE.
+  Regression coverage passed for flasher masking, persistence, resize/layout,
+  pulse timing, preview isolation, multi-flasher performance, drag bounds, and
+  legacy zero-duration behavior.
+
+Designer source files changed:
+- Modules/B2SProMainToolbar.vb
+- classes/CreateCode/Coding.vb
+- classes/Illumination/ArtworkFlasherRenderer.vb
+- classes/Illumination/BulbInfo.vb
+- classes/Illumination/LightGlowDefaults.vb
+- classes/Illumination/LightPropertyClipboard.vb
+- classes/Illumination/Lights.vb
+- classes/Illumination/LightsCreation.vb
+- classes/PictureBox/B2SPictureBox.vb
+- classes/PictureBox/Mouse.vb
+- classes/Save.vb
+- classes/Tab/B2STabPage.vb
+- formDesigner.vb
+- forms/formLightDiffusionEditor.vb
+- forms/formQuickSelection.vb
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+
+
+September 1, 2026 - Rolling-ball animation and per-slot ball artwork
+---------------------------------------------------------------------
+
+- Added an opt-in Roll ball while moving setting for normal motion paths,
+  physics balls, and generated trough animations. Rolling angle advances from
+  actual distance traveled, so visual rotation follows movement speed without
+  changing the established path, trigger, queue, respawn, or physics timing.
+- Added a WYSIWYG per-slot PNG selector to the trough wizard. Each ball slot can
+  use its own baseball, basketball, pool ball, or other authored PNG while all
+  balls retain one consistent physical diameter and the same trough behavior.
+- Replacement PNGs preserve their complete visible artwork and aspect ratio
+  inside a true square ball canvas. High-DPI PNGs are copied by exact pixel
+  dimensions, preventing the lower image area from being clipped.
+- Preserved each trough member's image and rolling phase while members enter,
+  stop, compact, and exit. A neighboring ball no longer twitches or changes
+  stripe direction when another ball changes sequence state.
+- Expanded backglass and DMD repaint envelopes for rolling artwork and retained
+  the complete source image while rolling. This removes trails, stale pixels,
+  oval distortion, and clipping at intermediate angles.
+- MotionPathRollEnabled is written only when selected. DirectB2S files without
+  that attribute retain their original rendering and motion behavior.
+- Rebuilt and verified the x64 and x86 B2S Pro editors, the B2S Server DLL, and
+  the B2S Server EXE. Five differently shaped PNG inputs normalized to 112x112,
+  all 120 sampled rotation envelopes passed, and both new-format and legacy
+  attribute paths were checked.
+
+Designer source files changed:
+- classes/CreateCode/Coding.vb
+- classes/Illumination/BulbInfo.vb
+- classes/Save.vb
+- forms/formMotionPathTest.vb
+- forms/formPhysicsEditor.vb
+- forms/formToolLayers.vb
+
+Server source files changed:
+- Classes/B2SData.vb
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Forms/formDMD.vb
+
+
+August 30, 2026 - Final authoring and editor usability refresh
+-----------------------------------------------------------------
+
+- Added a Make Snippet command beside Add Snippet. The shared Quick Selection
+  tools can now cut pixels directly from the current Backglass or DMD artwork,
+  preserve transparency, and create a normal movable snippet at the exact
+  source position. The result uses the existing layer, transform, mask,
+  animation, save, and export paths; no server-format change is required.
+- Corrected grouped animated-GIF editing so moving the group translates the
+  animation itself instead of only moving frames inside the old bounding box.
+  Invalid or disposed preview frames are ignored safely during editor painting.
+- Replaced degree-guess rotation with direct live pointer rotation and retained
+  stable source bounds through repeated move, resize, and rotate operations.
+- Added lock/unlock control to authored physics boundaries so completed lines
+  cannot receive accidental points or moves while other scene work continues.
+- Connected every themed editor dialog to the shared persistent window-layout
+  system. Motion Path, Trough, Pivot, Physics, Snippet, Animation, masking, and
+  import windows now retain their last size, position, monitor, DPI-adjusted
+  bounds, and maximized state across reopen and application restart.
+- Corrected the Trough Animation ball-count editor to react to keyboard text as
+  well as committed spinner changes. Typing a new count redraws the visible
+  slots immediately, and that displayed count is also the value created and
+  saved by the wizard.
+- Reduced the trough respawn direction control to a cleaner half-length arrow
+  with a smaller arrowhead, visible handle, and SPAWN label while preserving a
+  generous invisible mouse hit area.
+- Both x64 and x86 B2S Pro Release builds completed successfully after the final
+  refresh. Temporary message boxes remain content-sized and are not persisted.
+
+Designer source files changed:
+- classes/Base classes/B2SThemedForm.vb
+- classes/PictureBox/B2SPictureBox.vb
+- classes/PictureBox/Mouse.vb
+- formDesigner.vb
+- forms/formMotionPathTest.vb
+- forms/formPhysicsEditor.vb
+- forms/formQuickSelection.vb
+- forms/formToolLayers.vb
+- Modules/B2SProMainToolbar.vb
+
+
+August 30, 2026 - Authored directional trough feeder respawn
+-----------------------------------------------------------------
+
+- Added an optional WYSIWYG feeder-respawn control to the entry motion-path
+  editor. The author drags a start handle to choose the hidden feeder origin
+  and sets the slide duration; the original ball image remains the feeder
+  source and no extra flash-ball or duplicate artwork is required.
+- Saved MotionPathRespawnEnabled, MotionPathRespawnX, MotionPathRespawnY, and
+  MotionPathRespawnDuration only when the option is enabled. Project reload and
+  DirectB2S export preserve the authored point and timing.
+- Added server loading and screen-scaled runtime interpolation for Backglass and
+  DMD trough groups. When the feeder becomes available it slides from the
+  authored hidden point into its normal trough start position.
+- Files without the new attributes retain the established immediate feeder
+  behavior. Standalone motion paths and all legacy backglasses remain on their
+  existing paths.
+
+Designer source files changed:
+- classes/CreateCode/Coding.vb
+- classes/Illumination/BulbInfo.vb
+- classes/Save.vb
+- forms/formMotionPathTest.vb
+- forms/formToolLayers.vb
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Forms/formDMD.vb
+
+
+August 30, 2026 - Replenishing trough feeder ball
+-------------------------------------------------
+
+- Corrected ordered trough motion-path sequences so the ball at the authored
+  entry start behaves as a replenishing feeder instead of a permanently painted
+  duplicate or a one-time moving member.
+- A launch now consumes the visible feeder ball. The feeder respawns when the
+  moving member completes the first authored path segment, while that member
+  continues along the remaining entry path.
+- Multiple sequence members can now be in flight at the same time. A new member
+  may launch as soon as the feeder has respawned, and an early repeated trigger
+  waits in the existing bounded queue until that feeder is ready.
+- Entry members are reserved independently until they reach their trough slots.
+  Exit/removal and compaction remain serialized until active entries finish, so
+  occupancy, survivor order, and slot normalization remain deterministic.
+- Added the feeder lifecycle to both backglass and DMD drawing paths. The source
+  artwork and final screen-scaled source rectangle still come from the lowest
+  ordered member of each named sequence group.
+- This is inferred from existing MotionPathSequenceGroup and path-point metadata,
+  so existing authored trough files receive the correction without an XML,
+  editor-format, trigger-ID, or timing-setting change. Standalone motion paths
+  and legacy backglasses remain unchanged.
+
+
+August 30, 2026 - Save progress moved to the main toolbar (designer only)
+-----------------------------------------------------------------------
+
+- Moved the existing save/export progress bar out of the bottom status strip
+  and placed it immediately to the right of the Step 2 Backglass Preview and
+  Test button, where progress remains visible during long operations.
+- Enlarged the toolbar progress bar and retained its existing continuous style,
+  throttled repainting, completion display, and automatic reset behavior.
+- Repainting now follows the progress bar's current ToolStrip owner instead of
+  being hard-coded to the old bottom status strip.
+- No save, export, DirectB2S, server, trigger, animation, XML, legacy loading,
+  registry, ScreenRes, or display behavior was changed by this UI update.
+
+
+August 30, 2026 - Complete current server change inventory
+-----------------------------------------------------------------------
+
+This section consolidates every custom server-side feature present in the
+current 3.0.0 source and runtime. It fills the documentation gap between
+the earlier native-rotation work and the completed Motion Path, Pivot, Trough,
+and Physics implementation. This is a changelog update only; no runtime logic
+was changed while preparing this inventory.
+
+DirectB2S loading and compatibility
+-----------------------------------
+
+- Added opt-in parsing for the new native-rotation, motion-path, external-grid,
+  pivot, physics-ball, boundary, bumper, switch-zone, and launcher attributes.
+- New behavior is registered only when its matching attributes are present.
+  Older DirectB2S files without those attributes continue through the existing
+  legacy illumination, animation, reel, and rotating-image paths.
+- Retained both server forms: the COM DLL receives VPX/ROM commands and the EXE
+  owns the displayed backglass. Named-pipe bridges carry only the new physics
+  switch pulses and launcher triggers that must cross that process boundary.
+
+Native one-image rotation and mechanical wheels
+------------------------------------------------
+
+- Added continuous and command-triggered rotation from one source image with
+  configurable direction, step count, interval, and stop behavior.
+- Native rotation advances from elapsed time, so dropped Windows timer ticks or
+  expensive large-image drawing do not reduce the authored angular speed.
+- Large-image caches are prepared independently and all continuous rotations
+  remain on their source frame until every required cache is ready.
+- Added lamp, solenoid, GI, and B2S-set routing directly to each native rotating
+  picture without entering the global legacy rotation timer.
+- Added absolute mechanical-position rendering. VPinMAME's 0-359 degree value
+  is applied directly, with the configured half-step pointer alignment.
+- Preserved generated-frame self rotation and indexed mechanical frame caches
+  for legacy files that do not contain enabled native metadata.
+- Added transformed backglass and DMD drawing, behind-canvas composition, and
+  repaint caching without rotating the surrounding mask or canvas.
+
+Motion paths and trigger routing
+--------------------------------
+
+- Added runtime movement along authored multi-point entry and exit paths with
+  independent travel durations, looping, pause, resume, and exact saved center
+  positions.
+- Paths with no start trigger begin automatically. Authored paths can otherwise
+  start from a ROM solenoid, ROM lamp, or B2S ID rising edge.
+- Exit/removal paths can be triggered independently by a solenoid, lamp, or B2S
+  ID. Dedicated B2S IDs can stop and resume an active path.
+- Added trigger routing in both the EXE polling path and the public Server COM
+  path, so ROM-controlled and EM/B2S-scripted tables use the same animation.
+- Repeated triggers can restart the active member or enter a bounded FIFO queue,
+  according to the authored Queue Repeated Triggers option.
+- Motion interpolation uses elapsed time and the authored coordinate scale;
+  start, exit, compaction, and external shifts do not depend on frame count.
+
+Ordered trough and multi-object sequences
+-----------------------------------------
+
+- Added named sequence groups and numeric member order so multiple copies of a
+  single ball image form independent troughs or other ordered object sets.
+- Entry fills the first unoccupied member. Removal always takes the first
+  occupied member, plays its exit path, hides it, and shifts every survivor into
+  the exact preceding occupied slot.
+- Completed compaction normalizes all member centers and cancels old shift
+  timers before a freed member can be reused. This prevents overlap, stale
+  completion events, and later balls launching from an earlier origin.
+- Full, empty, mixed add/remove, queued, and slot-reuse states are guarded. Each
+  named group owns its own occupancy and operation queue.
+
+External position grids and pivots
+----------------------------------
+
+- Added group-name controlled position grids. One visible representative image
+  moves smoothly among authored target positions while the target images remain
+  hidden runtime markers.
+- Added group-name controlled pivot targets and direct single-image pivot
+  animation. A visible representative rotates among authored target angles.
+- Added hinge and tip coordinates, down/up angles, duration, and trigger routing
+  for solenoid, lamp, and B2S IDs. ON and OFF values drive opposite pivot states.
+- Pivot artwork is rendered around the authored hinge using transformed
+  destination points and expanded paint bounds, preventing clipping, in/out
+  distortion, cumulative bounding-box growth, and stale erased pixels.
+
+Single-ball backglass physics
+-----------------------------
+
+- Added elapsed-time ball simulation with substeps, authored gravity, runtime
+  coordinate scaling, play bounds, air drag, and configurable common boundary
+  bounce.
+- Added exact collision against the visible pivot flipper segment from hinge to
+  tip. Flipper angular velocity and authored strength are transferred to the
+  ball only when the rendered flipper physically contacts it.
+- Added any number of independent polyline boundaries. Every finite segment and
+  rounded end cap collides from either side, regardless of point-drawing order;
+  distant segments cannot attract or launch the ball.
+- Added circular bumper/obstacle collision using each authored visible radius.
+- Added rectangular switch zones that pulse the configured ROM switch once when
+  the ball enters, reset after it leaves, and can score through VPX/VPinMAME.
+- Added one authored launcher for the physics ball with origin, direction,
+  strength, random-angle range, random-strength range, and capture radius.
+- Launcher triggers support ROM solenoid and B2S ID input. Repeated pulses are
+  ignored while the ball is in flight; after the ball leaves and later returns
+  to the capture area, it is held, rearmed, and ready for another full cycle.
+- Added DLL-to-EXE launcher delivery and EXE-to-DLL switch-pulse delivery so the
+  process that receives VPX commands and the process that owns the physics ball
+  remain synchronized.
+
+Rendering, animation, and score-display corrections retained
+--------------------------------------------------------------
+
+- Retained transparent-image visible-bounds cropping and targeted parent
+  invalidation for faster large illumination animations.
+- Retained the continuous-animation loop-seam correction and stable Dream7 score
+  display ordering during full-screen redraws.
+- Retained rotating snippets and live EM reels behind the canvas, including
+  rolling and illuminated reel states.
+
+Current custom server source files
+----------------------------------
+
+- Classes/B2SAnimation.vb
+- Classes/B2SData.vb
+- Controls/B2SPictureBox.vb
+- Controls/B2SReelBox.vb
+- Forms/formBackglass.vb
+- Forms/formDMD.vb
+- Server.vb
+
+Verification and release refresh
+--------------------------------
+
+- Rebuilt the x64 and x86 B2S Pro editor and the B2S Server DLL and EXE from the
+  synchronized permanent source on August 30, 2026.
+- The rebuilt server passed all 18 motion, pivot, trough, boundary, bumper,
+  switch, launcher, and DLL/EXE bridge tests in three consecutive runs: 54
+  successful checks and zero failures.
+- All flat binaries, runtime folders, standalone source copies, release ZIPs,
+  documentation copies, and SHA-256 manifests were synchronized and verified.
+- No registry, ScreenRes, display configuration, or installed Visual Pinball
+  files were modified during the release refresh.
+
+
+August 27, 2026 - Physics boundary lines made direction-independent
+------------------------------------------------------------------------
+
+- Changed authored physics boundary segments from one-sided contact surfaces
+  to finite two-sided barriers. A ball now collides with either side of every
+  line regardless of the order in which its points were drawn.
+- Preserved finite segment and rounded end-cap behavior by testing collision
+  against the closest point on the actual segment. Distant or unrelated lines
+  cannot move or launch the ball.
+- Verified both point directions, approaches from both sides, and the distant
+  boundary safeguard in a focused automated test.
+- Rebuilt the server DLL and server EXE. All 18 existing motion/physics runtime
+  tests also passed, covering legacy motion, scaling, flippers, launchers,
+  switches, circular bumpers, and separate boundary paths.
+
+
+August 25, 2026 - Motion Path and Physics promoted to real-build baseline
+------------------------------------------------------------------------
+
+- Promoted the completed Motion Path, Trough, Pivot, and single-ball Physics
+  work from the isolated development projects into the permanent real-build
+  editor and server source trees.
+- The Physics source was proven to contain every Motion Path source file and
+  all later Pivot/Physics additions. The permanent source was compared by
+  relative path and SHA-256 before promotion; no older-only source was lost.
+- Rebuilt the permanent editor in x64 and x86 Release configurations.
+- Rebuilt the permanent B2S server DLL and server EXE in Release without COM
+  registration. No registry or ScreenRes operation was performed.
+- Retired test-named executables from the deliverables. The production editor
+  is `B2SPro.exe`; production server files are `B2SBackglassServer.dll` and
+  `B2SBackglassServerEXE.exe`.
+- Stabilized one test-only launcher assertion by waiting for its actual
+  asynchronous position condition instead of assuming a fixed 100 ms timer
+  window. No production code changed for this test correction.
+- The permanent rebuilt server passed all 18 automated motion/physics cases in
+  three consecutive runs (54 successful checks total).
+- This combined build is the new authoritative baseline for future B2S Pro
+  and B2S Server development.
+
+
+August 25, 2026 - Designer editor-window layout cleanup (designer only)
+------------------------------------------------------------------------
+
+- Reorganized the Layers right-click commands into compact Layer Order,
+  Visibility/Lock/Name, Edit Selected Object, Mask Placement, and Canvas
+  Placement submenus instead of one oversized vertical command list.
+- Rebuilt Entry Motion Path and Exit Motion Path as fixed right-side workflows
+  with readable labels and permanently visible Save/Cancel buttons.
+- Rebuilt the Trough Animation wizard as a fixed right-side, numbered workflow.
+- Rebuilt Pivot Animation with distinct Animation, Pivot/Preview, and Trigger
+  sections and fixed Save/Cancel buttons.
+- Rebuilt the Physics Boundary Editor as four stable tabs: Ball, Boundaries,
+  Bumpers & Switches, and Launcher. Every command and field remains readable
+  at the minimum window size and when the window is widened.
+- Rebuilt Quick Selection Mask with a non-overlapping two-row tool grid and a
+  fixed preview/action layout. Selection tools, brush controls, mask editing,
+  and zoom controls remain visible while resizing.
+- Rebuilt Picture Sequence Import using resizable rows instead of fixed screen
+  coordinates, keeping filenames, destination, bounds, playback options, and
+  action buttons aligned.
+- No editor model, XML save/export, server loading, trigger, animation, physics,
+  registry, ScreenRes, or legacy runtime behavior was changed.
+- Both x64 and x86 Release builds succeeded. Automated visual captures verified
+  all seven affected editors at normal and widened sizes, including every
+  Physics tab. All 18 motion/physics runtime tests passed.
+
+
+August 25, 2026 - Single-ball backglass physics and launcher baseline
+------------------------------------------------------------------------
+
+- Added a WYSIWYG physics editor for one transparent ball image, including
+  exact multi-segment boundaries, circular bumpers, gravity, common boundary
+  bounce, flipper strength, and visible switch-hit zones.
+- Added pivot-flipper collision using the authored hinge and tip points. Ball
+  contact follows the visible rotated flipper instead of an oversized image
+  rectangle, and runtime drawing preserves the complete flipper artwork.
+- Added ROM switch pulses when the ball enters an authored switch zone. Live
+  Catacomb testing confirmed that the configured switch IDs reach VPX and
+  score through the ROM.
+- Added one random launcher for the physics ball with an authored origin,
+  direction, strength, random angle, random strength, and visible capture
+  radius. Repeated trigger pulses are ignored while the ball is in flight.
+- Added capture and rearm behavior: after leaving the capture radius, a
+  returning ball is held at the launcher and can begin another full cycle.
+- Added a dedicated DLL-to-EXE launcher bridge. VPX solenoid events received by
+  the COM DLL now reach the EXE process that owns and renders the physics ball.
+- Removed the abandoned automatic second-ball scene-copy experiment. The clean
+  accepted baseline is one physics ball, one launcher, and one trigger.
+- Preserved the existing motion-path, pivot, picture-animation, native
+  rotation, and legacy DirectB2S paths. Physics behavior is loaded only when
+  the new physics attributes are present.
+- Automated validation covers 18 motion, pivot, boundary, bumper, switch-zone,
+  launcher-cycle, and DLL-to-EXE bridge cases. The final live test confirmed
+  solenoid 48 launch, repeated-trigger lock, capture, and rearming.
+
+Designer source files changed:
+- forms/formPhysicsEditor.vb
+- forms/formToolLayers.vb
+- classes/CreateCode/Coding.vb
+- classes/Illumination/BulbInfo.vb
+
+Server source files changed:
+- Classes/B2SData.vb
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Server.vb
+
+
+August 22, 2026 - Picture animation import and grouped editing
+-----------------------------------------------------------------
+
+- Added lightweight picture-animation import from ordered transparent PNG
+  frames or one animated GIF. GIF timing is mapped to the existing animation
+  interval and step-wait model without duplicating frames.
+- Imported frames use shared transparent cropping and optimized embedded PNG
+  images while preserving frame-to-frame alignment.
+- Imported picture animations appear as one grouped layer in the editor rather
+  than exposing hundreds of individual frame rows.
+- Added grouped move, corner resize, and rotation-handle editing. Shift snaps
+  rotation to 15-degree increments.
+- Added shared Quick Selection masking for picture-animation and snippet
+  groups. One mask is propagated to every frame and baked into preview/export.
+- Compacted the Quick Selection toolbar so zoom and edit controls no longer
+  stretch across wide windows. Added an undoable Invert Mask action that
+  reverses selected and transparent alpha, including feathered edges.
+- The normal editor canvas displays one reference frame for each imported
+  animation while the animation preview continues to play every frame.
+- Corrected selection-handle invalidation so moving and rotating grouped
+  picture animations no longer leaves drawing trails.
+- Corrected startup export state: one still reference frame is visible while a
+  startup animation initializes; remaining frames stay off until scheduled.
+  Triggered animations remain fully off until their trigger.
+- Corrected repeated Manage Animations activation so an already-open window is
+  restored and focused instead of raising a duplicate-form exception.
+- The feature exports ordinary snippet images and existing animation steps.
+  No Server format or runtime change is required, and legacy backglasses retain
+  their existing load, edit, save, and playback behavior.
+- Animated WebP support was evaluated and intentionally excluded. The final
+  build remains a standalone executable without added decoder DLLs.
+
+Designer source files changed:
+- B2SBackglassDesigner.vbproj
+- classes/CreateCode/Coding.vb
+- classes/Illumination/Lights.vb
+- classes/PictureBox/B2SPictureBox.vb
+- classes/PictureBox/Mouse.vb
+- formDesigner.vb
+- forms/formAnimations.vb
+- forms/formPictureSequenceImport.vb
+- forms/formToolLayers.vb
+
+
+August 19, 2026 - Permanent score LED color round trips
+--------------------------------------------------------
+
+- Corrected DirectB2S score-display color import. DirectB2S export and the B2S
+  Server use the `ReelLitColor` attribute, but the editor previously searched
+  only for `ReelColor` and silently replaced the saved color with the global
+  default when a DirectB2S file was reopened.
+- DirectB2S import now reads `ReelLitColor` first and retains `ReelColor` as a
+  compatibility fallback for older file variants.
+- Project save/load behavior is unchanged; it already preserved each score
+  display's selected color correctly.
+- Verified against custom cyan and standard orange DirectB2S score displays.
+- Rebuilt both the x86 and true x64 B2S Pro Release executables.
+
+Designer source file changed:
+- classes/CreateCode/Coding.vb
+
+
+August 19, 2026 - Animation section final verified baseline
+-------------------------------------------------------------
+
+- Finalized the dual-format design without automatic conversion. Existing
+  legacy rotating snippets retain their legacy XML contract when opened,
+  adjusted, saved, and exported. New one-image rotation is created explicitly
+  from Standard Image by enabling one-image rotation.
+- Verified new one-image rotation in continuous, lamp-triggered, and
+  solenoid-triggered modes with clockwise and counterclockwise direction,
+  configurable steps and frame interval, and all four stopping behaviors:
+  immediate, spin off, run animation till end, and run to first step.
+- Native rotation timing advances from elapsed time so large images maintain
+  their configured angular speed even when rendering delays Windows timer
+  messages.
+- Native rotation frames are generated from the original artwork before final
+  runtime scaling. Large square artwork therefore rotates around its true
+  center without the elliptical or off-center distortion caused by scaling the
+  source first.
+- Multiple continuous one-image rotations prepare independent caches and begin
+  together only after every continuous cache is ready. Their stationary source
+  images remain visible during preparation instead of leaving blank areas.
+- Smooth spin-off now continues from the actual current angle and decelerates
+  without jumping or reverting to the legacy timer path.
+- Legacy mechanical rotating images remain legacy in DirectB2S XML but are
+  rendered at runtime from their single source bitmap using VPinMAME's absolute
+  0-359 degree mechanical position. This removes the old 0..step-count cache
+  mismatch while preserving Mech ID, configured step count, direction, and
+  half-segment pointer alignment.
+- The legacy mechanical runtime correction is generic. It is not tied to a
+  particular table, ROM, backglass, or artwork.
+- B2S Pro continues to expose Self Rotating Image when editing an existing
+  legacy type-1 snippet. The obsolete type is hidden for new/ordinary images;
+  new continuous or triggered rotation is authored with Standard Image and
+  one-image rotation instead. Mechanical Rotating Image remains available.
+- The shortened new-image type menu uses an explicit display-to-format mapping,
+  so Mechanical Rotating Image continues to save as legacy type 2 rather than
+  being shifted to type 1.
+- Runtime and editor tests passed for continuous rotation, lamp and solenoid
+  triggers, all stopping modes, multiple simultaneous images, large images,
+  legacy loading and round-trip saving, and absolute-position mechanical
+  wheels stopping on the correct value.
+
+Designer source file changed in the final cleanup:
+- forms/formSnippitSettings.vb
+
+Server source files used by the final baseline:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Server.vb
+
+
+August 17, 2026 - Explicit conversion prototype (superseded)
+--------------------------------------------------------------
+
+The conversion workflow described in this historical section was subsequently
+removed and is not part of the August 19 final build. The final design preserves
+legacy files without conversion and uses Standard Image for new one-image work.
+
+- Removed all implicit legacy self-rotation and mechanical-rotation upgrades
+  from project loading, DirectB2S import, and the snippet properties dialog.
+- Added an explicit `Convert to one-image rotation` choice for legacy rotating
+  snippets. Opening, accepting, saving, or exporting without selecting it keeps
+  the legacy format and playback metadata unchanged.
+- A converted legacy self-rotating disc now remains `SelfRotatingImage` and also
+  carries enabled `AutomaticRotation*` metadata. Older Servers therefore retain
+  their legacy generated-frame playback, while native-aware Servers select the
+  one-image renderer from the same file.
+- Preserved trigger ID/type, steps, interval, direction, stop behavior, image
+  dimensions, and legacy snippet identity through conversion and re-import.
+- Restored the Server runtime source to the last known-good dual-path snapshot:
+  only enabled native metadata selects one-image playback; untouched legacy
+  entries continue through the original generated-frame path.
+- Added automated preservation and explicit-conversion dialog tests plus
+  import/export/re-import verification for 1500 x 1500 and full-DMD 1800 x 1800
+  legacy disc variants.
+
+
+August 16, 2026 - Native one-image mechanical wheel conversion
+----------------------------------------------------------------
+
+- Restored the Snippet type selector in the consolidated B2S Pro rotation
+  panel with Standard image, Self rotating image, and Mech rotating image.
+- Legacy mechanical snippets now expose their saved Mech ID, step count,
+  direction, and applicable controls instead of showing a disabled rotation
+  panel.
+- Accepting and saving a legacy mechanical snippet writes the native one-image
+  rotation contract while preserving its Mech ID and position-to-step mapping.
+- Added native mechanical position rendering: each ROM mech value is converted
+  directly to a paint angle on the single source bitmap.
+- Corrected the native Mech mapping after Cyclone comparison testing: VPinMAME
+  supplies an absolute 0-359 degree position. The renderer now uses that angle
+  directly instead of applying the legacy frame-count modulus, so the backglass
+  wheel follows the playfield wheel and lands on the same award.
+- Mechanical step metadata up to 360 is preserved when older files are opened
+  and resaved.
+- Native mechanical wheels no longer allocate a complete in-memory collection
+  of rotated bitmap frames.
+- Untouched older mechanical backglasses continue through the original indexed
+  frame-cache path. The new Server supports both formats.
+- Existing continuous and lamp/solenoid-triggered native rotation behavior was
+  left unchanged.
+
+Designer source files changed:
+- forms/formSnippitSettings.vb
+- classes/Illumination/BulbInfo.vb
+- classes/Save.vb
+- classes/CreateCode/Coding.vb
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Server.vb
+
+
+August 16, 2026 - Native rotation fully separated from legacy rotation
+-----------------------------------------------------------------------
+
+- Corrected the incomplete native implementation: new one-image rotation no
+  longer registers as a legacy SelfRotatingImage or enters the Server's global
+  legacy rotation dictionary.
+- Each native rotating picture now owns its rotation timer, angle, direction,
+  interval, step count, and stopping state.
+- Lamp and solenoid commands address the native picture directly in DLL, EXE,
+  and B2S-set input paths.
+- Continuous native rotations start independently after the backglass opens.
+- The Designer now exports only the AutomaticRotation contract for new native
+  files; legacy SnippitRotating attributes remain reserved for old files.
+- Existing converted files that contain both metadata sets are accepted as
+  native and are prevented from entering the legacy path.
+- Legacy self-rotating and mechanical snippets retain their original generated
+  frame and global timer behavior.
+
+Designer source file changed:
+- classes/CreateCode/Coding.vb
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Server.vb
+
+
+August 16, 2026 - Legacy rotation investigation and compatibility decision
+----------------------------------------------------------------------------
+
+- Investigated older DirectB2S backglasses that initially appeared not to respond
+  to their configured ROM solenoid after conversion.
+- Compared Server 2.1.1, the last reported working version, with Server 2.1.2,
+  the first reported failing version, and traced the complete loading, ROM-input,
+  rotation-timer, frame-generation, and drawing paths.
+- Restored and retained the successful compatibility separation: native
+  single-image drawing is used only when AutomaticRotationEnabled is present and
+  enabled; older self-rotating entries continue through the generated-frame path.
+- This first correction fixed the previously identified conflict between new
+  single-image backglasses and older frame-based rotating backglasses.
+- Per-rotation-ID registration, held-input polling, and legacy rotation-thread
+  experiments were rolled back. They are not part of the delivered build.
+- Preserved native single-image rotation, legacy frame generation, mechanical
+  rotation, rotating-snippet canvas support, animation fixes, and reel changes.
+- New and legacy-converted backglasses were verified in B2S Pro preview and VPX
+  with continuous and ROM/solenoid-triggered native rotation.
+- The Black Hole vortex was ultimately found to be rotating correctly underneath
+  an unrelated legacy mask/layer. Removing the obstructing layers exposed the
+  working rotating disk; no shared Server compatibility fix was required.
+
+Final server source changes from this investigation:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Forms/formDMD.vb
+
+
+August 11, 2026 - Score reels behind the canvas
+------------------------------------------------
+
+- Added runtime support for the Score/BehindCanvas attribute written by B2S Pro.
+- Added a BehindCanvas property to the live B2SReelBox control.
+- Each EM reel digit now composites the exact matching backglass canvas area over
+  its current live reel frame when BehindCanvas is enabled.
+- Opaque canvas artwork remains in front of the reel while transparent canvas
+  openings reveal the reel from behind.
+- The compositing happens at runtime independently for every digit. It does not
+  rename, replace, pre-mask, or duplicate reel image sets in the DirectB2S.
+- Normal score updates, rolling intermediates, reel sounds, ROM/B2S mappings, and
+  illuminated reel image sets continue to use their original runtime paths.
+- DirectB2S files without the BehindCanvas attribute keep the original behavior.
+
+Server source files changed:
+- Controls/B2SReelBox.vb
+- Forms/formBackglass.vb
+
+
+August 10, 2026 - Native single-image snippet rotation
+-------------------------------------------------------
+
+- Added the SelfRotatingImage runtime picture-box type.
+- Added runtime rotation angle, direction, interval, step count, and automatic
+  start state to B2SPictureBox.
+- Added parsing for the Designer's single-image automatic-rotation metadata.
+- The Server now rotates one source image continuously instead of requiring a
+  large DirectB2S sequence containing a separate bitmap for every angle.
+- Added clockwise and counterclockwise runtime rotation.
+- Rotation remains centered on widescreen, standard, and shorter displays.
+- Added native rotation drawing to both the backglass and DMD forms.
+- Original frame-based and mechanical rotation remain supported for older files.
+- Legacy designs with stationary masks or duplicate artwork above a converted
+  rotating snippet must have those layers cleaned up in the design itself.
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+- Forms/formDMD.vb
+
+
+August 10, 2026 - Rotating snippets behind the canvas
+-----------------------------------------------------
+
+- Added runtime support for the SnippitBehindCanvas attribute.
+- Behind-canvas snippets are drawn before the stationary backglass canvas.
+- Canvas alpha masks the already-rotated artwork correctly; the mask no longer
+  rotates together with the snippet.
+- Added a small behind-canvas render cache keyed to the picture, bounds, and angle.
+- Front-of-canvas snippets retain their original behavior.
+
+Server source files changed:
+- Controls/B2SPictureBox.vb
+- Forms/formBackglass.vb
+
+
+August 10, 2026 - Animation loop and score-display stability
+-------------------------------------------------------------
+
+- Removed the dark pause at continuous light-animation loop seams when a final
+  zero-wait Off action was immediately followed by the first On action.
+- Preserved the deferred Off action for normal stop/end behavior.
+- Full-screen animation redraws keep Dream7 score displays above the repaint.
+- Score displays are invalidated and updated without stopping unrelated rotating
+  snippets or animation timers.
+- Parent forms are invalidated when background-painted animation objects change,
+  preventing stale or temporarily missing illumination frames.
+
+Server source files changed:
+- Classes/B2SAnimation.vb
+- Forms/formBackglass.vb
+
+
+August 10, 2026 - Transparent animation rendering performance
+---------------------------------------------------------------
+
+- Large illumination images with mostly transparent pixels are cropped to their
+  visible bounds after loading.
+- The Server retains the correct screen position for the cropped visible area.
+- Parent redraws process the visible light region instead of repeatedly processing
+  a full-screen transparent bitmap.
+- The current native-rotation result is reused when only surrounding illumination
+  changes, reducing unnecessary image work.
+- Light animations, rotating snippets, canvas artwork, and score displays retain
+  their intended drawing order.
+
+August 16, 2026 - Square rotation canvas placement
+---------------------------------------------------
+
+- B2S Pro now preserves the original canvas size and position for square
+  rotating images such as wheels and discs.
+- The previous export enlarged every square image to its diagonal size. On a
+  large wheel such as Hurricane, that changed 1500x1500 at (497,181) into
+  2126x2126 at (184,-132), crossing the screen cutoff and hiding the snippet.
+- Rectangular rotating artwork still receives the larger diagonal canvas it
+  needs to avoid clipping at intermediate angles.
+- No Server behavior was changed for this correction.
+
+Designer source file changed:
+- classes/CreateCode/Coding.vb
+
+
+August 16, 2026 - Native mechanical wheel pointer alignment
+------------------------------------------------------------
+
+- Native one-image mechanical wheels now center the selected wheel segment under
+  the fixed artwork pointer instead of placing the segment boundary there.
+- The correction is calculated as half of one configured mechanical position
+  (11.25 degrees for a 16-position wheel), so it follows each wheel's step count.
+- Continuous and command-triggered self-rotating images are unchanged.
+
+Server source file changed:
+- Controls/B2SPictureBox.vb
+
+Server source file changed:
+- Forms/formBackglass.vb
+
+
+August 16, 2026 - Generic DMD import/export preservation
+---------------------------------------------------------
+
+- Corrected a B2S Pro editor-wide canvas mismatch introduced by the shared
+  layer renderer. Export helpers now read the renderer's current canvas image
+  instead of the intentionally empty legacy PictureBox image field.
+- DMD illumination and image snippets are rendered and retained even when the
+  DMD canvas was not the visible editor tab at export time.
+- Imported snippet resources are rebuilt from both the Backglass and DMD
+  collections. A DMD snippet can no longer disappear after an import, project
+  save, and DirectB2S export round trip.
+- Numeric object IDs remain scoped to their parent screen. Backglass and DMD
+  bulbs or score displays may legitimately use the same ID without either
+  object being overwritten or omitted.
+- Regression round trips covered standard snippets, legacy self rotation,
+  native single-image rotation, mechanical rotation, DMD snippets, and matching
+  IDs on different screens. Mechanical and native rotation settings were not
+  changed by this correction.
+- No B2S Server code was changed for this correction.
+
+Designer source files changed:
+- classes/CreateCode/Coding.vb
+- classes/PictureBox/B2SPictureBox.vb
+
+
+August 16, 2026 - Render-independent native rotation timing
+------------------------------------------------------------
+
+- Native one-image continuous and command-triggered rotation now advances from
+  elapsed wall-clock time instead of assuming every Windows Forms timer tick
+  is delivered.
+- Large rotating images no longer run slowly when bitmap rotation and repainting
+  delay or combine timer messages.
+- Steps per rotation and frame interval now produce the configured angular speed.
+- The legacy generated-frame animation path and absolute mechanical-wheel
+  positioning path are unchanged.
+- Spin-off deceleration and the two finish-at-cycle stopping modes retain their
+  existing behavior.
+
+Server source file changed:
+- Controls/B2SPictureBox.vb
+
+
+Build and compatibility notes
+-----------------------------
+
+- Server DLL and EXE version: 3.0.0.
+- Built in the Release configuration for .NET Framework.
+- Existing DirectB2S files remain in their saved legacy format when the new
+  one-image attributes are absent.
+- New Standard Image one-image designs and unchanged legacy rotating snippets
+  have both been verified in B2S Pro and VPX.
+- Native rotating snippets and behind-canvas score reels require a DirectB2S
+  re-exported by the matching B2S Pro Designer build.
+- The updated B2S Server must be installed and registered for runtime-only features.
+
+
+Delivered files
+---------------
+
+- B2SBackglassServer.dll
+- B2SBackglassServerEXE.exe
+- B2S-Pro-Server-3.0.0.zip
+- B2S-Pro-Server-Source-3.0.0.zip
+- B2S-Pro-Backglass-1.0.1.zip
+- B2S-Pro-Backglass-Source-1.0.1.zip
+- B2SPro.exe
+- B2S-native-rotation-changelog.txt

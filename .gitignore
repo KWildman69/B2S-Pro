@@ -1,0 +1,20 @@
+# Visual Studio build output
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# Generated help output
+docs/help-source/B2SProHelp.chm
+
+# Local release-upload staging
+release-assets/
+
+# Local packages and checksums belong in GitHub Releases
+*.zip
+*.zip.sha256
+
+# Windows noise
+Thumbs.db
+Desktop.ini

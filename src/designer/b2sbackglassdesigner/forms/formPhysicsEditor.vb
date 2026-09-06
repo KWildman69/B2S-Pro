@@ -1,0 +1,1223 @@
+Imports System.Drawing.Drawing2D
+Imports System.Globalization
+Imports System.Linq
+Imports System.Windows.Forms
+
+Public Class formPhysicsEditor
+    Inherits B2SThemedForm
+
+    Private ReadOnly sourceBall As Illumination.BulbInfo
+    Private ReadOnly canvas As New PhysicsCanvas()
+    Private ReadOnly saveButton As New Button()
+    Private ReadOnly closeButton As New Button()
+    Private ReadOnly clearButton As New Button()
+    Private ReadOnly deleteButton As New Button()
+    Private ReadOnly newBoundaryButton As New Button()
+    Private ReadOnly deleteBoundaryButton As New Button()
+    Private ReadOnly renameBoundaryButton As New Button()
+    Private ReadOnly spliceBoundaryButton As New Button()
+    Private ReadOnly lockBoundaryButton As New Button()
+    Private ReadOnly addObstacleButton As New Button()
+    Private ReadOnly deleteObstacleButton As New Button()
+    Private ReadOnly addSwitchButton As New Button()
+    Private ReadOnly deleteSwitchButton As New Button()
+    Private ReadOnly switchIDBox As New NumericUpDown()
+    Private ReadOnly launcherEnabledCheck As New CheckBox()
+    Private ReadOnly launcherTypeBox As New ComboBox()
+    Private ReadOnly launcherIDBox As New NumericUpDown()
+    Private ReadOnly launcherXBox As New NumericUpDown()
+    Private ReadOnly launcherYBox As New NumericUpDown()
+    Private ReadOnly launcherAngleBox As New NumericUpDown()
+    Private ReadOnly launcherStrengthBox As New NumericUpDown()
+    Private ReadOnly launcherRandomAngleBox As New NumericUpDown()
+    Private ReadOnly launcherRandomStrengthBox As New NumericUpDown()
+    Private ReadOnly launcherCaptureRadiusBox As New NumericUpDown()
+    Private ReadOnly boundaryBox As New ComboBox()
+    Private ReadOnly enabledCheck As New CheckBox()
+    Private ReadOnly rollBallCheckBox As New CheckBox()
+    Private ReadOnly flipperBox As New ComboBox()
+    Private ReadOnly gravityBox As New NumericUpDown()
+    Private ReadOnly strengthBox As New NumericUpDown()
+    Private ReadOnly bounceBox As New NumericUpDown()
+    Private ReadOnly xBox As New NumericUpDown()
+    Private ReadOnly yBox As New NumericUpDown()
+    Private updatingCoordinates As Boolean
+
+    Public Sub New(ByVal ball As Illumination.BulbInfo,
+                   ByVal backglassImage As Image,
+                   ByVal snippets As IEnumerable(Of Illumination.BulbInfo))
+        sourceBall = ball
+        Text = "Physics Boundary Editor — " & If(String.IsNullOrWhiteSpace(ball.Name), "Ball", ball.Name)
+        StartPosition = FormStartPosition.CenterParent
+        Width = 1120
+        Height = 790
+        MinimumSize = New Size(980, 600)
+        BackColor = Color.FromArgb(9, 12, 20)
+
+        Dim sidebar As New Panel With {.Dock = DockStyle.Right, .Width = 430, .Padding = New Padding(8),
+                                      .BackColor = Color.FromArgb(22, 25, 38)}
+        Dim tabs As New TabControl With {.Dock = DockStyle.Fill}
+        Dim ballPage As TabPage = CreateEditorPage("Ball")
+        Dim boundaryPage As TabPage = CreateEditorPage("Boundaries")
+        Dim objectsPage As TabPage = CreateEditorPage("Bumpers && Switches")
+        Dim launcherPage As TabPage = CreateEditorPage("Launcher")
+        tabs.TabPages.AddRange(New TabPage() {ballPage, boundaryPage, objectsPage, launcherPage})
+        ConfigureButton(saveButton, "Save Boundaries", AddressOf SaveBoundaries)
+        ConfigureButton(closeButton, "Cancel", AddressOf CancelEditor)
+        ConfigureButton(clearButton, "Clear Points", AddressOf ClearBoundaries)
+        ConfigureButton(deleteButton, "Delete Point", AddressOf DeletePoint)
+        ConfigureButton(newBoundaryButton, "New Boundary", AddressOf NewBoundary)
+        ConfigureButton(deleteBoundaryButton, "Delete Boundary", AddressOf DeleteBoundary)
+        ConfigureButton(renameBoundaryButton, "Rename", AddressOf RenameBoundary)
+        ConfigureButton(spliceBoundaryButton, "Splice Into Line", AddressOf SpliceBoundary)
+        ConfigureButton(lockBoundaryButton, "Lock Boundary", AddressOf ToggleBoundaryLock)
+        ConfigureButton(addObstacleButton, "Add Circular Bumper", AddressOf AddObstacle)
+        ConfigureButton(deleteObstacleButton, "Delete Bumper", AddressOf DeleteObstacle)
+        ConfigureButton(addSwitchButton, "Add Switch Zone", AddressOf AddSwitchZone)
+        ConfigureButton(deleteSwitchButton, "Delete Switch Zone", AddressOf DeleteSwitchZone)
+        switchIDBox.Minimum = 1D
+        switchIDBox.Maximum = 255D
+        switchIDBox.Value = 1D
+        switchIDBox.Width = 58
+        switchIDBox.Enabled = False
+        switchIDBox.Margin = New Padding(0, 3, 8, 0)
+        AddHandler switchIDBox.ValueChanged, AddressOf SwitchIDChanged
+        Dim switchIDLabel As Label = ToolbarLabel("Switch ID:")
+
+        launcherEnabledCheck.Text = "Enable launcher"
+        launcherEnabledCheck.Checked = ball.SnippitInfo.PhysicsLauncherEnabled
+        launcherEnabledCheck.ForeColor = Color.White
+        launcherEnabledCheck.AutoSize = True
+        launcherEnabledCheck.Margin = New Padding(8, 8, 5, 0)
+        launcherTypeBox.DropDownStyle = ComboBoxStyle.DropDownList
+        launcherTypeBox.Items.AddRange(New Object() {"Solenoid", "B2S ID"})
+        launcherTypeBox.SelectedIndex = If(ball.SnippitInfo.PhysicsLauncherTriggerType = 3, 1, 0)
+        launcherTypeBox.Width = 82
+        launcherTypeBox.Margin = New Padding(0, 3, 5, 0)
+        ConfigureLauncherBox(launcherIDBox, 0D, 255D, ball.SnippitInfo.PhysicsLauncherTriggerID, 0)
+        Dim defaultX As Single = If(ball.SnippitInfo.PhysicsLauncherEnabled, ball.SnippitInfo.PhysicsLauncherX, CSng(ball.Location.X + ball.Size.Width / 2.0F))
+        Dim defaultY As Single = If(ball.SnippitInfo.PhysicsLauncherEnabled, ball.SnippitInfo.PhysicsLauncherY, CSng(ball.Location.Y + ball.Size.Height / 2.0F))
+        ConfigureLauncherBox(launcherXBox, -100000D, 100000D, defaultX, 1)
+        ConfigureLauncherBox(launcherYBox, -100000D, 100000D, defaultY, 1)
+        ConfigureLauncherBox(launcherAngleBox, -360D, 360D, ball.SnippitInfo.PhysicsLauncherAngle, 1)
+        ConfigureLauncherBox(launcherStrengthBox, 0D, 10000D, ball.SnippitInfo.PhysicsLauncherStrength, 0)
+        ConfigureLauncherBox(launcherRandomAngleBox, 0D, 180D, ball.SnippitInfo.PhysicsLauncherRandomAngle, 1)
+        ConfigureLauncherBox(launcherRandomStrengthBox, 0D, 100D, ball.SnippitInfo.PhysicsLauncherRandomStrength, 1)
+        ConfigureLauncherBox(launcherCaptureRadiusBox, 5D, 500D, ball.SnippitInfo.PhysicsLauncherCaptureRadius, 1)
+        AddHandler launcherEnabledCheck.CheckedChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherXBox.ValueChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherYBox.ValueChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherAngleBox.ValueChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherStrengthBox.ValueChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherCaptureRadiusBox.ValueChanged, AddressOf LauncherPreviewChanged
+
+        enabledCheck.Text = "Enable ball physics"
+        enabledCheck.Checked = ball.SnippitInfo.PhysicsBall
+        enabledCheck.ForeColor = Color.White
+        enabledCheck.AutoSize = True
+        enabledCheck.Margin = New Padding(8, 8, 5, 0)
+
+        rollBallCheckBox.Text = "Roll ball while moving"
+        rollBallCheckBox.Checked = ball.SnippitInfo.MotionPathRollEnabled
+        rollBallCheckBox.ForeColor = Color.White
+        rollBallCheckBox.AutoSize = True
+        rollBallCheckBox.Margin = New Padding(8, 8, 5, 0)
+
+        Dim flipperLabel As Label = ToolbarLabel("Flipper:")
+        flipperBox.DropDownStyle = ComboBoxStyle.DropDownList
+        flipperBox.Width = 145
+        flipperBox.Margin = New Padding(0, 3, 5, 0)
+        flipperBox.Items.Add("(none)")
+        For Each snippet As Illumination.BulbInfo In snippets
+            If snippet IsNot ball AndAlso snippet.IsImageSnippit AndAlso snippet.SnippitInfo.PivotAnimationEnabled AndAlso
+               Not String.IsNullOrWhiteSpace(snippet.Name) Then flipperBox.Items.Add(snippet.Name)
+        Next
+        Dim selectedFlipper As Integer = flipperBox.FindStringExact(ball.SnippitInfo.PhysicsFlipperName)
+        flipperBox.SelectedIndex = If(selectedFlipper >= 0, selectedFlipper, 0)
+
+        Dim gravityLabel As Label = ToolbarLabel("Gravity:")
+        gravityBox.Minimum = 0D
+        gravityBox.Maximum = 10000D
+        gravityBox.DecimalPlaces = 0
+        gravityBox.Increment = 25D
+        gravityBox.Value = CDec(Math.Max(0.0F, Math.Min(10000.0F, ball.SnippitInfo.PhysicsGravity)))
+        gravityBox.Width = 72
+        gravityBox.Margin = New Padding(0, 3, 8, 0)
+
+        Dim strengthLabel As Label = ToolbarLabel("Flipper strength:")
+        strengthBox.Minimum = 0D
+        strengthBox.Maximum = 5D
+        strengthBox.DecimalPlaces = 2
+        strengthBox.Increment = 0.1D
+        strengthBox.Value = CDec(Math.Max(0.0F, Math.Min(5.0F, ball.SnippitInfo.PhysicsFlipperStrength)))
+        strengthBox.Width = 62
+        strengthBox.Margin = New Padding(0, 3, 8, 0)
+
+        Dim bounceLabel As Label = ToolbarLabel("Boundary bounce:")
+        bounceBox.Minimum = 0D
+        bounceBox.Maximum = 1D
+        bounceBox.DecimalPlaces = 2
+        bounceBox.Increment = 0.05D
+        bounceBox.Value = CDec(Math.Max(0.0F, Math.Min(1.0F, ball.SnippitInfo.PhysicsBoundaryBounce)))
+        bounceBox.Width = 62
+        bounceBox.Margin = New Padding(0, 3, 8, 0)
+
+        Dim boundaryLabel As Label = ToolbarLabel("Boundary:")
+        boundaryBox.DropDownStyle = ComboBoxStyle.DropDownList
+        boundaryBox.Width = 130
+        boundaryBox.Margin = New Padding(0, 3, 3, 0)
+        AddHandler boundaryBox.SelectedIndexChanged, AddressOf ActiveBoundaryChanged
+
+        Dim xLabel As Label = ToolbarLabel("Selected X:")
+        ConfigureCoordinateBox(xBox)
+        Dim yLabel As Label = ToolbarLabel("Y:")
+        ConfigureCoordinateBox(yBox)
+        AddHandler xBox.ValueChanged, AddressOf CoordinateChanged
+        AddHandler yBox.ValueChanged, AddressOf CoordinateChanged
+
+        AddPageControls(ballPage, New Control() {enabledCheck, rollBallCheckBox, flipperLabel, flipperBox, gravityLabel, gravityBox,
+                                                 strengthLabel, strengthBox, bounceLabel, bounceBox})
+        AddPageControls(boundaryPage, New Control() {boundaryLabel, boundaryBox, lockBoundaryButton, newBoundaryButton,
+                                                     renameBoundaryButton, spliceBoundaryButton, deleteBoundaryButton,
+                                                     clearButton, deleteButton, xLabel, xBox, yLabel, yBox})
+        AddPageControls(objectsPage, New Control() {SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
+                                                    SidebarHeader("SWITCH ZONES"), addSwitchButton, deleteSwitchButton,
+                                                    switchIDLabel, switchIDBox})
+        AddPageControls(launcherPage, New Control() {launcherEnabledCheck, ToolbarLabel("Trigger type:"), launcherTypeBox,
+                                                     ToolbarLabel("Trigger ID:"), launcherIDBox,
+                                                     ToolbarLabel("Launch X:"), launcherXBox, ToolbarLabel("Launch Y:"), launcherYBox,
+                                                     ToolbarLabel("Launch angle:"), launcherAngleBox, ToolbarLabel("Strength:"), launcherStrengthBox,
+                                                     ToolbarLabel("Random angle:"), launcherRandomAngleBox,
+                                                     ToolbarLabel("Random strength %:"), launcherRandomStrengthBox,
+                                                     ToolbarLabel("Capture radius:"), launcherCaptureRadiusBox})
+
+        Dim actions As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .Height = 46, .ColumnCount = 2,
+                                                  .Padding = New Padding(0, 6, 0, 0)}
+        actions.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50.0F))
+        actions.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50.0F))
+        saveButton.Dock = DockStyle.Fill : closeButton.Dock = DockStyle.Fill
+        saveButton.Margin = New Padding(0, 0, 4, 0) : closeButton.Margin = New Padding(4, 0, 0, 0)
+        actions.Controls.Add(saveButton, 0, 0) : actions.Controls.Add(closeButton, 1, 0)
+        sidebar.Controls.Add(tabs) : sidebar.Controls.Add(actions)
+
+        Dim help As New Label With {
+            .Dock = DockStyle.Bottom, .Height = 30, .TextAlign = ContentAlignment.MiddleCenter,
+            .ForeColor = Color.White, .BackColor = Color.FromArgb(22, 25, 38),
+            .Text = "Select or create a boundary. Click to add points; drag for exact placement. Separate boundaries never connect."
+        }
+
+        canvas.Dock = DockStyle.Fill
+        canvas.BackglassImage = New Bitmap(backglassImage)
+        canvas.AuthoredSize = backglassImage.Size
+        For Each snippet As Illumination.BulbInfo In snippets.OrderBy(Function(item) item.ZOrder)
+            If snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing Then
+                canvas.Scene.Add(New SceneItem(snippet.Name, snippet.Image,
+                                               New RectangleF(snippet.Location.X, snippet.Location.Y,
+                                                              Math.Max(1, snippet.Size.Width), Math.Max(1, snippet.Size.Height)),
+                                               Object.ReferenceEquals(snippet, ball)))
+            End If
+        Next
+        If ball.SnippitInfo.PhysicsBoundaryPaths.Count > 0 Then
+            For Each path As List(Of PointF) In ball.SnippitInfo.PhysicsBoundaryPaths
+                canvas.Paths.Add(New List(Of PointF)(path))
+            Next
+        Else
+            canvas.Paths.Add(New List(Of PointF)(ball.SnippitInfo.PhysicsFloorPoints))
+        End If
+        For index As Integer = 0 To canvas.Paths.Count - 1
+            Dim savedName As String = If(index < ball.SnippitInfo.PhysicsBoundaryNames.Count,
+                                         ball.SnippitInfo.PhysicsBoundaryNames(index).Trim(), String.Empty)
+            canvas.BoundaryNames.Add(If(savedName.Length > 0, savedName, "Boundary " & (index + 1).ToString()))
+            canvas.BoundaryLocks.Add(index < ball.SnippitInfo.PhysicsBoundaryLocks.Count AndAlso
+                                     ball.SnippitInfo.PhysicsBoundaryLocks(index))
+        Next
+        canvas.Obstacles.AddRange(ball.SnippitInfo.PhysicsObstacles)
+        canvas.SwitchZones.AddRange(ball.SnippitInfo.PhysicsSwitchZones)
+        canvas.SwitchIDs.AddRange(ball.SnippitInfo.PhysicsSwitchIDs)
+        While canvas.SwitchIDs.Count < canvas.SwitchZones.Count
+            canvas.SwitchIDs.Add(1)
+        End While
+        RefreshBoundaryList(0)
+        AddHandler canvas.SelectionChanged, AddressOf CanvasSelectionChanged
+        AddHandler canvas.BoundaryStructureChanged, AddressOf CanvasBoundaryStructureChanged
+
+        Controls.Add(canvas)
+        Controls.Add(help)
+        Controls.Add(sidebar)
+        CanvasSelectionChanged(Nothing, EventArgs.Empty)
+        LauncherPreviewChanged(Nothing, EventArgs.Empty)
+    End Sub
+
+    Private Shared Function CreateEditorPage(ByVal caption As String) As TabPage
+        Dim page As New TabPage(caption) With {.BackColor = Color.FromArgb(22, 25, 38), .Padding = New Padding(8)}
+        Dim list As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.TopDown,
+                                             .WrapContents = False, .AutoScroll = True,
+                                             .BackColor = Color.FromArgb(22, 25, 38)}
+        page.Controls.Add(list)
+        Return page
+    End Function
+
+    Private Shared Sub AddPageControls(ByVal page As TabPage, ByVal controls As IEnumerable(Of Control))
+        Dim list As FlowLayoutPanel = DirectCast(page.Controls(0), FlowLayoutPanel)
+        For Each control As Control In controls
+            control.Margin = New Padding(3, 3, 3, 3)
+            If TypeOf control Is Label Then
+                control.AutoSize = False : control.Width = 370 : control.Height = If(DirectCast(control, Label).Font.Bold, 26, 20)
+                DirectCast(control, Label).TextAlign = ContentAlignment.BottomLeft
+            ElseIf TypeOf control Is CheckBox Then
+                control.AutoSize = False : control.Width = 370 : control.Height = 25
+            Else
+                control.Width = 370
+                If TypeOf control Is Button Then control.AutoSize = False : control.Height = 31
+            End If
+            list.Controls.Add(control)
+        Next
+    End Sub
+
+    Private Shared Function SidebarHeader(ByVal caption As String) As Label
+        Return New Label With {.Text = caption, .ForeColor = Color.FromArgb(105, 220, 255),
+                               .Font = New Font(SystemFonts.MessageBoxFont, FontStyle.Bold),
+                               .AutoSize = False, .Width = 370, .Height = 26,
+                               .TextAlign = ContentAlignment.BottomLeft, .Margin = New Padding(3, 10, 3, 2)}
+    End Function
+
+    Public ReadOnly Property ResultPoints As List(Of PointF)
+        Get
+            Dim paths As List(Of List(Of PointF)) = ResultBoundaryPaths
+            Return If(paths.Count > 0, New List(Of PointF)(paths(0)), New List(Of PointF)())
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBoundaryPaths As List(Of List(Of PointF))
+        Get
+            Dim result As New List(Of List(Of PointF))()
+            For Each path As List(Of PointF) In canvas.Paths
+                If path.Count >= 2 Then result.Add(New List(Of PointF)(path))
+            Next
+            Return result
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBoundaryNames As List(Of String)
+        Get
+            Dim result As New List(Of String)()
+            For index As Integer = 0 To canvas.Paths.Count - 1
+                If canvas.Paths(index).Count >= 2 Then result.Add(canvas.BoundaryNames(index))
+            Next
+            Return result
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBoundaryLocks As List(Of Boolean)
+        Get
+            Dim result As New List(Of Boolean)()
+            For index As Integer = 0 To canvas.Paths.Count - 1
+                If canvas.Paths(index).Count >= 2 Then
+                    result.Add(index < canvas.BoundaryLocks.Count AndAlso canvas.BoundaryLocks(index))
+                End If
+            Next
+            Return result
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultObstacles As List(Of RectangleF)
+        Get
+            Return canvas.Obstacles.Select(Function(item) New RectangleF(item.X, item.Y, item.Width, item.Height)).ToList()
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultSwitchZones As List(Of RectangleF)
+        Get
+            Return canvas.SwitchZones.Select(Function(item) New RectangleF(item.X, item.Y, item.Width, item.Height)).ToList()
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultSwitchIDs As List(Of Integer)
+        Get
+            Return New List(Of Integer)(canvas.SwitchIDs)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultEnabled As Boolean
+        Get
+            Return enabledCheck.Checked
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultRollEnabled As Boolean
+        Get
+            Return rollBallCheckBox.Checked
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultFlipperName As String
+        Get
+            Return If(flipperBox.SelectedIndex <= 0, String.Empty, CStr(flipperBox.SelectedItem))
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultGravity As Single
+        Get
+            Return CSng(gravityBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultFlipperStrength As Single
+        Get
+            Return CSng(strengthBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBoundaryBounce As Single
+        Get
+            Return CSng(bounceBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBounds As String
+        Get
+            Return "0,0," & canvas.AuthoredSize.Width.ToString(CultureInfo.InvariantCulture) & "," &
+                   canvas.AuthoredSize.Height.ToString(CultureInfo.InvariantCulture)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultLauncherEnabled As Boolean
+        Get
+            Return launcherEnabledCheck.Checked
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherTriggerType As Integer
+        Get
+            Return If(launcherTypeBox.SelectedIndex = 1, 3, 1)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherTriggerID As Integer
+        Get
+            Return CInt(launcherIDBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherX As Single
+        Get
+            Return CSng(launcherXBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherY As Single
+        Get
+            Return CSng(launcherYBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherAngle As Single
+        Get
+            Return CSng(launcherAngleBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherStrength As Single
+        Get
+            Return CSng(launcherStrengthBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherRandomAngle As Single
+        Get
+            Return CSng(launcherRandomAngleBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherRandomStrength As Single
+        Get
+            Return CSng(launcherRandomStrengthBox.Value)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherCaptureRadius As Single
+        Get
+            Return CSng(launcherCaptureRadiusBox.Value)
+        End Get
+    End Property
+
+    Private Sub ConfigureButton(ByVal button As Button, ByVal caption As String, ByVal handler As EventHandler)
+        button.Text = caption
+        button.AutoSize = True
+        button.Height = 29
+        button.Margin = New Padding(3, 1, 3, 1)
+        AddHandler button.Click, handler
+    End Sub
+
+    Private Function ToolbarLabel(ByVal text As String) As Label
+        Return New Label With {.Text = text, .ForeColor = Color.White, .AutoSize = True,
+                               .Margin = New Padding(8, 8, 3, 0)}
+    End Function
+
+    Private Sub ConfigureCoordinateBox(ByVal box As NumericUpDown)
+        box.Minimum = -100000D
+        box.Maximum = 100000D
+        box.DecimalPlaces = 1
+        box.Increment = 1D
+        box.Width = 72
+        box.Enabled = False
+        box.Margin = New Padding(0, 3, 4, 0)
+    End Sub
+
+    Private Sub ConfigureLauncherBox(ByVal box As NumericUpDown, ByVal minimum As Decimal, ByVal maximum As Decimal, ByVal value As Single, ByVal decimals As Integer)
+        box.Minimum = minimum
+        box.Maximum = maximum
+        box.DecimalPlaces = decimals
+        box.Increment = If(decimals = 0, 1D, 0.5D)
+        box.Value = Math.Max(minimum, Math.Min(maximum, CDec(value)))
+        box.Width = 68
+        box.Margin = New Padding(0, 3, 5, 0)
+    End Sub
+
+    Private Sub LauncherPreviewChanged(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.LauncherEnabled = launcherEnabledCheck.Checked
+        canvas.LauncherOrigin = New PointF(CSng(launcherXBox.Value), CSng(launcherYBox.Value))
+        canvas.LauncherAngle = CSng(launcherAngleBox.Value)
+        canvas.LauncherStrength = CSng(launcherStrengthBox.Value)
+        canvas.LauncherCaptureRadius = CSng(launcherCaptureRadiusBox.Value)
+        canvas.Invalidate()
+    End Sub
+
+    Private Sub CanvasSelectionChanged(ByVal sender As Object, ByVal e As EventArgs)
+        updatingCoordinates = True
+        Dim point As Nullable(Of PointF) = canvas.SelectedPoint
+        Dim boundaryEditable As Boolean = Not canvas.IsActiveBoundaryLocked
+        xBox.Enabled = point.HasValue AndAlso boundaryEditable
+        yBox.Enabled = point.HasValue AndAlso boundaryEditable
+        deleteButton.Enabled = point.HasValue AndAlso boundaryEditable
+        If point.HasValue Then
+            xBox.Value = Math.Max(xBox.Minimum, Math.Min(xBox.Maximum, CDec(point.Value.X)))
+            yBox.Value = Math.Max(yBox.Minimum, Math.Min(yBox.Maximum, CDec(point.Value.Y)))
+        End If
+        updatingCoordinates = False
+        Dim switchID As Nullable(Of Integer) = canvas.SelectedSwitchID
+        switchIDBox.Enabled = switchID.HasValue
+        deleteSwitchButton.Enabled = switchID.HasValue
+        If switchID.HasValue Then switchIDBox.Value = Math.Max(switchIDBox.Minimum, Math.Min(switchIDBox.Maximum, switchID.Value))
+    End Sub
+
+    Private Sub CoordinateChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If updatingCoordinates OrElse Not canvas.SelectedPoint.HasValue Then Return
+        canvas.SetSelectedPoint(New PointF(CSng(xBox.Value), CSng(yBox.Value)))
+    End Sub
+
+    Private Sub ClearBoundaries(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.ClearPoints()
+    End Sub
+
+    Private Sub DeletePoint(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.DeleteSelectedPoint()
+    End Sub
+
+    Private Sub NewBoundary(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.Paths.Add(New List(Of PointF)())
+        canvas.BoundaryNames.Add("Boundary " & canvas.Paths.Count.ToString())
+        canvas.BoundaryLocks.Add(False)
+        RefreshBoundaryList(canvas.Paths.Count - 1)
+    End Sub
+
+    Private Sub DeleteBoundary(ByVal sender As Object, ByVal e As EventArgs)
+        If canvas.IsActiveBoundaryLocked Then Return
+        If canvas.Paths.Count <= 1 Then
+            canvas.ClearPoints()
+            Return
+        End If
+        Dim index As Integer = canvas.ActivePathIndex
+        canvas.Paths.RemoveAt(index)
+        canvas.BoundaryNames.RemoveAt(index)
+        If index < canvas.BoundaryLocks.Count Then canvas.BoundaryLocks.RemoveAt(index)
+        RefreshBoundaryList(Math.Min(index, canvas.Paths.Count - 1))
+    End Sub
+
+    Private Sub RenameBoundary(ByVal sender As Object, ByVal e As EventArgs)
+        If canvas.IsActiveBoundaryLocked Then Return
+        Dim index As Integer = canvas.ActivePathIndex
+        If index < 0 OrElse index >= canvas.BoundaryNames.Count Then Return
+        Dim value As String = Microsoft.VisualBasic.Interaction.InputBox("Boundary name:", "Rename Boundary", canvas.BoundaryNames(index)).Replace("|", " ").Trim()
+        If value.Length = 0 Then Return
+        canvas.BoundaryNames(index) = value
+        RefreshBoundaryList(index)
+    End Sub
+
+    Private Sub SpliceBoundary(ByVal sender As Object, ByVal e As EventArgs)
+        If canvas.IsActiveBoundaryLocked Then Return
+        If canvas.SpliceActiveBoundary() Then
+            RefreshBoundaryList(canvas.ActivePathIndex)
+        Else
+            MessageBox.Show(Me, "This boundary needs two intersections with the same older boundary before it can be spliced.",
+                            "Splice Into Line", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End If
+    End Sub
+
+    Private Sub AddObstacle(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.AddObstacle()
+    End Sub
+
+    Private Sub DeleteObstacle(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.DeleteSelectedObstacle()
+    End Sub
+
+    Private Sub AddSwitchZone(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.AddSwitchZone(CInt(switchIDBox.Value))
+    End Sub
+
+    Private Sub DeleteSwitchZone(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.DeleteSelectedSwitchZone()
+    End Sub
+
+    Private Sub SwitchIDChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If switchIDBox.Enabled Then canvas.SetSelectedSwitchID(CInt(switchIDBox.Value))
+    End Sub
+
+    Private Sub ActiveBoundaryChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If boundaryBox.SelectedIndex >= 0 Then
+            canvas.SetActivePath(boundaryBox.SelectedIndex)
+            RefreshBoundaryEditState()
+        End If
+    End Sub
+
+    Private Sub ToggleBoundaryLock(ByVal sender As Object, ByVal e As EventArgs)
+        Dim index As Integer = canvas.ActivePathIndex
+        If index < 0 OrElse index >= canvas.Paths.Count Then Return
+        canvas.SetBoundaryLocked(index, Not canvas.IsBoundaryLocked(index))
+        RefreshBoundaryList(index)
+        CanvasSelectionChanged(Nothing, EventArgs.Empty)
+    End Sub
+
+    Private Sub CanvasBoundaryStructureChanged(ByVal sender As Object, ByVal e As EventArgs)
+        RefreshBoundaryList(canvas.ActivePathIndex)
+    End Sub
+
+    Private Sub RefreshBoundaryList(ByVal selectedIndex As Integer)
+        boundaryBox.BeginUpdate()
+        boundaryBox.Items.Clear()
+        For index As Integer = 0 To canvas.BoundaryNames.Count - 1
+            Dim prefix As String = If(canvas.IsBoundaryLocked(index), "[Locked] ", String.Empty)
+            boundaryBox.Items.Add(prefix & canvas.BoundaryNames(index))
+        Next
+        boundaryBox.EndUpdate()
+        If boundaryBox.Items.Count > 0 Then boundaryBox.SelectedIndex = Math.Max(0, Math.Min(selectedIndex, boundaryBox.Items.Count - 1))
+        RefreshBoundaryEditState()
+        canvas.Invalidate()
+    End Sub
+
+    Private Sub RefreshBoundaryEditState()
+        Dim hasBoundary As Boolean = canvas.Paths.Count > 0 AndAlso canvas.ActivePathIndex >= 0
+        Dim locked As Boolean = hasBoundary AndAlso canvas.IsActiveBoundaryLocked
+        lockBoundaryButton.Enabled = hasBoundary
+        lockBoundaryButton.Text = If(locked, "Unlock Boundary", "Lock Boundary")
+        deleteBoundaryButton.Enabled = hasBoundary AndAlso Not locked
+        renameBoundaryButton.Enabled = hasBoundary AndAlso Not locked
+        spliceBoundaryButton.Enabled = hasBoundary AndAlso Not locked
+        clearButton.Enabled = hasBoundary AndAlso Not locked
+        CanvasSelectionChanged(Nothing, EventArgs.Empty)
+    End Sub
+
+    Private Sub SaveBoundaries(ByVal sender As Object, ByVal e As EventArgs)
+        If enabledCheck.Checked AndAlso Not canvas.Paths.Any(Function(path) path IsNot Nothing AndAlso path.Count >= 2) Then
+            MessageBox.Show(Me, "Enabled ball physics needs at least two boundary points.", "Physics Boundary Editor",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        DialogResult = DialogResult.OK
+        Close()
+    End Sub
+
+    Private Sub CancelEditor(ByVal sender As Object, ByVal e As EventArgs)
+        DialogResult = DialogResult.Cancel
+        Close()
+    End Sub
+
+    Protected Overrides Sub Dispose(ByVal disposing As Boolean)
+        If disposing AndAlso canvas.BackglassImage IsNot Nothing Then canvas.BackglassImage.Dispose()
+        MyBase.Dispose(disposing)
+    End Sub
+
+    Private Class SceneItem
+        Public ReadOnly Name As String
+        Public ReadOnly Image As Image
+        Public ReadOnly Bounds As RectangleF
+        Public ReadOnly IsBall As Boolean
+
+        Public Sub New(ByVal name As String, ByVal image As Image, ByVal bounds As RectangleF, ByVal isBall As Boolean)
+            Me.Name = name
+            Me.Image = image
+            Me.Bounds = bounds
+            Me.IsBall = isBall
+        End Sub
+    End Class
+
+    Private Class PhysicsCanvas
+        Inherits Control
+
+        Public BackglassImage As Image
+        Public AuthoredSize As Size
+        Public ReadOnly Scene As New List(Of SceneItem)()
+        Public ReadOnly Paths As New List(Of List(Of PointF))()
+        Public ReadOnly BoundaryNames As New List(Of String)()
+        Public ReadOnly BoundaryLocks As New List(Of Boolean)()
+        Public ReadOnly Obstacles As New List(Of RectangleF)()
+        Public ReadOnly SwitchZones As New List(Of RectangleF)()
+        Public ReadOnly SwitchIDs As New List(Of Integer)()
+        Public LauncherEnabled As Boolean
+        Public LauncherOrigin As PointF
+        Public LauncherAngle As Single
+        Public LauncherStrength As Single
+        Public LauncherCaptureRadius As Single
+        Public Property ActivePathIndex As Integer = 0
+        Private selectedIndex As Integer = -1
+        Private dragging As Boolean
+        Private selectedObstacle As Integer = -1
+        Private resizingObstacle As Boolean
+        Private selectedSwitch As Integer = -1
+        Private resizingSwitch As Boolean
+
+        Public Event SelectionChanged As EventHandler
+        Public Event BoundaryStructureChanged As EventHandler
+
+        Public Sub New()
+            DoubleBuffered = True
+            SetStyle(ControlStyles.ResizeRedraw Or ControlStyles.UserPaint Or ControlStyles.AllPaintingInWmPaint Or
+                     ControlStyles.OptimizedDoubleBuffer, True)
+            BackColor = Color.Black
+            TabStop = True
+        End Sub
+
+        Public ReadOnly Property SelectedPoint As Nullable(Of PointF)
+            Get
+                Dim points As List(Of PointF) = ActivePoints()
+                If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return Nothing
+                Return points(selectedIndex)
+            End Get
+        End Property
+
+        Public ReadOnly Property IsActiveBoundaryLocked As Boolean
+            Get
+                Return IsBoundaryLocked(ActivePathIndex)
+            End Get
+        End Property
+
+        Public Function IsBoundaryLocked(ByVal index As Integer) As Boolean
+            Return index >= 0 AndAlso index < BoundaryLocks.Count AndAlso BoundaryLocks(index)
+        End Function
+
+        Public Sub SetBoundaryLocked(ByVal index As Integer, ByVal locked As Boolean)
+            EnsureBoundaryMetadata()
+            If index < 0 OrElse index >= BoundaryLocks.Count Then Return
+            BoundaryLocks(index) = locked
+            selectedIndex = -1
+            dragging = False
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public ReadOnly Property SelectedSwitchID As Nullable(Of Integer)
+            Get
+                If selectedSwitch < 0 OrElse selectedSwitch >= SwitchIDs.Count Then Return Nothing
+                Return SwitchIDs(selectedSwitch)
+            End Get
+        End Property
+
+        Public Sub SetActivePath(ByVal index As Integer)
+            EnsureBoundaryMetadata()
+            If Paths.Count = 0 Then ActivePathIndex = -1 Else ActivePathIndex = Math.Max(0, Math.Min(index, Paths.Count - 1))
+            selectedIndex = -1
+            dragging = False
+            selectedObstacle = -1
+            selectedSwitch = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub AddObstacle()
+            Dim diameter As Single = Math.Max(30.0F, Math.Min(AuthoredSize.Width, AuthoredSize.Height) * 0.08F)
+            Obstacles.Add(New RectangleF((AuthoredSize.Width - diameter) / 2.0F, (AuthoredSize.Height - diameter) / 2.0F, diameter, diameter))
+            selectedObstacle = Obstacles.Count - 1
+            selectedIndex = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub DeleteSelectedObstacle()
+            If selectedObstacle < 0 OrElse selectedObstacle >= Obstacles.Count Then Return
+            Obstacles.RemoveAt(selectedObstacle)
+            selectedObstacle = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub AddSwitchZone(ByVal switchID As Integer)
+            Dim width As Single = Math.Max(60.0F, AuthoredSize.Width * 0.12F)
+            Dim height As Single = Math.Max(40.0F, AuthoredSize.Height * 0.1F)
+            SwitchZones.Add(New RectangleF((AuthoredSize.Width - width) / 2.0F, (AuthoredSize.Height - height) / 2.0F, width, height))
+            SwitchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
+            selectedSwitch = SwitchZones.Count - 1
+            selectedObstacle = -1
+            selectedIndex = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub DeleteSelectedSwitchZone()
+            If selectedSwitch < 0 OrElse selectedSwitch >= SwitchZones.Count Then Return
+            SwitchZones.RemoveAt(selectedSwitch)
+            SwitchIDs.RemoveAt(selectedSwitch)
+            selectedSwitch = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub SetSelectedSwitchID(ByVal switchID As Integer)
+            If selectedSwitch < 0 OrElse selectedSwitch >= SwitchIDs.Count Then Return
+            SwitchIDs(selectedSwitch) = Math.Max(1, Math.Min(255, switchID))
+            Invalidate()
+        End Sub
+
+        Public Function SpliceActiveBoundary() As Boolean
+            If IsActiveBoundaryLocked Then Return False
+            Dim merged As Boolean = MergeActivePathAtIntersections()
+            If merged Then RaiseEvent BoundaryStructureChanged(Me, EventArgs.Empty)
+            Return merged
+        End Function
+
+        Public Sub SetSelectedPoint(ByVal point As PointF)
+            If IsActiveBoundaryLocked Then Return
+            Dim points As List(Of PointF) = ActivePoints()
+            If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return
+            points(selectedIndex) = ClampPoint(point)
+            Invalidate()
+        End Sub
+
+        Public Sub DeleteSelectedPoint()
+            If IsActiveBoundaryLocked Then Return
+            Dim points As List(Of PointF) = ActivePoints()
+            If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return
+            points.RemoveAt(selectedIndex)
+            selectedIndex = Math.Min(selectedIndex, points.Count - 1)
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Public Sub ClearPoints()
+            If IsActiveBoundaryLocked Then Return
+            ActivePoints().Clear()
+            selectedIndex = -1
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Protected Overrides Sub OnPaint(ByVal e As PaintEventArgs)
+            MyBase.OnPaint(e)
+            If BackglassImage Is Nothing OrElse AuthoredSize.Width <= 0 OrElse AuthoredSize.Height <= 0 Then Return
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+            Dim view As RectangleF = ImageView()
+            e.Graphics.DrawImage(BackglassImage, view)
+            Dim scale As Single = view.Width / AuthoredSize.Width
+            Dim state As GraphicsState = e.Graphics.Save()
+            e.Graphics.TranslateTransform(view.X, view.Y)
+            e.Graphics.ScaleTransform(scale, scale)
+
+            For Each item As SceneItem In Scene
+                e.Graphics.DrawImage(item.Image, item.Bounds)
+                If item.IsBall Then
+                    Using ballPen As New Pen(Color.Lime, 2.0F / scale)
+                        e.Graphics.DrawRectangle(ballPen, item.Bounds.X, item.Bounds.Y, item.Bounds.Width, item.Bounds.Height)
+                    End Using
+                End If
+            Next
+
+            For pathIndex As Integer = 0 To Paths.Count - 1
+                Dim path As List(Of PointF) = Paths(pathIndex)
+                If path.Count > 1 Then
+                    Dim boundaryColor As Color
+                    If IsBoundaryLocked(pathIndex) Then
+                        boundaryColor = If(pathIndex = ActivePathIndex, Color.Gold, Color.FromArgb(210, 150, 150, 150))
+                    Else
+                        boundaryColor = If(pathIndex = ActivePathIndex, Color.FromArgb(255, 0, 230, 255), Color.FromArgb(210, 255, 80, 190))
+                    End If
+                    Using shadow As New Pen(Color.Black, 7.0F / scale),
+                          boundary As New Pen(boundaryColor, 3.0F / scale)
+                        shadow.LineJoin = LineJoin.Round
+                        boundary.LineJoin = LineJoin.Round
+                        e.Graphics.DrawLines(shadow, path.ToArray())
+                        e.Graphics.DrawLines(boundary, path.ToArray())
+                    End Using
+                End If
+            Next
+            For obstacleIndex As Integer = 0 To Obstacles.Count - 1
+                Dim obstacle As RectangleF = Obstacles(obstacleIndex)
+                Using fill As New SolidBrush(Color.FromArgb(55, 255, 170, 0)),
+                      outline As New Pen(If(obstacleIndex = selectedObstacle, Color.Yellow, Color.Orange), 3.0F / scale)
+                    e.Graphics.FillEllipse(fill, obstacle)
+                    e.Graphics.DrawEllipse(outline, obstacle)
+                End Using
+                If obstacleIndex = selectedObstacle Then
+                    Dim handleRadius As Single = 7.0F / scale
+                    Dim handle As New RectangleF(obstacle.Right - handleRadius, obstacle.Top + obstacle.Height / 2.0F - handleRadius,
+                                                 handleRadius * 2.0F, handleRadius * 2.0F)
+                    e.Graphics.FillEllipse(Brushes.Yellow, handle)
+                    e.Graphics.DrawEllipse(Pens.Black, handle)
+                End If
+            Next
+            For switchIndex As Integer = 0 To SwitchZones.Count - 1
+                Dim zone As RectangleF = SwitchZones(switchIndex)
+                Using fill As New SolidBrush(Color.FromArgb(45, 0, 255, 90)),
+                      outline As New Pen(If(switchIndex = selectedSwitch, Color.Yellow, Color.Lime), 3.0F / scale),
+                      labelFont As New Font(Font.FontFamily, Math.Max(8.0F, 12.0F / scale), FontStyle.Bold)
+                    e.Graphics.FillRectangle(fill, zone)
+                    e.Graphics.DrawRectangle(outline, zone.X, zone.Y, zone.Width, zone.Height)
+                    e.Graphics.DrawString("SW " & SwitchIDs(switchIndex).ToString(), labelFont, Brushes.White, zone.X + 3.0F / scale, zone.Y + 3.0F / scale)
+                End Using
+                If switchIndex = selectedSwitch Then
+                    Dim handleSize As Single = 12.0F / scale
+                    Dim handle As New RectangleF(zone.Right - handleSize, zone.Bottom - handleSize, handleSize, handleSize)
+                    e.Graphics.FillRectangle(Brushes.Yellow, handle)
+                    e.Graphics.DrawRectangle(Pens.Black, Rectangle.Round(handle))
+                End If
+            Next
+            If LauncherEnabled Then
+                Dim radians As Double = LauncherAngle * Math.PI / 180.0R
+                Dim length As Single = Math.Max(35.0F, Math.Min(220.0F, LauncherStrength * 0.16F))
+                Dim tip As New PointF(LauncherOrigin.X + CSng(Math.Cos(radians)) * length, LauncherOrigin.Y + CSng(Math.Sin(radians)) * length)
+                Using launchPen As New Pen(Color.DeepSkyBlue, 4.0F / scale)
+                    launchPen.CustomEndCap = New AdjustableArrowCap(7.0F / scale, 8.0F / scale)
+                    e.Graphics.DrawLine(launchPen, LauncherOrigin, tip)
+                End Using
+                Dim launchRadius As Single = 8.0F / scale
+                e.Graphics.FillEllipse(Brushes.DeepSkyBlue, LauncherOrigin.X - launchRadius, LauncherOrigin.Y - launchRadius, launchRadius * 2.0F, launchRadius * 2.0F)
+                e.Graphics.DrawString("LAUNCH", Font, Brushes.White, LauncherOrigin.X + 10.0F / scale, LauncherOrigin.Y + 4.0F / scale)
+                Using capturePen As New Pen(Color.FromArgb(210, 80, 255, 160), 2.0F / scale)
+                    capturePen.DashStyle = DashStyle.Dash
+                    e.Graphics.DrawEllipse(capturePen, LauncherOrigin.X - LauncherCaptureRadius, LauncherOrigin.Y - LauncherCaptureRadius, LauncherCaptureRadius * 2.0F, LauncherCaptureRadius * 2.0F)
+                End Using
+            End If
+            Dim points As List(Of PointF) = ActivePoints()
+            For index As Integer = 0 To points.Count - 1
+                Dim radius As Single = 8.0F / scale
+                Dim point As PointF = points(index)
+                Dim marker As New RectangleF(point.X - radius, point.Y - radius, radius * 2.0F, radius * 2.0F)
+                Dim markerColor As Color = If(IsActiveBoundaryLocked, Color.Goldenrod,
+                                              If(index = selectedIndex, Color.Yellow, Color.OrangeRed))
+                Using fill As New SolidBrush(markerColor), outline As New Pen(Color.White, 2.0F / scale)
+                    e.Graphics.FillEllipse(fill, marker)
+                    e.Graphics.DrawEllipse(outline, marker)
+                End Using
+            Next
+            e.Graphics.Restore(state)
+        End Sub
+
+        Protected Overrides Sub OnMouseDown(ByVal e As MouseEventArgs)
+            MyBase.OnMouseDown(e)
+            Focus()
+            Dim authored As PointF = ClientToAuthored(e.Location)
+            Dim switchHit As Integer = HitSwitchZone(authored)
+            If e.Button = MouseButtons.Left AndAlso switchHit >= 0 Then
+                selectedSwitch = switchHit
+                selectedObstacle = -1
+                selectedIndex = -1
+                resizingSwitch = HitSwitchHandle(authored, SwitchZones(switchHit))
+                dragging = True
+                Invalidate()
+                RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+                Return
+            End If
+            Dim obstacleHit As Integer = HitObstacle(authored)
+            If e.Button = MouseButtons.Left AndAlso obstacleHit >= 0 Then
+                selectedObstacle = obstacleHit
+                selectedSwitch = -1
+                selectedIndex = -1
+                resizingObstacle = HitObstacleHandle(authored, Obstacles(obstacleHit))
+                dragging = True
+                Invalidate()
+                RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+                Return
+            End If
+            If IsActiveBoundaryLocked Then
+                selectedIndex = -1
+                dragging = False
+                Invalidate()
+                RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+                Return
+            End If
+            Dim hit As Integer = HitPoint(authored)
+            If e.Button = MouseButtons.Right Then
+                If hit >= 0 Then
+                    selectedIndex = hit
+                    DeleteSelectedPoint()
+                End If
+                Return
+            End If
+            If e.Button <> MouseButtons.Left Then Return
+            If hit >= 0 Then
+                selectedIndex = hit
+                dragging = True
+            ElseIf IsInsideImage(e.Location) Then
+                Dim points As List(Of PointF) = ActivePoints()
+                points.Add(ClampPoint(authored))
+                selectedIndex = points.Count - 1
+                dragging = True
+            End If
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Protected Overrides Sub OnMouseMove(ByVal e As MouseEventArgs)
+            MyBase.OnMouseMove(e)
+            Dim points As List(Of PointF) = ActivePoints()
+            If dragging AndAlso selectedSwitch >= 0 AndAlso selectedSwitch < SwitchZones.Count Then
+                Dim zone As RectangleF = SwitchZones(selectedSwitch)
+                Dim authored As PointF = ClampPoint(ClientToAuthored(e.Location))
+                If resizingSwitch Then
+                    SwitchZones(selectedSwitch) = New RectangleF(zone.X, zone.Y, Math.Max(12.0F, authored.X - zone.X), Math.Max(12.0F, authored.Y - zone.Y))
+                Else
+                    Dim x As Single = Math.Max(0.0F, Math.Min(AuthoredSize.Width - zone.Width, authored.X - zone.Width / 2.0F))
+                    Dim y As Single = Math.Max(0.0F, Math.Min(AuthoredSize.Height - zone.Height, authored.Y - zone.Height / 2.0F))
+                    SwitchZones(selectedSwitch) = New RectangleF(x, y, zone.Width, zone.Height)
+                End If
+                Invalidate()
+                Return
+            End If
+            If dragging AndAlso selectedObstacle >= 0 AndAlso selectedObstacle < Obstacles.Count Then
+                Dim obstacle As RectangleF = Obstacles(selectedObstacle)
+                Dim authored As PointF = ClampPoint(ClientToAuthored(e.Location))
+                If resizingObstacle Then
+                    Dim centerX As Single = obstacle.X + obstacle.Width / 2.0F
+                    Dim centerY As Single = obstacle.Y + obstacle.Height / 2.0F
+                    Dim radius As Single = Math.Max(8.0F, CSng(Math.Sqrt((authored.X - centerX) ^ 2 + (authored.Y - centerY) ^ 2)))
+                    Obstacles(selectedObstacle) = New RectangleF(centerX - radius, centerY - radius, radius * 2.0F, radius * 2.0F)
+                Else
+                    Obstacles(selectedObstacle) = New RectangleF(authored.X - obstacle.Width / 2.0F, authored.Y - obstacle.Height / 2.0F,
+                                                                 obstacle.Width, obstacle.Height)
+                End If
+                Invalidate()
+                Return
+            End If
+            If IsActiveBoundaryLocked Then Return
+            If Not dragging OrElse selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return
+            points(selectedIndex) = ClampPoint(ClientToAuthored(e.Location))
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Sub
+
+        Protected Overrides Sub OnMouseUp(ByVal e As MouseEventArgs)
+            dragging = False
+            resizingObstacle = False
+            resizingSwitch = False
+            MyBase.OnMouseUp(e)
+        End Sub
+
+        Private Function HitObstacle(ByVal point As PointF) As Integer
+            For index As Integer = Obstacles.Count - 1 To 0 Step -1
+                Dim obstacle As RectangleF = Obstacles(index)
+                Dim radius As Single = obstacle.Width / 2.0F
+                Dim dx As Single = point.X - (obstacle.X + radius)
+                Dim dy As Single = point.Y - (obstacle.Y + radius)
+                If dx * dx + dy * dy <= (radius + 10.0F) * (radius + 10.0F) Then Return index
+            Next
+            Return -1
+        End Function
+
+        Private Function HitSwitchZone(ByVal point As PointF) As Integer
+            For index As Integer = SwitchZones.Count - 1 To 0 Step -1
+                If SwitchZones(index).Contains(point) Then Return index
+            Next
+            Return -1
+        End Function
+
+        Private Function HitSwitchHandle(ByVal point As PointF, ByVal zone As RectangleF) As Boolean
+            Return Math.Abs(point.X - zone.Right) <= 15.0F AndAlso Math.Abs(point.Y - zone.Bottom) <= 15.0F
+        End Function
+
+        Private Function HitObstacleHandle(ByVal point As PointF, ByVal obstacle As RectangleF) As Boolean
+            Dim dx As Single = point.X - obstacle.Right
+            Dim dy As Single = point.Y - (obstacle.Top + obstacle.Height / 2.0F)
+            Return dx * dx + dy * dy <= 225.0F
+        End Function
+
+        Protected Overrides Sub OnKeyDown(ByVal e As KeyEventArgs)
+            If e.KeyCode = Keys.Delete Then
+                DeleteSelectedPoint()
+                e.Handled = True
+            End If
+            MyBase.OnKeyDown(e)
+        End Sub
+
+        Private Function ImageView() As RectangleF
+            Dim scale As Single = Math.Min(ClientSize.Width / CSng(AuthoredSize.Width), ClientSize.Height / CSng(AuthoredSize.Height))
+            Dim width As Single = AuthoredSize.Width * scale
+            Dim height As Single = AuthoredSize.Height * scale
+            Return New RectangleF((ClientSize.Width - width) / 2.0F, (ClientSize.Height - height) / 2.0F, width, height)
+        End Function
+
+        Private Function ClientToAuthored(ByVal point As Point) As PointF
+            Dim view As RectangleF = ImageView()
+            Dim scale As Single = view.Width / AuthoredSize.Width
+            Return New PointF((point.X - view.X) / scale, (point.Y - view.Y) / scale)
+        End Function
+
+        Private Function ClampPoint(ByVal point As PointF) As PointF
+            Return New PointF(Math.Max(0.0F, Math.Min(AuthoredSize.Width, point.X)),
+                              Math.Max(0.0F, Math.Min(AuthoredSize.Height, point.Y)))
+        End Function
+
+        Private Function IsInsideImage(ByVal point As Point) As Boolean
+            Return ImageView().Contains(point)
+        End Function
+
+        Private Function HitPoint(ByVal point As PointF) As Integer
+            Dim view As RectangleF = ImageView()
+            Dim scale As Single = view.Width / AuthoredSize.Width
+            Dim tolerance As Single = 13.0F / Math.Max(0.01F, scale)
+            Dim points As List(Of PointF) = ActivePoints()
+            For index As Integer = points.Count - 1 To 0 Step -1
+                Dim dx As Single = points(index).X - point.X
+                Dim dy As Single = points(index).Y - point.Y
+                If dx * dx + dy * dy <= tolerance * tolerance Then Return index
+            Next
+            Return -1
+        End Function
+
+        Private Class PathIntersection
+            Public Point As PointF
+            Public SourcePosition As Single
+            Public TargetPosition As Single
+        End Class
+
+        Private Function MergeActivePathAtIntersections() As Boolean
+            Dim sourceIndex As Integer = ActivePathIndex
+            If sourceIndex <= 0 OrElse sourceIndex >= Paths.Count OrElse Paths(sourceIndex).Count < 2 Then Return False
+            Dim source As List(Of PointF) = Paths(sourceIndex)
+            For targetIndex As Integer = sourceIndex - 1 To 0 Step -1
+                If IsBoundaryLocked(targetIndex) Then Continue For
+                Dim target As List(Of PointF) = Paths(targetIndex)
+                If target.Count < 2 Then Continue For
+                Dim hits As List(Of PathIntersection) = FindIntersections(source, target)
+                If hits.Count < 2 Then Continue For
+
+                hits.Sort(Function(left, right) left.SourcePosition.CompareTo(right.SourcePosition))
+                Dim first As PathIntersection = hits(0)
+                Dim last As PathIntersection = hits(hits.Count - 1)
+                If Math.Abs(first.SourcePosition - last.SourcePosition) < 0.001F OrElse
+                   Math.Abs(first.TargetPosition - last.TargetPosition) < 0.001F Then Continue For
+
+                Dim leftHit As PathIntersection = If(first.TargetPosition <= last.TargetPosition, first, last)
+                Dim rightHit As PathIntersection = If(first.TargetPosition <= last.TargetPosition, last, first)
+                Dim merged As New List(Of PointF)()
+                For vertex As Integer = 0 To target.Count - 1
+                    If vertex >= leftHit.TargetPosition Then Exit For
+                    AddUnique(merged, target(vertex))
+                Next
+                AddUnique(merged, leftHit.Point)
+                For Each point As PointF In SlicePath(source, leftHit.SourcePosition, rightHit.SourcePosition, leftHit.Point, rightHit.Point)
+                    AddUnique(merged, point)
+                Next
+                AddUnique(merged, rightHit.Point)
+                For vertex As Integer = 0 To target.Count - 1
+                    If vertex > rightHit.TargetPosition Then AddUnique(merged, target(vertex))
+                Next
+
+                Paths(targetIndex) = merged
+                Paths.RemoveAt(sourceIndex)
+                BoundaryNames.RemoveAt(sourceIndex)
+                If sourceIndex < BoundaryLocks.Count Then BoundaryLocks.RemoveAt(sourceIndex)
+                ActivePathIndex = targetIndex
+                selectedIndex = -1
+                Invalidate()
+                RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+                Return True
+            Next
+            Return False
+        End Function
+
+        Private Function FindIntersections(ByVal source As List(Of PointF), ByVal target As List(Of PointF)) As List(Of PathIntersection)
+            Dim result As New List(Of PathIntersection)()
+            For sourceSegment As Integer = 0 To source.Count - 2
+                For targetSegment As Integer = 0 To target.Count - 2
+                    Dim sourceFraction As Single
+                    Dim targetFraction As Single
+                    Dim point As PointF
+                    If SegmentIntersection(source(sourceSegment), source(sourceSegment + 1),
+                                           target(targetSegment), target(targetSegment + 1),
+                                           sourceFraction, targetFraction, point) Then
+                        Dim duplicate As Boolean = result.Any(Function(hit) DistanceSquared(hit.Point, point) < 0.25F)
+                        If Not duplicate Then
+                            result.Add(New PathIntersection With {
+                                .Point = point,
+                                .SourcePosition = sourceSegment + sourceFraction,
+                                .TargetPosition = targetSegment + targetFraction
+                            })
+                        End If
+                    End If
+                Next
+            Next
+            Return result
+        End Function
+
+        Private Function SegmentIntersection(ByVal a As PointF, ByVal b As PointF, ByVal c As PointF, ByVal d As PointF,
+                                             ByRef aFraction As Single, ByRef cFraction As Single, ByRef point As PointF) As Boolean
+            Dim rx As Double = b.X - a.X
+            Dim ry As Double = b.Y - a.Y
+            Dim sx As Double = d.X - c.X
+            Dim sy As Double = d.Y - c.Y
+            Dim denominator As Double = rx * sy - ry * sx
+            If Math.Abs(denominator) < 0.000001 Then Return False
+            Dim qx As Double = c.X - a.X
+            Dim qy As Double = c.Y - a.Y
+            Dim t As Double = (qx * sy - qy * sx) / denominator
+            Dim u As Double = (qx * ry - qy * rx) / denominator
+            If t < -0.0001 OrElse t > 1.0001 OrElse u < -0.0001 OrElse u > 1.0001 Then Return False
+            aFraction = CSng(Math.Max(0.0, Math.Min(1.0, t)))
+            cFraction = CSng(Math.Max(0.0, Math.Min(1.0, u)))
+            point = New PointF(CSng(a.X + rx * aFraction), CSng(a.Y + ry * aFraction))
+            Return True
+        End Function
+
+        Private Function SlicePath(ByVal source As List(Of PointF), ByVal startPosition As Single, ByVal endPosition As Single,
+                                   ByVal startPoint As PointF, ByVal endPoint As PointF) As List(Of PointF)
+            Dim result As New List(Of PointF)()
+            AddUnique(result, startPoint)
+            If startPosition <= endPosition Then
+                For vertex As Integer = 1 To source.Count - 2
+                    If vertex > startPosition AndAlso vertex < endPosition Then AddUnique(result, source(vertex))
+                Next
+            Else
+                For vertex As Integer = source.Count - 2 To 1 Step -1
+                    If vertex < startPosition AndAlso vertex > endPosition Then AddUnique(result, source(vertex))
+                Next
+            End If
+            AddUnique(result, endPoint)
+            Return result
+        End Function
+
+        Private Sub AddUnique(ByVal points As List(Of PointF), ByVal point As PointF)
+            If points.Count = 0 OrElse DistanceSquared(points(points.Count - 1), point) >= 0.0001F Then points.Add(point)
+        End Sub
+
+        Private Function DistanceSquared(ByVal left As PointF, ByVal right As PointF) As Single
+            Dim dx As Single = left.X - right.X
+            Dim dy As Single = left.Y - right.Y
+            Return dx * dx + dy * dy
+        End Function
+
+        Private Function ActivePoints() As List(Of PointF)
+            If Paths.Count = 0 Then
+                Paths.Add(New List(Of PointF)())
+                BoundaryNames.Add("Boundary 1")
+                BoundaryLocks.Add(False)
+                ActivePathIndex = 0
+            End If
+            EnsureBoundaryMetadata()
+            ActivePathIndex = Math.Max(0, Math.Min(ActivePathIndex, Paths.Count - 1))
+            Return Paths(ActivePathIndex)
+        End Function
+
+        Private Sub EnsureBoundaryMetadata()
+            While BoundaryNames.Count < Paths.Count
+                BoundaryNames.Add("Boundary " & (BoundaryNames.Count + 1).ToString())
+            End While
+            While BoundaryLocks.Count < Paths.Count
+                BoundaryLocks.Add(False)
+            End While
+            While BoundaryLocks.Count > Paths.Count
+                BoundaryLocks.RemoveAt(BoundaryLocks.Count - 1)
+            End While
+        End Sub
+    End Class
+End Class

@@ -1,0 +1,43 @@
+# B2S (Backglass 2nd Screen) Server
+
+*System files to run `directB2S` backglasses.*
+
+See the [Changelog.txt](Changelog.txt) for recent changes.
+
+## B2S.Backglass Server
+
+Full documentation including instruction videos is available in the [Wiki](https://github.com/vpinball/b2s-backglass/wiki) here in the Repo.
+
+### Percent-Based Screen Resolution Values
+
+The `ScreenRes.txt` configuration file now supports percent-based values for more flexible screen sizing. This allows configurations to adapt to different screen resolutions automatically.
+For this to work the line #4 has to point to the backglass screen using "=#" where "#" is the screen number from left to right.
+
+**Example:**
+```
+# Playfield Screen resolution width/height
+100%
+100%
+# Backglass width/height
+50%
+75%
+```
+
+- **Playfield values** use the leftmost (primary) screen as reference
+- **Backglass, DMD, and Background values** use the selected backglass screen as reference
+- Percent values can include decimals (e.g., `33.5%`) for precise sizing
+- Absolute pixel values (e.g., `1920`) are still fully supported
+- Both formats can be mixed in the same file
+
+## B2S.Tools
+
+See the [B2STools.txt](B2STools/B2STools.txt) for a description of the different tool scripts.
+
+## B2S.Backglass Designer
+
+The **B2SBackglassDesigner** has moved away to it's own repository here [B2S.Designer](https://github.com/vpinball/b2s-designer)
+
+## Developers
+
+To build either B2S.Server or B2S.Designer open the *.sln files in Visual Studio (any version from 2019 should work) and select **build**->**Build Solution** in the menu.
+Microsoft has VM's prepared which includes Windows 11 and Visual Studio in one bundle. The license for these normally lasts 3 months each. This is an easy way to test if it works out without having to install many different components.

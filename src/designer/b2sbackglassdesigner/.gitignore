@@ -1,0 +1,19 @@
+# Visual Studio workspace
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build intermediates
+obj/
+
+# Compiler/debug artifacts
+*.pdb
+*.cache
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*~

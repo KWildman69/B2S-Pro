@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B2S Pro — New Features</title>
+  <link rel="stylesheet" href="css/b2spro.css">
+</head>
+<body>
+  <div class="content">
+    <section class="hero" id="welcome">
+      <img class="pro-logo" src="pro-images/b2s-pro-logo.png" alt="B2S Pro">
+      <div class="eyebrow">B2S Pro 1.0.1 documentation</div>
+      <h1>Build a living backglass.</h1>
+      <p class="lead">B2S Pro keeps the proven original Backglass Designer workflow and adds modern editing, one-picture animation, realistic motion, rolling balls, pivots, physics, improved lighting, powerful flashers, and easier layer control.</p>
+      <div class="compat"><strong>The original manual remains available in the Contents panel.</strong> This B2S Pro section explains the new tools and workflows added to the original Backglass Designer.</div>
+      <div class="jump"><strong>Jump to:</strong>
+        <a href="#workflow">Workspace</a> · <a href="#layers">Layers</a> · <a href="#snippets">Snippets</a> ·
+        <a href="#picture-animation">Picture animation</a> · <a href="#rotation">Rotation</a> ·
+        <a href="#motion">Motion paths</a> · <a href="#trough">Troughs</a> · <a href="#pivot">Pivots</a> ·
+        <a href="#physics">Physics</a> · <a href="#lamps">Lamps</a> · <a href="#flashers">Flashers</a> ·
+        <a href="#scores">Scores</a> · <a href="#compatibility">Saving</a>
+      </div>
+    </section>
+
+    <section class="topic" id="workflow">
+      <span class="tag">NEW WORKSPACE</span><span class="tag">SAVED LAYOUTS</span>
+      <h2>The modern B2S Pro workspace</h2>
+      <p>The main toolbar groups the most-used jobs: project commands, image tools, reels and LEDs, lights and flashers, snippets, animation, and final DirectB2S creation/testing. The redesigned dark interface makes active objects and editing modes easier to see.</p>
+      <ol class="steps">
+        <li>Import the backglass artwork with <strong>Import Backglass Image</strong>.</li>
+        <li>Use <strong>Backglass Brightness</strong> when the base image needs global adjustment.</li>
+        <li>Add and arrange reels, LEDs, lights, flashers, snippets, and animations.</li>
+        <li>Use <strong>Step 1 — Create DirectB2S File</strong>, then <strong>Step 2 — Backglass Preview &amp; Test</strong>.</li>
+      </ol>
+      <p>Resizable editor windows remember their last size, position, monitor, DPI-adjusted bounds, and maximized state. Set a window once; B2S Pro restores it the next time it opens.</p>
+      <figure>
+        <img src="pro-images/image-menu.png" alt="B2S Pro Image menu and backglass toolbar commands">
+        <figcaption>The backglass import, illumination-frame display, resize, and brightness tools remain close to the artwork workflow.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="layers">
+      <span class="tag">LAYERS</span><span class="tag">MULTI-SELECT</span>
+      <h2>Control everything from Layers</h2>
+      <p>Open <strong>Window &gt; Layers</strong>. The list runs from front to back and includes lamps, flashers, snippets, picture-animation groups, scores, and the canvas.</p>
+      <div class="grid">
+        <div class="card"><h3>Find and select</h3><p>Filter by object type or name. Use <strong>Ctrl</strong> and <strong>Shift</strong> to select multiple objects.</p></div>
+        <div class="card"><h3>Order</h3><p>Drag rows to reorder them, use <strong>To Front</strong>/<strong>To Back</strong>, or assign a specific Z layer.</p></div>
+        <div class="card"><h3>Protect work</h3><p><strong>Show / Hide</strong> controls visibility. <strong>Lock / Unlock</strong> prevents accidental movement.</p></div>
+        <div class="card"><h3>Edit in place</h3><p>Right-click and open <strong>Edit Selected Object</strong> for masks, paths, pivots, physics, or trough creation.</p></div>
+      </div>
+      <p>Canvas Placement can put snippets, lights, flashers, reels, and LEDs in front of or behind the backglass canvas. Mask Placement controls whether an object participates behind a mask.</p>
+      <figure>
+        <img src="pro-images/layers.png" alt="B2S Pro Layers window">
+        <figcaption>The Layers window provides selection, ordering, visibility, locking, naming, masks, placement, and direct object editing.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="snippets">
+      <span class="tag">ADD SNIPPET</span><span class="tag">MAKE SNIPPET</span><span class="tag">LIVE ROTATION</span>
+      <h2>Create and edit snippets</h2>
+      <h3>Add an existing image</h3>
+      <ol class="steps">
+        <li>Click <strong>Add Snippet</strong> and select a PNG or other supported image.</li>
+        <li>Place the snippet on the Backglass or DMD canvas.</li>
+        <li>Drag to move it, use its corner handles to resize it, and drag the rotation handle to rotate it live.</li>
+      </ol>
+      <h3>Make a snippet from the current artwork</h3>
+      <ol class="steps">
+        <li>Click <strong>Make Snippet</strong>.</li>
+        <li>Use Quick Selection to mask the part of the Backglass or DMD image you want.</li>
+        <li>Click <strong>OK</strong>. B2S Pro creates a transparent snippet at the exact source position, so it can cover the original artwork or be moved elsewhere.</li>
+      </ol>
+      <table>
+        <tr><th>Quick Selection tool</th><th>Use</th></tr>
+        <tr><td>Circular Marquee</td><td>Draw an oval selection. Hold <strong>Shift</strong> for a perfect circle.</td></tr>
+        <tr><td>Lasso</td><td>Trace an irregular outline by hand.</td></tr>
+        <tr><td>Brush</td><td>Paint the mask. Hold <strong>Alt</strong> while brushing to erase.</td></tr>
+        <tr><td>Auto Mask</td><td>Build a selection from related image pixels.</td></tr>
+        <tr><td>Invert Mask</td><td>Swap selected and transparent areas, including feathered edges.</td></tr>
+      </table>
+      <p class="keys"><kbd>Mouse wheel</kbd> zooms. <kbd>Middle drag</kbd> or <kbd>Space</kbd> + drag pans. <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Y</kbd> undo and redo mask edits.</p>
+      <figure>
+        <img src="pro-images/current-ui/quick-selection.png" alt="B2S Pro Quick Selection Mask window">
+        <figcaption>Quick Selection keeps the complete backglass visible while Circular Marquee, Lasso, Brush, or Auto Mask defines the snippet.</figcaption>
+      </figure>
+      <div class="note">Move, resize, and rotation are based on the original source bounds, so repeated edits do not make the bounding box grow.</div>
+    </section>
+
+    <section class="topic" id="picture-animation">
+      <span class="tag">ONE GIF</span><span class="tag">PNG SEQUENCE</span><span class="tag">GROUPED EDITING</span>
+      <h2>Create a picture animation</h2>
+      <p>B2S Pro can build a normal backglass animation from one animated GIF or from an ordered set of transparent PNG frames. The result appears as one manageable object instead of hundreds of separate layer rows.</p>
+      <ol class="steps">
+        <li>Open <strong>Animation</strong>, then choose the picture-sequence import command.</li>
+        <li>Click <strong>Choose PNG / GIF</strong>. Select either one animated GIF or two or more PNG files.</li>
+        <li>Enter the animation name and choose <strong>Backglass</strong> or <strong>DMD screen</strong>.</li>
+        <li>Set X, Y, width, height, and the frame interval. For a GIF, B2S Pro reads the GIF timing and maps it to the existing animation system.</li>
+        <li>Choose <strong>Loop continuously</strong> and/or <strong>Start at backglass startup</strong>, then import.</li>
+      </ol>
+      <p>The canvas shows one reference frame while the animation preview plays all frames. Move, resize, rotate, or mask the group like one object. The whole group moves to its new start point; frames do not remain tied to the original location.</p>
+      <figure>
+        <img class="shot-medium" src="pro-images/current-ui/picture-animation.png" alt="Import Picture Sequence window">
+        <figcaption>Choose one animated GIF or an ordered PNG set, then set its destination, size, timing, looping, and startup behavior in one window.</figcaption>
+      </figure>
+      <div class="compat">This feature exports ordinary snippet images and ordinary animation steps. It does not require a new picture-animation format in the server.</div>
+    </section>
+
+    <section class="topic" id="rotation">
+      <span class="tag">ONE-IMAGE ANIMATION</span><span class="tag">MECHANICAL WHEELS</span>
+      <h2>Rotate one picture instead of making many frames</h2>
+      <ol class="steps">
+        <li>Add or make a snippet, then open its snippet settings.</li>
+        <li>Keep the type as <strong>Standard image</strong> and enable <strong>one-image rotation</strong>.</li>
+        <li>Choose <strong>Continuous</strong> or <strong>Triggered by B2S / ROM command</strong>.</li>
+        <li>For a trigger, choose Lamp or Solenoid and enter the command ID.</li>
+        <li>Set clockwise/counterclockwise direction, steps per rotation, and frame interval.</li>
+        <li>For triggered rotation, choose how it stops: Spin Off, Stop Immediately, Run Till End, or Run to First Step.</li>
+      </ol>
+      <p>Rotation uses the original artwork, stays centered, and advances by elapsed time so large images keep the requested speed. Square wheels retain their original square canvas; rectangular images receive the extra room needed to avoid clipping.</p>
+      <h3>Mechanical rotating images</h3>
+      <p>Choose <strong>Mech rotating image</strong> for a ROM-controlled wheel. Enter the Mech ID, step count, and direction. B2S Pro uses VPinMAME's absolute 0–359° position and centers the selected segment under the artwork pointer.</p>
+      <figure>
+        <img class="shot-narrow" src="pro-images/current-ui/snippet-settings.png" alt="Snippet Settings with one-image rotation controls">
+        <figcaption>Enable one-image rotation, then choose continuous or triggered operation, direction, steps, timing, and stopping behavior.</figcaption>
+      </figure>
+      <div class="compat">Existing legacy self-rotating and mechanical snippets remain in their original format. New one-image rotation is opt-in.</div>
+    </section>
+
+    <section class="topic" id="motion">
+      <span class="tag">MOTION PATH</span><span class="tag">ENTRY / EXIT</span><span class="tag">TRIGGERS</span>
+      <h2>Move artwork along an authored path</h2>
+      <ol class="steps">
+        <li>Select a snippet in Layers and right-click <strong>Edit Selected Object &gt; Edit Entry Motion Path</strong>.</li>
+        <li>Click empty space to add path points. Drag a numbered point for exact placement; right-click a point to delete it.</li>
+        <li>Set <strong>Travel time (ms)</strong>. Use <strong>Play Preview</strong> to check the full route.</li>
+        <li>Choose Automatic, Solenoid, Lamp, or B2S ID as the start trigger.</li>
+        <li>Optionally set Stop/Resume B2S IDs, loop continuously, queue repeated triggers, or enable rolling.</li>
+        <li>Save the entry path. Add an independent exit path when the object needs a separate removal route.</li>
+      </ol>
+      <p>Repeated commands can restart or wait in a bounded queue. Movement, pauses, resumes, and endpoints are based on elapsed time and the exact saved center positions.</p>
+      <figure>
+        <img src="pro-images/current-ui/motion-path.png" alt="Entry Motion Path editor with numbered route and respawn handle">
+        <figcaption>The numbered route is edited directly over the backglass. The right panel controls timing, rolling, triggers, queuing, and sequence order.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="trough">
+      <span class="tag">TROUGH</span><span class="tag">ROLLING BALLS</span><span class="tag">CUSTOM PNG PER SLOT</span><span class="tag">RESPAWN</span>
+      <h2>Build a realistic trough sequence</h2>
+      <ol class="steps">
+        <li>Place the original ball snippet at the visible feeder/start location.</li>
+        <li>In Layers, right-click it and choose <strong>Edit Selected Object &gt; Create Trough Animation</strong>.</li>
+        <li>Enter a unique group name and type the number of balls. The visible slots update immediately as the number changes.</li>
+        <li>Draw the entry and exit paths.</li>
+        <li>Drag the green <strong>FIRST</strong> and blue <strong>LAST</strong> handles to set the trough slots.</li>
+        <li>Click any displayed ball to select its slot. Use <strong>Choose PNG for Selected Ball</strong> to give that slot a baseball, basketball, pool ball, or other image.</li>
+        <li>Enable <strong>Roll balls while moving</strong> when wanted, then create the trough.</li>
+      </ol>
+      <h3>Feeder respawn direction</h3>
+      <p>In the entry path editor, enable <strong>Animate trough feeder respawn</strong>. Drag the orange <strong>RESPAWN START</strong> arrow into the hidden compartment or just outside the visible trough and set the slide time. The feeder ball slides from that direction into the original starting position; it does not travel across the whole screen.</p>
+      <h3>What happens at runtime</h3>
+      <p>Entry fills the first available slot. Exit removes the first occupied ball and compacts every survivor into the exact preceding slot. The feeder can respawn while an earlier ball continues down the path, and repeated triggers can wait in order. Every ball keeps its own PNG and rolling phase so neighboring stripes do not twitch when another ball stops or exits.</p>
+      <figure>
+        <img src="pro-images/current-ui/trough-animation.png" alt="Create Trough Animation window showing ten complete ball slots">
+        <figcaption>Every ball is visible between the green FIRST and blue LAST handles. Click a ball to assign its PNG, and enable rolling when desired.</figcaption>
+      </figure>
+      <div class="note">All custom ball PNGs are fitted into the same square ball canvas. The complete image and its aspect ratio are preserved, while every slot keeps the same physical diameter.</div>
+    </section>
+
+    <section class="topic" id="pivot">
+      <span class="tag">PIVOT</span><span class="tag">HINGE</span><span class="tag">FLIPPER</span>
+      <h2>Create a pivot or hinged animation</h2>
+      <ol class="steps">
+        <li>Select the movable snippet and open <strong>Edit Pivot Animation</strong> from Layers.</li>
+        <li>Enable pivot animation and set the down angle, up angle, and movement time.</li>
+        <li>Click <strong>Set Hinge Point</strong>, then click the stationary pivot on the artwork.</li>
+        <li>Click <strong>Set Flipper Tip</strong>, then click the moving end.</li>
+        <li>Preview both positions and choose Named Commands, ROM Solenoid, ROM Lamp, or B2S ID as the trigger.</li>
+        <li>Save the pivot animation.</li>
+      </ol>
+      <p>The artwork rotates around the authored hinge, not the center of its box. Its paint area expands only as needed, preventing clipping, distortion, stale pixels, or a bounding box that grows after repeated edits.</p>
+      <figure>
+        <img class="shot-medium" src="pro-images/current-ui/pivot-animation.png" alt="Pivot Animation editor with hinge and tip markers">
+        <figcaption>The cyan hinge and green tip define the rotating arm. Preview both positions before choosing the ROM or B2S trigger.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="physics">
+      <span class="tag">BALL PHYSICS</span><span class="tag">BOUNDARIES</span><span class="tag">BUMPERS</span><span class="tag">SWITCHES</span><span class="tag">LAUNCHER</span>
+      <h2>Add a playable ball to a backglass</h2>
+      <p>Use one transparent ball snippet as the physics ball. Open <strong>Edit Physics Boundaries</strong> from Layers; the editor is divided into Ball, Boundaries, Bumpers &amp; Switches, and Launcher tabs.</p>
+      <table>
+        <tr><th>Tab</th><th>What to do</th></tr>
+        <tr><td>Ball</td><td>Enable physics, optionally enable rolling, select a pivot-enabled flipper snippet, then set gravity, flipper strength, and boundary bounce.</td></tr>
+        <tr><td>Boundaries</td><td>Create named polylines by clicking points. Drag for exact placement, splice a point into a line, rename or delete a boundary, and lock completed boundaries against accidental edits.</td></tr>
+        <tr><td>Bumpers &amp; Switches</td><td>Add circular bumpers and rectangular switch zones. Give each switch zone the ROM switch ID to pulse when the ball enters it.</td></tr>
+        <tr><td>Launcher</td><td>Enable the launcher; choose Solenoid or B2S ID; set the ID, X/Y origin, direction angle, strength, random angle, random strength, and capture radius.</td></tr>
+      </table>
+      <p>A launcher only fires a captured ball. Repeated pulses are ignored while the ball is in flight. When it returns to the capture area, the launcher holds and rearms it for the next cycle.</p>
+      <figure>
+        <img src="pro-images/current-ui/physics-boundaries.png" alt="Physics Boundary Editor with a locked boundary">
+        <figcaption>Create, name, splice, and lock independent boundaries directly over the artwork. A locked boundary cannot be changed accidentally.</figcaption>
+      </figure>
+      <figure>
+        <img src="pro-images/current-ui/physics-launcher.png" alt="Physics Launcher settings and direction arrow">
+        <figcaption>The Launcher tab sets its trigger, origin, direction, strength, variation, and capture radius; the arrow previews the launch direction.</figcaption>
+      </figure>
+      <div class="warning">The Flipper list contains pivot-enabled snippets only. Create and save the pivot animation first; then return to the Ball tab and select it.</div>
+    </section>
+
+    <section class="topic" id="lamps">
+      <span class="tag">PIXEL LIGHTING</span><span class="tag">TEMPERATURE</span><span class="tag">MASKS</span>
+      <h2>Build natural lamps from the artwork</h2>
+      <ol class="steps">
+        <li>Click <strong>Add Light</strong>, place the light box, and assign the required ROM/B2S ID in the Illumination tools.</li>
+        <li>Double-click the light to open Light Settings.</li>
+        <li>Adjust spread, edge softness, intensity, diffusion/contrast, and light temperature while watching the selected-light preview.</li>
+        <li>Use <strong>Quick Selection</strong> when the light must follow a specific shape instead of the complete box.</li>
+        <li>Use Blinker Runtime only when the lamp itself should blink at a saved interval.</li>
+      </ol>
+      <p>Pixel-aware illumination brightens the existing artwork instead of painting a plain colored rectangle. Dark and black artwork stays dark enough to preserve contrast.</p>
+      <p>Lights have the same direct rotation behavior as snippets: drag the rotation handle and watch both the light and its selection box rotate live.</p>
+      <figure>
+        <img src="pro-images/current-ui/lamp-editor.png" alt="Light Settings with isolated full-backglass preview">
+        <figcaption>Spread, feather, contrast, brightness, diffusion, temperature, masks, and blinking update the isolated selected-light preview.</figcaption>
+      </figure>
+      <div class="note">The preview isolates the selected light. Other lamps and flashers remain off, which keeps adjustment responsive and makes the result easier to judge.</div>
+    </section>
+
+    <section class="topic" id="flashers">
+      <span class="tag">DEDICATED FLASHER</span><span class="tag">1600% BRIGHTNESS</span><span class="tag">LIVE MASK</span><span class="tag">RADIAL SPLASH</span>
+      <h2>Create a true artwork flasher</h2>
+      <ol class="steps">
+        <li>Click <strong>Add Flasher</strong>. B2S Pro places only the flasher box so you can position and size it first.</li>
+        <li>Double-click the flasher box to open the dedicated Flasher editor.</li>
+        <li>Adjust every setting while watching the full-backglass live preview. Only the selected flasher is lit.</li>
+        <li>If required, click <strong>Quick Selection</strong> and create or invert a mask. Returning to the editor keeps the established brightness and diffusion settings.</li>
+        <li>Click <strong>Test Pulse</strong> once to flash for 75 ms every second. Click it again to stop.</li>
+        <li>Close the editor when finished. Slider values save automatically.</li>
+      </ol>
+      <figure>
+        <img src="pro-images/current-ui/flasher-editor.png" alt="Dedicated Flasher editor with live full-backglass preview">
+        <figcaption>The finished Flasher editor keeps all flash and mask-refinement sliders together while showing the complete selected-flasher result.</figcaption>
+      </figure>
+      <table>
+        <tr><th>Control</th><th>Effect</th></tr>
+        <tr><td>Glow Radius</td><td>Sets how far the main glow extends beyond the flasher box.</td></tr>
+        <tr><td>Edge Softness</td><td>Changes the hardness of the illuminated edge.</td></tr>
+        <tr><td>Outward Diffusion</td><td>Spreads the flash through the surrounding artwork.</td></tr>
+        <tr><td>Transmission Contrast</td><td>Balances the bright transmission against the retained artwork contrast.</td></tr>
+        <tr><td>Brightness</td><td>Runs from 0–1600%; 800% is the strong midpoint.</td></tr>
+        <tr><td>Light Temperature</td><td>Moves the flash from warm to neutral to cool without replacing the artwork color.</td></tr>
+        <tr><td>Radius / Smooth</td><td>Broadens mask influence and reduces rough or jagged mask edges.</td></tr>
+        <tr><td>Feather / Contrast</td><td>Controls the faded edge width and how soft or firm that transition appears.</td></tr>
+        <tr><td>Shift Edge</td><td>Positive values expand the mask; negative values contract it.</td></tr>
+        <tr><td>Radial Spikes</td><td>Adds the outward splash rays. Zero removes them; higher values extend the splash.</td></tr>
+      </table>
+      <p>Like snippets and lamps, flashers rotate live with their handle and retain a correctly sized rotated selection box.</p>
+    </section>
+
+    <section class="topic" id="scores">
+      <span class="tag">SCORE ROTATION</span><span class="tag">BEHIND CANVAS</span><span class="tag">LED COLOR</span>
+      <h2>Scores, reels, and LEDs</h2>
+      <p>Create reel or LED frames with the toolbar, then use the Reels &amp; LEDs tool window to set the player, digit count, spacing, score type, reel type, and display state.</p>
+      <ul>
+        <li>Select a score frame and drag its rotation handle to angle the complete score display.</li>
+        <li>Use Layers &gt; Canvas Placement to place a reel or LED display behind the backglass canvas. Transparent canvas openings reveal the live digits while opaque artwork remains in front.</li>
+        <li>Custom LED colors survive project save, DirectB2S export, and DirectB2S reopening.</li>
+        <li>Live EM reels keep their rolling intermediates, reel sounds, lighting, and score updates when placed behind the canvas.</li>
+      </ul>
+      <figure>
+        <img src="pro-images/current-ui/score-rotation-handles.png" alt="Selected LED score showing rotation, perspective, and depth handles">
+        <figcaption>Drag the orange handle above the score to rotate it. The two upper handles adjust perspective, and the center handle adjusts depth.</figcaption>
+      </figure>
+      <figure>
+        <img class="shot-tall" src="pro-images/current-ui/reels-and-leds.png" alt="Reels and LEDs tool window">
+        <figcaption>The Reels &amp; LEDs window controls player and display mapping, count, spacing, initial state, LED color, illumination, location, and size.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="compatibility">
+      <span class="tag">LEGACY SAFE</span><span class="tag">DIRECTB2S</span><span class="tag">SERVER 3.0.0</span>
+      <h2>Save, export, and compatibility</h2>
+      <p>Save the editable B2S project first, then create the DirectB2S file and test it with Backglass Preview &amp; Test. Long save/export operations show their progress beside the Step 2 command on the main toolbar.</p>
+      <div class="compat"><strong>Legacy rule:</strong> new behavior is enabled only when its matching metadata is present. Older DirectB2S files continue through the established illumination, animation, reel, and rotating-image paths.</div>
+      <p>Runtime-only features such as native one-image rotation, rolling balls, motion paths, trough sequences, pivots, physics, switches, and launchers require the matching B2S Pro Server build. Picture/GIF animations use the established animation format.</p>
+      <p>Backglass and DMD objects keep separate numeric ID scopes. DMD snippets, illumination, rotation settings, and matching IDs survive project and DirectB2S round trips.</p>
+      <figure>
+        <img src="pro-images/current-ui/save-export-test.png" alt="Save project, create DirectB2S, and preview workflow">
+        <figcaption>Keep the editable project, build the DirectB2S file, and verify it in the preview. Older files stay on their established legacy path.</figcaption>
+      </figure>
+    </section>
+
+    <section class="topic" id="final-contents">
+      <span class="tag">REVIEW CHECKLIST</span>
+      <h2>Topics in this B2S Pro guide</h2>
+      <p>The original help contents remain intact. The new top-level <strong>B2S Pro — New Features</strong> branch contains:</p>
+      <ol class="toc-plan">
+        <li>What is new in B2S Pro</li>
+        <li>The modern workspace and saved window layouts</li>
+        <li>Layers and multi-object editing</li>
+        <li>Add Snippet, Make Snippet, and Quick Selection</li>
+        <li>Picture animation from PNG frames or one GIF</li>
+        <li>One-image rotation and mechanical wheels</li>
+        <li>Motion paths and trigger routing</li>
+        <li>Trough animation, custom ball artwork, rolling, and feeder respawn</li>
+        <li>Pivot animation</li>
+        <li>Ball physics, boundaries, bumpers, switches, flippers, and launcher</li>
+        <li>Natural lamp lighting</li>
+        <li>Dedicated artwork flashers and mask refinement</li>
+        <li>Score rotation, LED color, and behind-canvas placement</li>
+        <li>Saving, exporting, testing, and compatibility</li>
+      </ol>
+    </section>
+
+    <div class="footer">B2S Pro 1.0.1 · Copyright © 2026 Ken Wildman. All rights reserved.<br>Original Backglass Designer created by Herweh and the B2S Team. Without their work, B2S Pro would not have been possible.</div>
+  </div>
+</body>
+</html>
