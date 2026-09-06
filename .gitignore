@@ -14,6 +14,8 @@ release-assets/
 # Local prototypes and validation output
 prototypes/
 artifacts/
+.tools/
+.verify/
 
 # Local packages and checksums belong in GitHub Releases
 *.zip

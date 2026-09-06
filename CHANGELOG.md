@@ -39,6 +39,8 @@ First public B2S Pro baseline.
 - Composited the reel behind the backglass canvas and aligned one continuous reflection across the complete score display so each digit reads as part of the same glass-covered window.
 - Stored the new settings as optional project and `directB2S` attributes; existing backglasses without them continue through the original rendering path unchanged.
 - Carried the Designer's neutral transparent-canvas backing into new B2S Pro exports and the server's custom runtime paint layer, so score-window and other transparent openings no longer fall back to black; legacy files without the opt-in marker retain their established backing.
+- Made Add Reel repeat the selected or latest reel's complete configuration—including illumination, 3D backlight, rotation, perspective, and behind-canvas settings—while assigning the next unique reel number.
+- Made the Reel Lighting & 3D window retain every displayed setting when it is closed and reopened instead of rolling live adjustments back.
 
 ### Animation and motion
 

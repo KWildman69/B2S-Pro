@@ -919,25 +919,36 @@ Public Class B2STabPage
             Dim reel3Dtemperature As Integer = SelectedScore.Reel3DTemperature
             Dim reel3Ddepth As Integer = SelectedScore.Reel3DDepth
             Dim reel3Dglass As Integer = SelectedScore.Reel3DGlass
-            If formSetReelIllumination.ShowDialog(Me, reelillulocation, reelillub2sid, reelillub2sidtype, reelillub2svalue, reelilluintensity,
-                                                  reel3Denabled, reel3Dbrightness, reel3Dtemperature, reel3Ddepth, reel3Dglass) Then
-                SelectedScore.ReelIlluLocation = reelillulocation
-                SelectedScore.ReelIlluB2SID = reelillub2sid
-                SelectedScore.ReelIlluB2SIDType = reelillub2sidtype
-                SelectedScore.ReelIlluB2SValue = reelillub2svalue
-                SelectedScore.ReelIlluIntensity = reelilluintensity
-                SelectedScore.Reel3DEnabled = reel3Denabled
-                SelectedScore.Reel3DBrightness = reel3Dbrightness
-                SelectedScore.Reel3DTemperature = reel3Dtemperature
-                SelectedScore.Reel3DDepth = reel3Ddepth
-                SelectedScore.Reel3DGlass = reel3Dglass
-                BackglassData.IsDirty = True
-            End If
+            formSetReelIllumination.ShowDialog(Me, reelillulocation, reelillub2sid, reelillub2sidtype, reelillub2svalue, reelilluintensity,
+                                               reel3Denabled, reel3Dbrightness, reel3Dtemperature, reel3Ddepth, reel3Dglass)
+
+            ' This window is an auto-saving editor. Closing it with either
+            ' button or the title-bar X keeps every displayed value.
+            SelectedScore.ReelIlluLocation = reelillulocation
+            SelectedScore.ReelIlluB2SID = reelillub2sid
+            SelectedScore.ReelIlluB2SIDType = reelillub2sidtype
+            SelectedScore.ReelIlluB2SValue = reelillub2svalue
+            SelectedScore.ReelIlluIntensity = reelilluintensity
+            SelectedScore.Reel3DEnabled = reel3Denabled
+            SelectedScore.Reel3DBrightness = reel3Dbrightness
+            SelectedScore.Reel3DTemperature = reel3Dtemperature
+            SelectedScore.Reel3DDepth = reel3Ddepth
+            SelectedScore.Reel3DGlass = reel3Dglass
+            SelectedScore.IsSingleReelSizeDirty = True
+            BackglassData.IsDirty = True
+            Me.Invalidate()
         End If
     End Sub
 
     Public Sub ReelsAndLEDs_AddScore()
         BackglassData.IsDirty = True
+        ' The selected reel is the template the user just configured. If the
+        ' selection was cleared, the newest reel on this canvas is the safest
+        ' equivalent. The score collection still assigns the next unique ID.
+        Dim templateScore As ReelAndLED.ScoreInfo = SelectedScore
+        If templateScore Is Nothing AndAlso Backglass.currentScores IsNot Nothing AndAlso Backglass.currentScores.Count > 0 Then
+            templateScore = Backglass.currentScores(0)
+        End If
         ' add new score display
         Dim newScore As ReelAndLED.ScoreInfo = New ReelAndLED.ScoreInfo
         Dim highestLayer As Integer = 0
@@ -953,19 +964,21 @@ Public Class B2STabPage
         End If
         newScore.ZOrder = If(highestLayer = Integer.MaxValue, highestLayer, highestLayer + 1)
         With newScore
-            '.ReelType = BackglassData.ReelType
-            'If String.IsNullOrEmpty(.ReelType) Then .ReelType = "LED"
-            .Digits = 6
-            .Spacing = 5
-            If Mouse.LastScoreSize <> Nothing Then
-                .Size = Mouse.LastScoreSize
+            If templateScore IsNot Nothing Then
+                .CopyCreationSettingsFrom(templateScore)
             Else
-                .Size = New Size(300, 100)
+                .Digits = 6
+                .Spacing = 5
+                If Mouse.LastScoreSize <> Nothing Then
+                    .Size = Mouse.LastScoreSize
+                Else
+                    .Size = New Size(300, 100)
+                End If
+                If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
+                If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
+                If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
+                If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
             End If
-            If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
-            If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
-            If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
-            If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
             If String.IsNullOrEmpty(.ReelType) Then
                 .ReelType = GetFirstReelType()
             End If
@@ -1102,6 +1115,8 @@ Public Class B2STabPage
         SelectedScore.Reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
         SelectedScore.Reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
         SelectedScore.Reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
+        SelectedScore.IsSingleReelSizeDirty = True
+        BackglassData.IsDirty = True
         Me.Refresh()
     End Sub
     Public Sub Illumination_DodgeColor(ByVal color As Color)

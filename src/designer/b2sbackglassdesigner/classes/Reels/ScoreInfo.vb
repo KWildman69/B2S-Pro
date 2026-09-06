@@ -49,6 +49,47 @@
 
         Public PerfectScaleWidthFix As Boolean = False
 
+        Public Sub CopyCreationSettingsFrom(ByVal source As ScoreInfo)
+            If source Is Nothing Then Return
+
+            Size = source.Size
+            ReelType = source.ReelType
+            ReelColor = source.ReelColor
+            Digits = source.Digits
+            Spacing = source.Spacing
+            DisplayState = source.DisplayState
+
+            RotationAngle = source.RotationAngle
+            PerspectiveDepth = source.PerspectiveDepth
+            PerspectiveLeftScale = source.PerspectiveLeftScale
+            PerspectiveRightScale = source.PerspectiveRightScale
+            BehindCanvas = source.BehindCanvas
+
+            B2SStartDigit = source.B2SStartDigit
+            B2SScoreType = source.B2SScoreType
+            B2SPlayerNo = source.B2SPlayerNo
+
+            ReelIlluLocation = source.ReelIlluLocation
+            ReelIlluB2SID = source.ReelIlluB2SID
+            ReelIlluB2SIDType = source.ReelIlluB2SIDType
+            ReelIlluB2SValue = source.ReelIlluB2SValue
+            ReelIlluIntensity = source.ReelIlluIntensity
+
+            Reel3DEnabled = source.Reel3DEnabled
+            Reel3DBrightness = source.Reel3DBrightness
+            Reel3DTemperature = source.Reel3DTemperature
+            Reel3DDepth = source.Reel3DDepth
+            Reel3DGlass = source.Reel3DGlass
+
+            ' The new reel receives its own ID, location, parent and Z layer
+            ' from the normal Add Reel path. Only its configured setup is
+            ' duplicated, and its render cache starts clean.
+            SingleReelSize = Nothing
+            IsSingleReelSizeDirty = True
+            SingleReelFactor = 1
+            PerfectScaleWidthFix = False
+        End Sub
+
         ' property for internal use
 
         Friend numbered As Boolean = False

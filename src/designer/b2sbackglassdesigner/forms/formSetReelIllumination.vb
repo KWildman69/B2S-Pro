@@ -56,23 +56,26 @@ Public Class formSetReelIllumination
         ignoreChanges = False
         ' now show the dialog
         Dim nRet As DialogResult = MyBase.ShowDialog(owner)
-        If nRet = Windows.Forms.DialogResult.OK Then
-            reelillulocation = cmbIlluLocation.SelectedIndex
-            reelillub2sidtype = cmbB2SIDType.SelectedIndex
-            reelillub2sid = If(Not String.IsNullOrEmpty(txtB2SID.Text), CInt(txtB2SID.Text), 0)
-            reelillub2svalue = If(Not String.IsNullOrEmpty(txtB2SValue.Text), CInt(txtB2SValue.Text), 0)
-            reelilluintensity = TrackBarIntensity.Value
-            reel3Denabled = chkReel3D.Checked
-            reel3Dbrightness = trackReelBrightness.Value
-            reel3Dtemperature = trackReelTemperature.Value
-            reel3Ddepth = trackReelDepth.Value
-            reel3Dglass = trackReelGlass.Value
-        Else
-            RaiseEvent LivePreviewChanged(reelillulocation, reelilluintensity,
-                                          reel3Denabled, reel3Dbrightness, reel3Dtemperature,
-                                          reel3Ddepth, reel3Dglass)
-        End If
+        ' Every control is an auto-save control. Returning the current values
+        ' for OK, Close/Escape and the title-bar X prevents a reopened window
+        ' from falling back to the values it had before the last edit.
+        reelillulocation = CType(Math.Max(0, cmbIlluLocation.SelectedIndex), eReelIlluminationLocation)
+        reelillub2sidtype = CType(Math.Max(0, cmbB2SIDType.SelectedIndex), eB2SIDType)
+        reelillub2sid = ParseNonNegativeInteger(txtB2SID.Text)
+        reelillub2svalue = ParseNonNegativeInteger(txtB2SValue.Text)
+        reelilluintensity = TrackBarIntensity.Value
+        reel3Denabled = chkReel3D.Checked
+        reel3Dbrightness = trackReelBrightness.Value
+        reel3Dtemperature = trackReelTemperature.Value
+        reel3Ddepth = trackReelDepth.Value
+        reel3Dglass = trackReelGlass.Value
         Return nRet
+    End Function
+
+    Private Shared Function ParseNonNegativeInteger(ByVal value As String) As Integer
+        Dim parsed As Integer
+        If Integer.TryParse(value, parsed) AndAlso parsed > 0 Then Return parsed
+        Return 0
     End Function
 
     Private Sub IntensityChanged(sender As Object, e As EventArgs) Handles TrackBarIntensity.ValueChanged
@@ -110,6 +113,7 @@ Public Class formSetReelIllumination
         grpGeneral.Size = New Size(227, 286)
         btnOk.Location = New Point(508, 303)
         btnCancel.Location = New Point(603, 303)
+        btnCancel.Text = "Close"
 
         Dim group As New GroupBox() With {
             .Text = "3D BACKLIT REELS",
@@ -271,16 +275,10 @@ Public Class formSetReelIllumination
         Me.Close()
     End Sub
     Private Sub Cancel_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnCancel.Click
-        If IsDirty Then
-            Dim ret As DialogResult = B2SMessageBox.Show(My.Resources.MSG_IsDirty, AppTitle, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
-            If ret = Windows.Forms.DialogResult.Yes Then
-                btnOk.PerformClick()
-            ElseIf ret = Windows.Forms.DialogResult.No Then
-                Me.Close()
-            End If
-        Else
-            Me.Close()
-        End If
+        ' This editor saves continuously, so Close never rolls the controls
+        ' back or asks the user to save the same settings a second time.
+        MyBase.DialogResult = Windows.Forms.DialogResult.OK
+        Me.Close()
     End Sub
 
 End Class
