@@ -29,6 +29,7 @@ First public B2S Pro baseline.
 - Added a repeating one-second test pulse with a fixed 75 ms flash duration.
 - Added mask-aware rendering and corrected light/flasher drag artifacts.
 - Added rotation behavior matching snippets for both lamps and flashers.
+- Corrected behind-canvas lighting so transparent score windows transmit light while opaque black artwork keeps its contrast.
 
 ### Animation and motion
 

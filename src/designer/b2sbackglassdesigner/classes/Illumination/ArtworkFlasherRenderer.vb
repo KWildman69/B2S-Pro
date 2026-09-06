@@ -37,7 +37,8 @@ Namespace Illumination
                                       Optional ByVal maskSmooth As Integer = 0,
                                       Optional ByVal maskFeather As Integer = 0,
                                       Optional ByVal maskContrast As Integer = 0,
-                                      Optional ByVal maskShiftEdge As Integer = 0) As Bitmap
+                                      Optional ByVal maskShiftEdge As Integer = 0,
+                                      Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
             If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) Then Return Nothing
             If source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
 
@@ -68,11 +69,12 @@ Namespace Illumination
             Next
 
             Dim transmissionMap As Double() =
-                BuildTransmissionMap(source, transmissionContrast)
+                BuildTransmissionMap(source, transmissionContrast, transmitTransparentCanvas)
 
             Return RenderPixels(source, lightField, transmissionMap,
                                 intensity, lightColor, flasherStyle,
-                                saturation, highlightProtection, darkAreaLift)
+                                saturation, highlightProtection, darkAreaLift,
+                                transmitTransparentCanvas)
         End Function
 
         ' Illuminate the real artwork pixels with an existing light alpha field.
@@ -94,7 +96,8 @@ Namespace Illumination
                                                     Optional ByVal maskFeather As Integer = 0,
                                                     Optional ByVal maskContrast As Integer = 0,
                                                     Optional ByVal maskShiftEdge As Integer = 0,
-                                                    Optional ByVal radialSpikes As Integer = 0) As Bitmap
+                                                    Optional ByVal radialSpikes As Integer = 0,
+                                                    Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
             If source Is Nothing OrElse lightTemplate Is Nothing Then Return Nothing
             If source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
             If source.Size <> lightTemplate.Size Then Return Nothing
@@ -125,10 +128,11 @@ Namespace Illumination
                                    maskContrast, maskShiftEdge)
             ApplyRadialSpikes(lightField, width, height, radialSpikes)
             If Not HasVisiblePixels(lightField) Then Return Nothing
-            Dim transmissionMap As Double() = BuildTransmissionMap(source, transmissionContrast)
+            Dim transmissionMap As Double() = BuildTransmissionMap(source, transmissionContrast, transmitTransparentCanvas)
             Return RenderPixels(source, lightField, transmissionMap,
                                 intensity, lightColor, flasherStyle,
-                                saturation, highlightProtection, darkAreaLift)
+                                saturation, highlightProtection, darkAreaLift,
+                                transmitTransparentCanvas)
         End Function
 
         ' Box-mode flashers use the glow template as their mask. Scale the
@@ -646,7 +650,8 @@ Namespace Illumination
         End Function
 
         Private Shared Function BuildTransmissionMap(ByVal source As Bitmap,
-                                                            ByVal contrastPercent As Integer) As Double()
+                                                     ByVal contrastPercent As Integer,
+                                                     Optional ByVal transmitTransparentCanvas As Boolean = False) As Double()
             Dim width As Integer = source.Width
             Dim height As Integer = source.Height
             Dim count As Integer = width * height
@@ -667,6 +672,16 @@ Namespace Illumination
                         Dim b As Double = pixels(p)
                         Dim g As Double = pixels(p + 1)
                         Dim r As Double = pixels(p + 2)
+                        If transmitTransparentCanvas Then
+                            ' PNG transparency commonly carries black RGB even though
+                            ' the artwork is physically absent. For a light placed behind
+                            ' the canvas, calculate that opening as white transmissive
+                            ' material. Opaque black artwork remains black and protected.
+                            Dim alpha As Double = pixels(p + 3) / 255.0
+                            b = b * alpha + 255.0 * (1.0 - alpha)
+                            g = g * alpha + 255.0 * (1.0 - alpha)
+                            r = r * alpha + 255.0 * (1.0 - alpha)
+                        End If
                         luminance(y * width + x) =
                             Math.Max(0.0, Math.Min(1.0,
                                 (r * 0.299 + g * 0.587 + b * 0.114) / 255.0))
@@ -775,7 +790,8 @@ Namespace Illumination
                                              ByVal flasherStyle As Integer,
                                              ByVal saturation As Integer,
                                              ByVal highlightProtection As Integer,
-                                             ByVal darkAreaLift As Integer) As Bitmap
+                                             ByVal darkAreaLift As Integer,
+                                             Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
             Dim width As Integer = source.Width
             Dim height As Integer = source.Height
             Dim result As New Bitmap(width, height, PixelFormat.Format32bppArgb)
@@ -812,6 +828,15 @@ Namespace Illumination
                         Dim g As Double = sourcePixels(sp + 1)
                         Dim r As Double = sourcePixels(sp + 2)
                         Dim sourceAlpha As Double = sourcePixels(sp + 3) / 255.0
+                        If transmitTransparentCanvas Then
+                            ' This white exists only in the light calculation. The canvas
+                            ' bitmap and its alpha are never changed. The caller applies
+                            ' the inverse canvas alpha afterward, so only the transparent
+                            ' opening receives the transmitted light.
+                            b = b * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
+                            g = g * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
+                            r = r * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
+                        End If
                         Dim transmission As Double = If(transmissionMap Is Nothing, 1.0, transmissionMap(index))
                         Dim luminance As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
 
@@ -884,7 +909,8 @@ Namespace Illumination
                         gg = litLum + (gg - litLum) * sat
                         bb = litLum + (bb - litLum) * sat
 
-                        Dim finalAlpha As Double = field * sourceAlpha * blackProtection
+                        Dim sourceCoverage As Double = If(transmitTransparentCanvas, 1.0, sourceAlpha)
+                        Dim finalAlpha As Double = field * sourceCoverage * blackProtection
                         If flasherStyle = 2 Then
                             rr = lightColor.R
                             gg = lightColor.G

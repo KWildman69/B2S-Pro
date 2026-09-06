@@ -728,7 +728,8 @@ Namespace Illumination
                                            Optional ByVal maskContrast As Integer = 0,
                                            Optional ByVal maskShiftEdge As Integer = 0,
                                            Optional ByVal flasherRadialSpikes As Integer = 0,
-                                           Optional ByVal lightRotationAngle As Single = 0.0F) As Image
+                                           Optional ByVal lightRotationAngle As Single = 0.0F,
+                                           Optional ByVal transmitTransparentCanvas As Boolean = False) As Image
 
             ' maybe create the scaled and illuminated image part
             If imageBackground IsNot Nothing Then
@@ -757,7 +758,7 @@ Namespace Illumination
                 ' only as the final clipping step below.
                 If Not isFlasherLighting AndAlso useArtworkPixels AndAlso Not String.IsNullOrEmpty(selectionMaskData) AndAlso
                    Math.Abs(lightRotationAngle) < 0.001F Then
-                    image = ArtworkFlasherRenderer.Render(currentimage, rectX, selectionMaskData, selectionFeather, artworkExposure, lightcolor, flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, glowSoftness, Math.Max(0, glowIntensity), glowFalloff, transmissionContrast, maskRadius, maskSmartRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge)
+                    image = ArtworkFlasherRenderer.Render(currentimage, rectX, selectionMaskData, selectionFeather, artworkExposure, lightcolor, flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, glowSoftness, Math.Max(0, glowIntensity), glowFalloff, transmissionContrast, maskRadius, maskSmartRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, transmitTransparentCanvas)
                     If image Is Nothing Then
                         image = GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment, illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion)
                     Else
@@ -794,7 +795,7 @@ Namespace Illumination
                         flasherStyle, flasherSaturation, flasherHighlightProtection,
                         flasherDarkAreaLift, transmissionContrast,
                         maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge,
-                        flasherRadialSpikes)
+                        flasherRadialSpikes, transmitTransparentCanvas)
                     If pixelLit IsNot Nothing Then
                         image.Dispose()
                         image = pixelLit
