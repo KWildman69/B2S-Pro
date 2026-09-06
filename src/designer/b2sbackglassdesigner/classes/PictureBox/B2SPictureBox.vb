@@ -5,6 +5,12 @@ Public Class B2SPictureBox
 
     Inherits PictureBox
 
+    ' A transparent backglass pixel is an opening in the printed canvas. Show
+    ' that opening over a neutral white backing in the editor so every PNG
+    ' transparency is visible and can be used for behind-canvas lighting.
+    ' Opaque artwork, including true black pixels, is still drawn unchanged.
+    Private Shared ReadOnly EditorCanvasUnderlayColor As Color = Color.White
+
     Private ReadOnly lightBlinkTimer As Windows.Forms.Timer
     Private ReadOnly lightBlinkStartedAt As Long = Diagnostics.Stopwatch.GetTimestamp()
 
@@ -151,7 +157,7 @@ Public Class B2SPictureBox
         Dim previewBase As New Bitmap(nativeWidth, nativeHeight, PixelFormat.Format32bppArgb)
         Try
             Using layerGraphics As Graphics = Graphics.FromImage(previewBase)
-                layerGraphics.Clear(Me.BackColor)
+                layerGraphics.Clear(EditorCanvasUnderlayColor)
                 layerGraphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
                 layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                 layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
@@ -557,6 +563,7 @@ Public Class B2SPictureBox
         pe.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
 
         If currentAnimationSteps IsNot Nothing Then
+            pe.Graphics.Clear(EditorCanvasUnderlayColor)
             DrawMainBackglassLayer(pe.Graphics)
             DrawAnimationLights(pe.Graphics)
         Else
@@ -997,7 +1004,7 @@ Public Class B2SPictureBox
             Dim nextComposite As New Bitmap(nativeWidth, nativeHeight, PixelFormat.Format32bppArgb)
             Try
                 Using layerGraphics As Graphics = Graphics.FromImage(nextComposite)
-                    layerGraphics.Clear(Me.BackColor)
+                    layerGraphics.Clear(EditorCanvasUnderlayColor)
                     layerGraphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
                     layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                     layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
@@ -1065,7 +1072,7 @@ Public Class B2SPictureBox
         Dim result As New Bitmap(nativeWidth, nativeHeight, PixelFormat.Format32bppArgb)
         Try
             Using layerGraphics As Graphics = Graphics.FromImage(result)
-                layerGraphics.Clear(Me.BackColor)
+                layerGraphics.Clear(EditorCanvasUnderlayColor)
                 layerGraphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
                 layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                 layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
