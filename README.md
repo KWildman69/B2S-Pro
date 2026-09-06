@@ -10,7 +10,7 @@ B2S Pro is a modernized backglass designer and animation workspace for creating 
 - B2S Pro Server: **3.0.0**
 - Platform: Windows
 
-The tested installer and portable packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases) page. Compiled release files are not stored in the source tree.
+The tested runtime and source packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases/latest) page. Compiled release files are not stored in the source tree.
 
 ## Highlights
 
@@ -29,7 +29,7 @@ The tested installer and portable packages are distributed from the [B2S Pro Rel
 
 ## Documentation
 
-The illustrated B2S Pro guide is available in [`docs/help-source/B2SPro.htm`](docs/help-source/B2SPro.htm). The same help content is embedded in the application so it cannot be separated from the installed program.
+The illustrated [B2S Pro online guide](https://kwildman69.github.io/B2S-Pro/) is published from the documentation source in this repository. The same help content is embedded in the application so it cannot be separated from the installed program.
 
 The original Backglass Designer help remains intact alongside the new B2S Pro feature guide.
 
