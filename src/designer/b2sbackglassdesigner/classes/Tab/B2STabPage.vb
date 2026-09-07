@@ -942,9 +942,8 @@ Public Class B2STabPage
 
     Public Sub ReelsAndLEDs_AddScore()
         BackglassData.IsDirty = True
-        ' The selected reel is the template the user just configured. If the
-        ' selection was cleared, the newest reel on this canvas is the safest
-        ' equivalent. The score collection still assigns the next unique ID.
+        ' The selected or newest reel supplies only the five optional B2S Pro
+        ' 3D settings. All standard Add Reel behavior remains unchanged.
         Dim templateScore As ReelAndLED.ScoreInfo = SelectedScore
         If templateScore Is Nothing AndAlso Backglass.currentScores IsNot Nothing AndAlso Backglass.currentScores.Count > 0 Then
             templateScore = Backglass.currentScores(0)
@@ -964,22 +963,18 @@ Public Class B2STabPage
         End If
         newScore.ZOrder = If(highestLayer = Integer.MaxValue, highestLayer, highestLayer + 1)
         With newScore
-            If templateScore IsNot Nothing Then
-                .CopyCreationSettingsFrom(templateScore)
-                AssignNextPlayerRouting(newScore, templateScore)
+            .Digits = 6
+            .Spacing = 5
+            If Mouse.LastScoreSize <> Nothing Then
+                .Size = Mouse.LastScoreSize
             Else
-                .Digits = 6
-                .Spacing = 5
-                If Mouse.LastScoreSize <> Nothing Then
-                    .Size = Mouse.LastScoreSize
-                Else
-                    .Size = New Size(300, 100)
-                End If
-                If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
-                If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
-                If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
-                If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
+                .Size = New Size(300, 100)
             End If
+            If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
+            If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
+            If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
+            If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
+            If templateScore IsNot Nothing Then .CopyReel3DSettingsFrom(templateScore)
             If String.IsNullOrEmpty(.ReelType) Then
                 .ReelType = GetFirstReelType()
             End If
@@ -1389,77 +1384,6 @@ Public Class B2STabPage
         Me.Invalidate()
     End Sub
 
-    Private Sub AssignNextPlayerRouting(ByVal newScore As ReelAndLED.ScoreInfo,
-                                        ByVal templateScore As ReelAndLED.ScoreInfo)
-        ' Player number and start digit identify a score display at runtime and
-        ' must never be copied verbatim. Only score frames already assigned to
-        ' a player participate in the automatic Player 1-4 sequence.
-        If templateScore.B2SScoreType <> eB2SScoreType.Scores_01 OrElse
-           templateScore.B2SPlayerNo = eB2SPlayerNo.NotUsed Then Return
-
-        Dim nextPlayer As eB2SPlayerNo = FirstUnusedPlayerNumber()
-        newScore.B2SPlayerNo = nextPlayer
-        If nextPlayer = eB2SPlayerNo.NotUsed Then
-            newScore.B2SStartDigit = 0
-            If IsPlayerRolloverType(newScore.ReelIlluB2SIDType) Then
-                newScore.ReelIlluB2SIDType = eB2SIDType.NotUsed
-                newScore.ReelIlluB2SID = 0
-            End If
-            Return
-        End If
-
-        newScore.B2SStartDigit = NextAvailableScoreStartDigit()
-        BackglassData.NumberOfPlayers = Math.Max(BackglassData.NumberOfPlayers, CInt(nextPlayer))
-
-        ' The four score-rollover illumination choices map directly to
-        ' Players 1-4 and B2S IDs 25-28. Advance those with the score player;
-        ' all non-player-specific illumination triggers remain unchanged.
-        If IsPlayerRolloverType(newScore.ReelIlluB2SIDType) Then
-            newScore.ReelIlluB2SIDType = CType(CInt(nextPlayer), eB2SIDType)
-            newScore.ReelIlluB2SID = 24 + CInt(nextPlayer)
-        End If
-    End Sub
-
-    Private Function FirstUnusedPlayerNumber() As eB2SPlayerNo
-        Dim used(4) As Boolean
-        MarkUsedPlayers(BackglassData.Scores, used)
-        MarkUsedPlayers(BackglassData.DMDScores, used)
-        For player As Integer = 1 To 4
-            If Not used(player) Then Return CType(player, eB2SPlayerNo)
-        Next
-        Return eB2SPlayerNo.NotUsed
-    End Function
-
-    Private Shared Sub MarkUsedPlayers(ByVal scores As ReelAndLED.ScoreCollection,
-                                       ByVal used() As Boolean)
-        If scores Is Nothing Then Return
-        For Each score As ReelAndLED.ScoreInfo In scores
-            Dim player As Integer = CInt(score.B2SPlayerNo)
-            If player >= 1 AndAlso player <= 4 Then used(player) = True
-        Next
-    End Sub
-
-    Private Function NextAvailableScoreStartDigit() As Integer
-        Dim nextDigit As Integer = 1
-        FindNextScoreStartDigit(BackglassData.Scores, nextDigit)
-        FindNextScoreStartDigit(BackglassData.DMDScores, nextDigit)
-        Return nextDigit
-    End Function
-
-    Private Shared Sub FindNextScoreStartDigit(ByVal scores As ReelAndLED.ScoreCollection,
-                                               ByRef nextDigit As Integer)
-        If scores Is Nothing Then Return
-        For Each score As ReelAndLED.ScoreInfo In scores
-            If score.B2SScoreType = eB2SScoreType.Scores_01 AndAlso score.B2SStartDigit > 0 Then
-                nextDigit = Math.Max(nextDigit, score.B2SStartDigit + Math.Max(1, score.Digits))
-            End If
-        Next
-    End Sub
-
-    Private Shared Function IsPlayerRolloverType(ByVal idType As eB2SIDType) As Boolean
-        Return idType >= eB2SIDType.ScoreRolloverPlayer1_25 AndAlso
-               idType <= eB2SIDType.ScoreRolloverPlayer4_28
-    End Function
     Public Sub Illumination_AddFlasher()
         Illumination_AddBulb(True)
     End Sub
