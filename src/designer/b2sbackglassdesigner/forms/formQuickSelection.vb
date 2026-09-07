@@ -21,6 +21,9 @@ Public Class formQuickSelection
     Private ReadOnly brushSize As TrackBar
     Private ReadOnly brushHardness As TrackBar
     Private ReadOnly zoomSlider As TrackBar
+    Private ReadOnly brushSizeNumber As NumericUpDown
+    Private ReadOnly brushHardnessNumber As NumericUpDown
+    Private ReadOnly zoomNumber As NumericUpDown
     Private ReadOnly zoomValueLabel As Label
     Private ReadOnly undoMasks As New Collections.Generic.Stack(Of Bitmap)()
     Private ReadOnly redoMasks As New Collections.Generic.Stack(Of Bitmap)()
@@ -126,10 +129,12 @@ Public Class formQuickSelection
         Dim viewRow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.LeftToRight,
                                                  .WrapContents = False, .Padding = New Padding(8, 3, 0, 0)}
         viewRow.Controls.Add(New Label With {.Text = "Zoom", .Width = 42, .Height = 28, .TextAlign = ContentAlignment.MiddleLeft})
-        zoomSlider = New TrackBar With {.Width = 180, .Height = 32, .Minimum = 25, .Maximum = 800, .Value = 100, .TickFrequency = 100, .SmallChange = 25, .LargeChange = 100}
-        zoomValueLabel = New Label With {.Text = "100%", .Width = 55, .Height = 28, .TextAlign = ContentAlignment.MiddleCenter}
+        zoomSlider = New TrackBar With {.Width = 135, .Height = 32, .Minimum = 25, .Maximum = 800, .Value = 100, .TickFrequency = 100, .SmallChange = 25, .LargeChange = 100}
+        zoomNumber = New NumericUpDown With {.Width = 68, .Height = 24}
+        zoomValueLabel = New Label With {.Text = "%", .Width = 18, .Height = 28, .TextAlign = ContentAlignment.MiddleLeft}
+        TrackBarNumericLink.Bind(zoomSlider, zoomNumber, 25)
         AddHandler zoomSlider.ValueChanged, AddressOf ZoomSliderChanged
-        viewRow.Controls.Add(zoomSlider) : viewRow.Controls.Add(zoomValueLabel)
+        viewRow.Controls.Add(zoomSlider) : viewRow.Controls.Add(zoomNumber) : viewRow.Controls.Add(zoomValueLabel)
         viewGroup.Controls.Add(viewRow)
         tools.Controls.Add(viewGroup, 1, 0)
 
@@ -138,11 +143,17 @@ Public Class formQuickSelection
         Dim brushRow As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.LeftToRight,
                                                   .WrapContents = False, .Padding = New Padding(8, 3, 0, 0)}
         brushRow.Controls.Add(New Label With {.Text = "Size", .Width = 36, .Height = 28, .TextAlign = ContentAlignment.MiddleLeft})
-        brushSize = New TrackBar With {.Width = 170, .Height = 32, .Minimum = 1, .Maximum = 150, .Value = 35, .TickFrequency = 25}
+        brushSize = New TrackBar With {.Width = 105, .Height = 32, .Minimum = 1, .Maximum = 150, .Value = 35, .TickFrequency = 25}
+        brushSizeNumber = New NumericUpDown With {.Width = 55, .Height = 24}
+        TrackBarNumericLink.Bind(brushSize, brushSizeNumber)
         brushRow.Controls.Add(brushSize)
+        brushRow.Controls.Add(brushSizeNumber)
         brushRow.Controls.Add(New Label With {.Text = "Hardness", .Width = 65, .Height = 28, .TextAlign = ContentAlignment.MiddleLeft})
-        brushHardness = New TrackBar With {.Width = 190, .Height = 32, .Minimum = 0, .Maximum = 100, .Value = 75, .TickFrequency = 20}
+        brushHardness = New TrackBar With {.Width = 105, .Height = 32, .Minimum = 0, .Maximum = 100, .Value = 75, .TickFrequency = 20}
+        brushHardnessNumber = New NumericUpDown With {.Width = 55, .Height = 24}
+        TrackBarNumericLink.Bind(brushHardness, brushHardnessNumber)
         brushRow.Controls.Add(brushHardness)
+        brushRow.Controls.Add(brushHardnessNumber)
         brushGroup.Controls.Add(brushRow)
         tools.Controls.Add(brushGroup, 0, 1)
 
@@ -589,7 +600,6 @@ Public Class formQuickSelection
         End If
 
         zoomPercent = newPercent
-        zoomValueLabel.Text = zoomPercent.ToString() & "%"
         If updateSlider AndAlso zoomSlider.Value <> zoomPercent Then zoomSlider.Value = zoomPercent
 
         Dim fitScale As Double = GetFitScale()

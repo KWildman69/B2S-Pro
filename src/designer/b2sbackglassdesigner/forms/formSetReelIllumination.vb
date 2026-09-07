@@ -10,10 +10,11 @@ Public Class formSetReelIllumination
     Private ReadOnly trackReelTemperature As New TrackBar()
     Private ReadOnly trackReelDepth As New TrackBar()
     Private ReadOnly trackReelGlass As New TrackBar()
-    Private ReadOnly lblReelBrightnessValue As New Label()
-    Private ReadOnly lblReelTemperatureValue As New Label()
-    Private ReadOnly lblReelDepthValue As New Label()
-    Private ReadOnly lblReelGlassValue As New Label()
+    Private ReadOnly numLegacyIntensity As New NumericUpDown()
+    Private ReadOnly numReelBrightness As New NumericUpDown()
+    Private ReadOnly numReelTemperature As New NumericUpDown()
+    Private ReadOnly numReelDepth As New NumericUpDown()
+    Private ReadOnly numReelGlass As New NumericUpDown()
 
     Public Event LivePreviewChanged(ByVal location As eReelIlluminationLocation,
                                     ByVal intensity As Integer,
@@ -47,11 +48,10 @@ Public Class formSetReelIllumination
         TrackBarIntensity.Value = Math.Max(TrackBarIntensity.Minimum, Math.Min(TrackBarIntensity.Maximum, reelilluintensity))
         chkReel3D.Checked = reel3Denabled
         trackReelBrightness.Value = Math.Max(trackReelBrightness.Minimum, Math.Min(trackReelBrightness.Maximum, reel3Dbrightness))
-        trackReelTemperature.Value = Math.Max(trackReelTemperature.Minimum, Math.Min(trackReelTemperature.Maximum, CInt(Math.Round(reel3Dtemperature / 100.0)) * 100))
+        trackReelTemperature.Value = Math.Max(trackReelTemperature.Minimum, Math.Min(trackReelTemperature.Maximum, reel3Dtemperature))
         trackReelDepth.Value = Math.Max(trackReelDepth.Minimum, Math.Min(trackReelDepth.Maximum, reel3Ddepth))
         trackReelGlass.Value = Math.Max(trackReelGlass.Minimum, Math.Min(trackReelGlass.Maximum, reel3Dglass))
         UpdateIntensityLabel()
-        UpdateReel3DLabels()
         UpdateReel3DEnabledState()
         ignoreChanges = False
         ' now show the dialog
@@ -92,7 +92,7 @@ Public Class formSetReelIllumination
     End Sub
 
     Private Sub UpdateIntensityLabel()
-        If lblIntensity IsNot Nothing AndAlso TrackBarIntensity IsNot Nothing Then lblIntensity.Text = "Intensity: " & TrackBarIntensity.Value.ToString()
+        If lblIntensity IsNot Nothing Then lblIntensity.Text = "Intensity"
     End Sub
 
     Private Sub RaiseLivePreview()
@@ -111,6 +111,12 @@ Public Class formSetReelIllumination
         MinimumSize = New Size(720, 378)
         grpGeneral.Location = New Point(10, 7)
         grpGeneral.Size = New Size(227, 286)
+        TrackBarIntensity.SetBounds(93, 143, 67, 45)
+        numLegacyIntensity.SetBounds(160, 149, 55, 24)
+        numLegacyIntensity.Name = "numLegacyIntensity"
+        TrackBarNumericLink.Bind(TrackBarIntensity, numLegacyIntensity)
+        grpGeneral.Controls.Add(numLegacyIntensity)
+        numLegacyIntensity.BringToFront()
         btnOk.Location = New Point(508, 303)
         btnCancel.Location = New Point(603, 303)
         btnCancel.Text = "Close"
@@ -127,9 +133,9 @@ Public Class formSetReelIllumination
             .ColumnCount = 3,
             .RowCount = 7
         }
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 132))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 145))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 62))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 76))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 31))
         For i As Integer = 1 To 4
             layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 43))
@@ -143,14 +149,14 @@ Public Class formSetReelIllumination
         layout.Controls.Add(chkReel3D, 0, 0)
         layout.SetColumnSpan(chkReel3D, 3)
 
-        ConfigureReelSlider(trackReelBrightness, 0, 200, 100, 10, 10, 20)
+        ConfigureReelSlider(trackReelBrightness, 0, 400, 100, 25, 5, 25)
         ConfigureReelSlider(trackReelTemperature, 2000, 6500, 4000, 500, 100, 500)
         ConfigureReelSlider(trackReelDepth, 0, 200, 100, 10, 10, 20)
         ConfigureReelSlider(trackReelGlass, 0, 200, 55, 10, 10, 20)
-        AddReelSliderRow(layout, 1, "Backlight brightness", trackReelBrightness, lblReelBrightnessValue)
-        AddReelSliderRow(layout, 2, "Color temperature", trackReelTemperature, lblReelTemperatureValue)
-        AddReelSliderRow(layout, 3, "3D depth", trackReelDepth, lblReelDepthValue)
-        AddReelSliderRow(layout, 4, "Glass reflection", trackReelGlass, lblReelGlassValue)
+        AddReelSliderRow(layout, 1, "Backlight brightness (%)", trackReelBrightness, numReelBrightness)
+        AddReelSliderRow(layout, 2, "Color temperature (K)", trackReelTemperature, numReelTemperature, 100)
+        AddReelSliderRow(layout, 3, "3D depth (%)", trackReelDepth, numReelDepth)
+        AddReelSliderRow(layout, 4, "Glass reflection (%)", trackReelGlass, numReelGlass)
 
         Dim neutral As New Label() With {
             .Text = "4000 K is neutral",
@@ -200,39 +206,26 @@ Public Class formSetReelIllumination
                                         ByVal row As Integer,
                                         ByVal caption As String,
                                         ByVal slider As TrackBar,
-                                        ByVal valueLabel As Label)
+                                        ByVal number As NumericUpDown,
+                                        Optional ByVal increment As Integer = 1)
         Dim captionLabel As New Label() With {
             .Text = caption,
             .Dock = DockStyle.Fill,
             .TextAlign = ContentAlignment.MiddleLeft
         }
-        valueLabel.Dock = DockStyle.Fill
-        valueLabel.TextAlign = ContentAlignment.MiddleRight
+        number.Dock = DockStyle.Fill
+        number.Margin = New Padding(4, 7, 0, 8)
+        TrackBarNumericLink.Bind(slider, number, increment)
         layout.Controls.Add(captionLabel, 0, row)
         layout.Controls.Add(slider, 1, row)
-        layout.Controls.Add(valueLabel, 2, row)
+        layout.Controls.Add(number, 2, row)
     End Sub
 
     Private Sub Reel3DValueChanged(ByVal sender As Object, ByVal e As EventArgs)
-        If Object.ReferenceEquals(sender, trackReelTemperature) Then
-            Dim snapped As Integer = Math.Max(2000, Math.Min(6500, CInt(Math.Round(trackReelTemperature.Value / 100.0)) * 100))
-            If trackReelTemperature.Value <> snapped Then
-                trackReelTemperature.Value = snapped
-                Return
-            End If
-        End If
-        UpdateReel3DLabels()
         UpdateReel3DEnabledState()
         If ignoreChanges Then Return
         IsDirty = True
         RaiseLivePreview()
-    End Sub
-
-    Private Sub UpdateReel3DLabels()
-        lblReelBrightnessValue.Text = trackReelBrightness.Value.ToString() & "%"
-        lblReelTemperatureValue.Text = trackReelTemperature.Value.ToString() & " K"
-        lblReelDepthValue.Text = trackReelDepth.Value.ToString() & "%"
-        lblReelGlassValue.Text = trackReelGlass.Value.ToString() & "%"
     End Sub
 
     Private Sub UpdateReel3DEnabledState()

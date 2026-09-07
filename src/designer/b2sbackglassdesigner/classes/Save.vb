@@ -247,7 +247,7 @@ Public Class Save
                             score.ReelIlluIntensity = CInt(innerNode.Attributes("ReelIlluIntensity").InnerText)
                         End If
                         score.Reel3DEnabled = (ReadIntAttribute(innerNode, "Reel3DEnabled", 0, 0, 1) = 1)
-                        score.Reel3DBrightness = ReadIntAttribute(innerNode, "Reel3DBrightness", 100, 0, 200)
+                        score.Reel3DBrightness = ReadIntAttribute(innerNode, "Reel3DBrightness", 100, 0, 400)
                         score.Reel3DTemperature = ReadIntAttribute(innerNode, "Reel3DTemperature", 4000, 2000, 6500)
                         score.Reel3DDepth = ReadIntAttribute(innerNode, "Reel3DDepth", 100, 0, 200)
                         score.Reel3DGlass = ReadIntAttribute(innerNode, "Reel3DGlass", 55, 0, 200)
@@ -759,7 +759,7 @@ Public Class Save
                             nodeScore.SetAttribute("ReelIlluB2SValue", .ReelIlluB2SValue.ToString())
                             If .Reel3DEnabled Then
                                 nodeScore.SetAttribute("Reel3DEnabled", "1")
-                                nodeScore.SetAttribute("Reel3DBrightness", Math.Max(0, Math.Min(200, .Reel3DBrightness)).ToString())
+                                nodeScore.SetAttribute("Reel3DBrightness", Math.Max(0, Math.Min(400, .Reel3DBrightness)).ToString())
                                 nodeScore.SetAttribute("Reel3DTemperature", Math.Max(2000, Math.Min(6500, .Reel3DTemperature)).ToString())
                                 nodeScore.SetAttribute("Reel3DDepth", Math.Max(0, Math.Min(200, .Reel3DDepth)).ToString())
                                 nodeScore.SetAttribute("Reel3DGlass", Math.Max(0, Math.Min(200, .Reel3DGlass)).ToString())

@@ -361,8 +361,10 @@ Public Class formLightDiffusionEditor
             globalMaskEnabled = New CheckBox With {.Text = "Enabled", .Left = 12, .Top = 24, .Width = 75, .Checked = If(Backglass.currentData IsNot Nothing, Backglass.currentData.GlobalIlluminationMaskEnabled, False)}
             globalMaskInvert = New CheckBox With {.Text = "Invert", .Left = 92, .Top = 24, .Width = 65, .Checked = If(Backglass.currentData IsNot Nothing, Backglass.currentData.GlobalIlluminationMaskInverted, False)}
             globalMaskStatus = New Label With {.Left = 166, .Top = 26, .Width = 360, .Text = GlobalMaskStatusText()}
-            globalMaskThresholdLabel = New Label With {.Text = "Threshold: " & If(Backglass.currentData IsNot Nothing, Backglass.currentData.GlobalIlluminationMaskThreshold, 128).ToString(), .Left = 12, .Top = 94, .Width = 110}
-            globalMaskThreshold = New TrackBar With {.Left = 115, .Top = 85, .Width = 390, .Minimum = 0, .Maximum = 255, .TickFrequency = 32, .Value = If(Backglass.currentData IsNot Nothing, Math.Max(0, Math.Min(255, Backglass.currentData.GlobalIlluminationMaskThreshold)), 128)}
+            globalMaskThresholdLabel = New Label With {.Text = "Threshold", .Left = 12, .Top = 94, .Width = 78}
+            globalMaskThreshold = New TrackBar With {.Left = 90, .Top = 85, .Width = 350, .Minimum = 0, .Maximum = 255, .TickFrequency = 32, .Value = If(Backglass.currentData IsNot Nothing, Math.Max(0, Math.Min(255, Backglass.currentData.GlobalIlluminationMaskThreshold)), 128)}
+            Dim globalMaskThresholdNumber As New NumericUpDown With {.Left = 444, .Top = 89, .Width = 80}
+            TrackBarNumericLink.Bind(globalMaskThreshold, globalMaskThresholdNumber)
             lightInFrontOfMask = New CheckBox With {.Text = "This light is in front of mask (bypass)", .Left = 12, .Top = 155, .Width = 280, .Checked = bulb.InFrontOfGlobalMask}
             Dim importGlobalMask As New Button With {.Text = "Import / Replace...", .Left = 12, .Top = 58, .Width = 125, .Height = 27, .FlatStyle = FlatStyle.Flat}
             Dim previewGlobalMask As New Button With {.Text = "Preview...", .Left = 143, .Top = 58, .Width = 82, .Height = 27, .FlatStyle = FlatStyle.Flat}
@@ -376,7 +378,7 @@ Public Class formLightDiffusionEditor
             AddHandler globalMaskInvert.CheckedChanged, AddressOf GlobalMaskOptionChanged
             AddHandler globalMaskThreshold.ValueChanged, AddressOf GlobalMaskThresholdChanged
             AddHandler lightInFrontOfMask.CheckedChanged, AddressOf PreviewControlChanged
-            globalGroup.Controls.AddRange(New Control() {globalMaskEnabled, globalMaskInvert, globalMaskStatus, importGlobalMask, previewGlobalMask, exportGlobalMask, removeGlobalMask, globalMaskThresholdLabel, globalMaskThreshold, lightInFrontOfMask})
+            globalGroup.Controls.AddRange(New Control() {globalMaskEnabled, globalMaskInvert, globalMaskStatus, importGlobalMask, previewGlobalMask, exportGlobalMask, removeGlobalMask, globalMaskThresholdLabel, globalMaskThreshold, globalMaskThresholdNumber, lightInFrontOfMask})
             Controls.Add(globalGroup)
 
             BuildArtworkPreviewUi()
@@ -672,14 +674,14 @@ Public Class formLightDiffusionEditor
                                         ByVal columnWidth As Integer)
         Dim slider As Control = FindFlasherMaskControl(controlName)
         Dim caption As Control = FindFlasherMaskControl(controlName & "Caption")
-        Dim valueLabel As Control = FindFlasherMaskControl(controlName & "Value")
-        If slider Is Nothing OrElse caption Is Nothing OrElse valueLabel Is Nothing Then Return
+        Dim valueEditor As Control = FindFlasherMaskControl(controlName & "Value")
+        If slider Is Nothing OrElse caption Is Nothing OrElse valueEditor Is Nothing Then Return
 
         Const captionWidth As Integer = 82
         Const valueWidth As Integer = 50
         Const innerGap As Integer = 5
         caption.SetBounds(left, top + 8, captionWidth, 22)
-        valueLabel.SetBounds(left + columnWidth - valueWidth, top + 8, valueWidth, 22)
+        valueEditor.SetBounds(left + columnWidth - valueWidth, top + 4, valueWidth, 24)
         slider.SetBounds(left + captionWidth,
                          top,
                          Math.Max(120, columnWidth - captionWidth - valueWidth - innerGap),
@@ -1264,10 +1266,9 @@ Public Class formLightDiffusionEditor
             .Text = caption, .Left = 18, .Top = top + 8, .Width = 145,
             .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
         })
-        Dim valueLabel As New Label With {
-            .Left = 366, .Top = top + 8, .Width = 55,
-            .TextAlign = ContentAlignment.TopRight,
-            .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+        Dim number As New NumericUpDown With {
+            .Left = 365, .Top = top + 4, .Width = 72,
+            .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke
         }
         Dim slider As New TrackBar With {
             .Left = 160, .Top = top, .Width = 200, .Height = 38, .AutoSize = False,
@@ -1276,13 +1277,11 @@ Public Class formLightDiffusionEditor
             .Value = Math.Max(minimum, Math.Min(maximum, initialValue)),
             .BackColor = parent.BackColor
         }
-        AddHandler slider.ValueChanged,
-            Sub(sender As Object, e As EventArgs)
-                valueLabel.Text = slider.Value.ToString() & suffix
-            End Sub
-        valueLabel.Text = slider.Value.ToString() & suffix
+        TrackBarNumericLink.Bind(slider, number)
         parent.Controls.Add(slider)
-        parent.Controls.Add(valueLabel)
+        parent.Controls.Add(number)
+        parent.Controls.Add(New Label With {.Text = suffix, .Left = 440, .Top = top + 8, .Width = 32,
+                                            .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)})
         Return slider
     End Function
 
@@ -1311,38 +1310,35 @@ Public Class formLightDiffusionEditor
 
     Private Function AddSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer) As TrackBar
         Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim valueLabel As New Label With {.Left = 500, .Top = top + 8, .Width = 45, .TextAlign = ContentAlignment.TopRight}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 340, .Minimum = 0, .Maximum = 100, .TickFrequency = 10, .Value = Math.Max(0, Math.Min(100, initialValue))}
-        AddHandler slider.ValueChanged, Sub(sender As Object, e As EventArgs) valueLabel.Text = slider.Value.ToString() & "%"
-        valueLabel.Text = slider.Value.ToString() & "%"
+        Dim number As New NumericUpDown With {.Left = 462, .Top = top + 4, .Width = 72}
+        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 300, .Minimum = 0, .Maximum = 100, .TickFrequency = 10, .Value = Math.Max(0, Math.Min(100, initialValue))}
+        TrackBarNumericLink.Bind(slider, number)
         Controls.Add(slider)
-        Controls.Add(valueLabel)
+        Controls.Add(number)
+        Controls.Add(New Label With {.Text = "%", .Left = 536, .Top = top + 8, .Width = 22})
         Return slider
     End Function
 
 
     Private Function AddKelvinSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer) As TrackBar
         Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim valueLabel As New Label With {.Left = 488, .Top = top + 8, .Width = 58, .TextAlign = ContentAlignment.TopRight}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 328, .Minimum = 2000, .Maximum = 6500, .SmallChange = 100, .LargeChange = 500, .TickFrequency = 500, .Value = Math.Max(2000, Math.Min(6500, initialValue))}
-        AddHandler slider.ValueChanged, Sub(sender As Object, e As EventArgs)
-                                            slider.Value = CInt(Math.Round(slider.Value / 100.0) * 100)
-                                            valueLabel.Text = slider.Value.ToString() & "K"
-                                        End Sub
-        valueLabel.Text = slider.Value.ToString() & "K"
+        Dim number As New NumericUpDown With {.Left = 454, .Top = top + 4, .Width = 80}
+        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 292, .Minimum = 2000, .Maximum = 6500, .SmallChange = 100, .LargeChange = 500, .TickFrequency = 500, .Value = Math.Max(2000, Math.Min(6500, initialValue))}
+        TrackBarNumericLink.Bind(slider, number, 100)
         Controls.Add(slider)
-        Controls.Add(valueLabel)
+        Controls.Add(number)
+        Controls.Add(New Label With {.Text = "K", .Left = 536, .Top = top + 8, .Width = 22})
         Return slider
     End Function
 
     Private Function AddExtendedSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer, ByVal minimum As Integer, ByVal maximum As Integer) As TrackBar
         Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim valueLabel As New Label With {.Left = 500, .Top = top + 8, .Width = 45, .TextAlign = ContentAlignment.TopRight}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 340, .Minimum = minimum, .Maximum = maximum, .TickFrequency = 30, .Value = Math.Max(minimum, Math.Min(maximum, initialValue))}
-        AddHandler slider.ValueChanged, Sub(sender As Object, e As EventArgs) valueLabel.Text = slider.Value.ToString() & "%"
-        valueLabel.Text = slider.Value.ToString() & "%"
+        Dim number As New NumericUpDown With {.Left = 462, .Top = top + 4, .Width = 72}
+        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 300, .Minimum = minimum, .Maximum = maximum, .TickFrequency = 30, .Value = Math.Max(minimum, Math.Min(maximum, initialValue))}
+        TrackBarNumericLink.Bind(slider, number)
         Controls.Add(slider)
-        Controls.Add(valueLabel)
+        Controls.Add(number)
+        Controls.Add(New Label With {.Text = "%", .Left = 536, .Top = top + 8, .Width = 22})
         Return slider
     End Function
 
@@ -1361,11 +1357,10 @@ Public Class formLightDiffusionEditor
             .Left = left, .Top = top + 8, .Width = 82, .Height = 22,
             .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 8.5F)
         })
-        Dim valueLabel As New Label With {
+        Dim number As New NumericUpDown With {
             .Name = controlName & "Value",
-            .Left = left + 285, .Top = top + 8, .Width = 48, .Height = 22,
-            .TextAlign = ContentAlignment.TopRight, .ForeColor = Color.WhiteSmoke,
-            .Font = New Font("Tahoma", 8.5F)
+            .Left = left + 205, .Top = top + 4, .Width = 55, .Height = 24,
+            .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke
         }
         Dim slider As New TrackBar With {
             .Name = controlName, .Left = left + 82, .Top = top, .Width = 200, .Height = 38, .AutoSize = False,
@@ -1374,13 +1369,9 @@ Public Class formLightDiffusionEditor
             .SmallChange = 1, .LargeChange = Math.Max(1, (maximum - minimum) \ 20),
             .Value = Math.Max(minimum, Math.Min(maximum, value)), .BackColor = parent.BackColor
         }
-        AddHandler slider.ValueChanged,
-            Sub(sender As Object, e As EventArgs)
-                valueLabel.Text = slider.Value.ToString() & suffix
-            End Sub
-        valueLabel.Text = slider.Value.ToString() & suffix
+        TrackBarNumericLink.Bind(slider, number)
         parent.Controls.Add(slider)
-        parent.Controls.Add(valueLabel)
+        parent.Controls.Add(number)
         Return slider
     End Function
 
@@ -1392,27 +1383,21 @@ Public Class formLightDiffusionEditor
             .Text = caption, .Left = 18, .Top = top + 8, .Width = 145,
             .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
         })
-        Dim valueLabel As New Label With {
-            .Left = 366, .Top = top + 8, .Width = 55,
-            .TextAlign = ContentAlignment.TopRight,
-            .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+        Dim number As New NumericUpDown With {
+            .Left = 365, .Top = top + 4, .Width = 78,
+            .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke
         }
-        Dim snappedValue As Integer = CInt(Math.Round(Math.Max(2000, Math.Min(6500, initialValue)) / 100.0R) * 100.0R)
+        Dim initialKelvin As Integer = Math.Max(2000, Math.Min(6500, initialValue))
         Dim slider As New TrackBar With {
             .Left = 160, .Top = top, .Width = 200, .Height = 38, .AutoSize = False,
             .Minimum = 2000, .Maximum = 6500, .SmallChange = 100, .LargeChange = 500,
-            .TickFrequency = 500, .Value = snappedValue, .BackColor = parent.BackColor
+            .TickFrequency = 500, .Value = initialKelvin, .BackColor = parent.BackColor
         }
-        AddHandler slider.ValueChanged,
-            Sub(sender As Object, e As EventArgs)
-                Dim snapped As Integer = CInt(Math.Round(slider.Value / 100.0R) * 100.0R)
-                snapped = Math.Max(slider.Minimum, Math.Min(slider.Maximum, snapped))
-                If slider.Value <> snapped Then slider.Value = snapped
-                valueLabel.Text = slider.Value.ToString() & "K"
-            End Sub
-        valueLabel.Text = slider.Value.ToString() & "K"
+        TrackBarNumericLink.Bind(slider, number, 100)
         parent.Controls.Add(slider)
-        parent.Controls.Add(valueLabel)
+        parent.Controls.Add(number)
+        parent.Controls.Add(New Label With {.Text = "K", .Left = 446, .Top = top + 8, .Width = 22,
+                                            .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)})
         Return slider
     End Function
 
@@ -1430,11 +1415,10 @@ Public Class formLightDiffusionEditor
 
     Private Function AddGroupSlider(ByVal group As GroupBox, ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer, ByVal minimum As Integer, ByVal maximum As Integer) As TrackBar
         group.Controls.Add(New Label With {.Text = caption, .Left = 12, .Top = top + 7, .Width = 115})
-        Dim valueLabel As New Label With {.Left = 490, .Top = top + 7, .Width = 40, .TextAlign = ContentAlignment.TopRight}
-        Dim slider As New TrackBar With {.Left = 127, .Top = top, .Width = 360, .Minimum = minimum, .Maximum = maximum, .TickFrequency = Math.Max(1, (maximum - minimum) \ 10), .Value = Math.Max(minimum, Math.Min(maximum, initialValue))}
-        AddHandler slider.ValueChanged, Sub(sender As Object, e As EventArgs) valueLabel.Text = slider.Value.ToString() & "%"
-        valueLabel.Text = slider.Value.ToString() & "%"
-        group.Controls.Add(slider) : group.Controls.Add(valueLabel)
+        Dim number As New NumericUpDown With {.Left = 454, .Top = top + 3, .Width = 68}
+        Dim slider As New TrackBar With {.Left = 127, .Top = top, .Width = 323, .Minimum = minimum, .Maximum = maximum, .TickFrequency = Math.Max(1, (maximum - minimum) \ 10), .Value = Math.Max(minimum, Math.Min(maximum, initialValue))}
+        TrackBarNumericLink.Bind(slider, number)
+        group.Controls.Add(slider) : group.Controls.Add(number)
         Return slider
     End Function
 
@@ -1655,7 +1639,7 @@ Public Class formLightDiffusionEditor
     Private Sub GlobalMaskThresholdChanged(ByVal sender As Object, ByVal e As EventArgs)
         If isInitializing OrElse Backglass.currentData Is Nothing Then Return
         Backglass.currentData.GlobalIlluminationMaskThreshold = globalMaskThreshold.Value
-        globalMaskThresholdLabel.Text = "Threshold: " & globalMaskThreshold.Value.ToString()
+        globalMaskThresholdLabel.Text = "Threshold"
         RebuildBinaryMaskFromSource()
         Backglass.currentData.IsDirty = True
         MarkAllLightsDirty()
@@ -1773,9 +1757,11 @@ Public Class formLightDiffusionEditor
                 Dim picture As New PictureBox With {.Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Zoom, .BackColor = Color.Black}
                 Dim controlsPanel As New FlowLayoutPanel With {.Dock = DockStyle.Top, .Height = 42, .Padding = New Padding(8), .BackColor = SystemColors.Control}
                 Dim overlay As New CheckBox With {.Text = "Overlay on backglass", .AutoSize = True, .Checked = (artwork IsNot Nothing)}
-                Dim opacityText As New Label With {.Text = "Mask opacity: 50%", .AutoSize = True, .Margin = New Padding(18, 5, 3, 0)}
-                Dim opacity As New TrackBar With {.Minimum = 10, .Maximum = 100, .Value = 50, .TickFrequency = 10, .Width = 220, .Height = 32}
-                controlsPanel.Controls.AddRange(New Control() {overlay, opacityText, opacity})
+                Dim opacityText As New Label With {.Text = "Mask opacity", .AutoSize = True, .Margin = New Padding(18, 5, 3, 0)}
+                Dim opacity As New TrackBar With {.Minimum = 10, .Maximum = 100, .Value = 50, .TickFrequency = 10, .Width = 180, .Height = 32}
+                Dim opacityNumber As New NumericUpDown With {.Width = 62, .Height = 24}
+                TrackBarNumericLink.Bind(opacity, opacityNumber)
+                controlsPanel.Controls.AddRange(New Control() {overlay, opacityText, opacity, opacityNumber, New Label With {.Text = "%", .AutoSize = True, .Margin = New Padding(0, 5, 0, 0)}})
                 preview.Controls.Add(picture)
                 preview.Controls.Add(controlsPanel)
 
@@ -1803,7 +1789,6 @@ Public Class formLightDiffusionEditor
                 End Sub
                 AddHandler overlay.CheckedChanged, Sub(o As Object, args As EventArgs) refreshPreview()
                 AddHandler opacity.ValueChanged, Sub(o As Object, args As EventArgs)
-                                                     opacityText.Text = "Mask opacity: " & opacity.Value.ToString() & "%"
                                                      refreshPreview()
                                                  End Sub
                 refreshPreview()

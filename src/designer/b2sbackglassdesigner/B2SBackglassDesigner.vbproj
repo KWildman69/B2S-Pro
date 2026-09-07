@@ -182,6 +182,7 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Classes\General\LayerManager.vb" />
+    <Compile Include="Classes\General\TrackBarNumericLink.vb" />
     <Compile Include="formDesigner.vb">
       <SubType>Form</SubType>
     </Compile>

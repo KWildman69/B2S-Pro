@@ -1107,7 +1107,7 @@ Public Class B2STabPage
         SelectedScore.ReelIlluLocation = location
         SelectedScore.ReelIlluIntensity = Math.Max(0, Math.Min(100, intensity))
         SelectedScore.Reel3DEnabled = reel3DEnabled
-        SelectedScore.Reel3DBrightness = Math.Max(0, Math.Min(200, reel3DBrightness))
+        SelectedScore.Reel3DBrightness = Math.Max(0, Math.Min(400, reel3DBrightness))
         SelectedScore.Reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
         SelectedScore.Reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
         SelectedScore.Reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))

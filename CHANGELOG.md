@@ -13,6 +13,7 @@ First public B2S Pro baseline.
 - Added a comprehensive Layers window with reordering, visibility, locking, naming, opacity, masks, placement, and direct editing.
 - Improved selection, dragging, redraw behavior, and multi-object operations.
 - Added backglass brightness access to the primary toolbar area.
+- Added direct numeric entry beside adjustable sliders throughout the lighting, flasher, mask, reel, Quick Selection, Dream7, illumination, and Layers tools for precise repeatable settings.
 
 ### Snippets and masks
 
@@ -44,6 +45,9 @@ First public B2S Pro baseline.
 - Carried the Designer's neutral transparent-canvas backing into new B2S Pro exports and the server's custom runtime paint layer, so score-window and other transparent openings no longer fall back to black; legacy files without the opt-in marker retain their established backing.
 - Preserved the original Add Reel behavior while carrying only the selected or latest reel's five optional 3D settings—enabled, brightness, color temperature, depth, and glass reflection—into the next reel window.
 - Made the Reel Lighting & 3D window retain every displayed setting when it is closed and reopened instead of rolling live adjustments back.
+- Raised realistic reel backlight brightness from 200% to 400% across the Designer, saved project and `directB2S` data, and B2S Pro Server runtime.
+- Made ROM Player Up triggers switch the realistic 3D reel backlight together with the active player's illumination, leaving inactive-player reel material unlit.
+- Kept reel digits visible when legacy Reel Illumination Location is Off; that legacy setting no longer removes an enabled 3D reel display.
 
 ### Animation and motion
 

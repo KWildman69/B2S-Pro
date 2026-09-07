@@ -18,6 +18,7 @@ Public Class formReelType
 
     Private IsDirty As Boolean = False
     Private currentKeycode As Keys = Keys.D0
+    Private syncingDream7Text As Boolean = False
 
     Public Shadows Function ShowDialog(ByVal owner As IWin32Window,
                                        ByRef reeltypes As String,
@@ -172,13 +173,13 @@ Public Class formReelType
         Dream7LED08.LED.Glow = TrackBarGlow.Value
         Dream7LED10.LED.Glow = TrackBarGlow.Value
         Dream7LED14.LED.Glow = TrackBarGlow.Value
-        txtGlow.Text = TrackBarGlow.Value.ToString()
+        SetDream7Text(txtGlow, TrackBarGlow.Value)
     End Sub
     Private Sub TrackBarThickness_ValueChanged(sender As Object, e As System.EventArgs) Handles TrackBarThickness.ValueChanged
         Dream7LED08.LED.Thickness = TrackBarThickness.Value * 2
         Dream7LED10.LED.Thickness = TrackBarThickness.Value * 2
         Dream7LED14.LED.Thickness = TrackBarThickness.Value * 2
-        txtSize.Text = TrackBarThickness.Value.ToString()
+        SetDream7Text(txtSize, TrackBarThickness.Value)
         ' refresh current key
         formReelType_KeyDown(sender, New KeyEventArgs(currentKeycode))
     End Sub
@@ -186,7 +187,38 @@ Public Class formReelType
         Dream7LED08.LED.Shear = TrackBarShear.Value / 50
         Dream7LED10.LED.Shear = TrackBarShear.Value / 50
         Dream7LED14.LED.Shear = TrackBarShear.Value / 50
-        txtShear.Text = TrackBarShear.Value.ToString()
+        SetDream7Text(txtShear, TrackBarShear.Value)
+    End Sub
+
+    Private Sub SetDream7Text(ByVal editor As TextBox, ByVal value As Integer)
+        syncingDream7Text = True
+        Try
+            editor.Text = value.ToString()
+        Finally
+            syncingDream7Text = False
+        End Try
+    End Sub
+
+    Private Sub Dream7TextChanged(ByVal sender As Object, ByVal e As EventArgs) Handles txtGlow.TextChanged, txtSize.TextChanged, txtShear.TextChanged
+        If syncingDream7Text Then Return
+        Dim editor As TextBox = DirectCast(sender, TextBox)
+        Dim slider As TrackBar = If(Object.ReferenceEquals(editor, txtGlow), TrackBarGlow,
+                                    If(Object.ReferenceEquals(editor, txtSize), TrackBarThickness, TrackBarShear))
+        Dim value As Integer
+        If Integer.TryParse(editor.Text, value) AndAlso value >= slider.Minimum AndAlso value <= slider.Maximum Then
+            slider.Value = value
+        End If
+    End Sub
+
+    Private Sub Dream7TextValidated(ByVal sender As Object, ByVal e As EventArgs) Handles txtGlow.Validated, txtSize.Validated, txtShear.Validated
+        Dim editor As TextBox = DirectCast(sender, TextBox)
+        Dim slider As TrackBar = If(Object.ReferenceEquals(editor, txtGlow), TrackBarGlow,
+                                    If(Object.ReferenceEquals(editor, txtSize), TrackBarThickness, TrackBarShear))
+        Dim value As Integer
+        If Not Integer.TryParse(editor.Text, value) Then value = slider.Value
+        value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value))
+        slider.Value = value
+        SetDream7Text(editor, value)
     End Sub
 
     Private Sub Reels_MouseDoubleClick(sender As Object, e As System.Windows.Forms.MouseEventArgs) Handles lvEMReels.MouseDoubleClick

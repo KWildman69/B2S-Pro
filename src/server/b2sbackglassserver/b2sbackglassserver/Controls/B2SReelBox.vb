@@ -55,45 +55,68 @@ Public Class B2SReelBox
     Protected Overrides Sub OnPaint(ByVal e As System.Windows.Forms.PaintEventArgs)
 
         If Not String.IsNullOrEmpty(reelindex) Then
-            Dim images As Generic.Dictionary(Of String, Image) = If(_Illuminated, B2SData.ReelIlluImages, B2SData.ReelImages)
-            Dim intimages As Generic.Dictionary(Of String, Image) = If(_Illuminated, B2SData.ReelIntermediateIlluImages, B2SData.ReelIntermediateImages)
-            Dim name As String = String.Empty
             If intermediates = -1 AndAlso timer.Enabled Then
                 Static firstintermediatecount As Integer = 1
-                name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "") & "_" & firstintermediatecount.ToString()
-                If intimages.ContainsKey(name) Then
-                    DrawReelImage(e.Graphics, intimages(name), name)
+                Dim regularName As String = _ReelType & "_" & reelindex & "_" & firstintermediatecount.ToString()
+                Dim illuminatedName As String = _ReelType & "_" & reelindex & If(SetID > 0, "_" & SetID.ToString(), "") & "_" & firstintermediatecount.ToString()
+                If DrawAvailableReelImage(e.Graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName) Then
                     firstintermediatecount += 1
                     intermediates2go = 2
                 Else
-                    name = _ReelType & "_" & ConvertText(_CurrentText + 1) & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "")
-                    If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name), name)
+                    regularName = _ReelType & "_" & ConvertText(_CurrentText + 1)
+                    illuminatedName = regularName & If(SetID > 0, "_" & SetID.ToString(), "")
+                    DrawAvailableReelImage(e.Graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
                     intermediates = firstintermediatecount - 1
                     intermediates2go = 1
                 End If
             ElseIf intermediates2go > 0 Then
-                name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "") & "_" & (intermediates - intermediates2go + 1).ToString()
-                If intimages.ContainsKey(name) Then DrawReelImage(e.Graphics, intimages(name), name)
+                Dim intermediateIndex As String = (intermediates - intermediates2go + 1).ToString()
+                Dim regularName As String = _ReelType & "_" & reelindex & "_" & intermediateIndex
+                Dim illuminatedName As String = _ReelType & "_" & reelindex & If(SetID > 0, "_" & SetID.ToString(), "") & "_" & intermediateIndex
+                DrawAvailableReelImage(e.Graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName)
             Else
-                name = _ReelType & "_" & reelindex & If(SetID > 0 AndAlso _Illuminated, "_" & SetID.ToString(), "")
-                If images.ContainsKey(name) Then DrawReelImage(e.Graphics, images(name), name)
+                Dim regularName As String = _ReelType & "_" & reelindex
+                Dim illuminatedName As String = regularName & If(SetID > 0, "_" & SetID.ToString(), "")
+                DrawAvailableReelImage(e.Graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
             End If
         End If
 
     End Sub
+
+    Private Function DrawAvailableReelImage(ByVal graphics As Graphics,
+                                            ByVal regularImages As Generic.Dictionary(Of String, Image),
+                                            ByVal illuminatedImages As Generic.Dictionary(Of String, Image),
+                                            ByVal regularName As String,
+                                            ByVal illuminatedName As String) As Boolean
+        If _Illuminated AndAlso illuminatedImages.ContainsKey(illuminatedName) Then
+            DrawReelImage(graphics, illuminatedImages(illuminatedName), illuminatedName & "|illuminated")
+            Return True
+        End If
+        If regularImages.ContainsKey(regularName) Then
+            DrawReelImage(graphics, regularImages(regularName), regularName & "|regular")
+            Return True
+        End If
+        Return False
+    End Function
 
     Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         If graphics Is Nothing OrElse reelImage Is Nothing Then Return
 
         Dim imageToDraw As Image = reelImage
         If Reel3DEnabled Then
+            ' A triggered 3D reel keeps its depth and glass while inactive, but
+            ' its backlight follows the same state as the legacy reel light.
+            ' Without a trigger, preserve the original always-backlit behavior.
+            Dim backlightOn As Boolean = (RomID <= 0 OrElse _Illuminated)
+            Dim effectiveBrightness As Integer = If(backlightOn, Reel3DBrightness, 0)
+            Dim effectiveTemperature As Integer = If(backlightOn, Reel3DTemperature, 4000)
             Dim cacheKey As String = cacheName & "|" & ClientSize.Width.ToString() & "x" & ClientSize.Height.ToString() &
-                                     "|" & Reel3DBrightness.ToString() & "|" & Reel3DTemperature.ToString() & "|" & Reel3DDepth.ToString()
+                                     "|" & effectiveBrightness.ToString() & "|" & effectiveTemperature.ToString() & "|" & Reel3DDepth.ToString()
             If Not reel3DImageCache.ContainsKey(cacheKey) Then
                 Dim enhanced As Bitmap = Reel3DEffect.RenderReel(reelImage,
                                                                  ClientSize,
-                                                                 Reel3DBrightness,
-                                                                 Reel3DTemperature,
+                                                                 effectiveBrightness,
+                                                                 effectiveTemperature,
                                                                  Reel3DDepth)
                 If enhanced IsNot Nothing Then reel3DImageCache.Add(cacheKey, enhanced)
             End If

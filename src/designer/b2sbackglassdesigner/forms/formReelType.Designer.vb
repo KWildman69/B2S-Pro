@@ -318,19 +318,19 @@ Partial Class formReelType
         '
         resources.ApplyResources(Me.txtShear, "txtShear")
         Me.txtShear.Name = "txtShear"
-        Me.txtShear.ReadOnly = True
+        Me.txtShear.ReadOnly = False
         '
         'txtSize
         '
         resources.ApplyResources(Me.txtSize, "txtSize")
         Me.txtSize.Name = "txtSize"
-        Me.txtSize.ReadOnly = True
+        Me.txtSize.ReadOnly = False
         '
         'txtGlow
         '
         resources.ApplyResources(Me.txtGlow, "txtGlow")
         Me.txtGlow.Name = "txtGlow"
-        Me.txtGlow.ReadOnly = True
+        Me.txtGlow.ReadOnly = False
         '
         'LabelGlow
         '

@@ -24,7 +24,8 @@ release downloads and verified local packages for offline cabinets.
 - Add Snippet, Make Snippet, and Quick Selection workflows
 - One-picture and animated-GIF animation creation
 - One-image rotation, score rotation, pivot animation, and mechanical-wheel animation
-- Optional realistic 3D EM score reels with adjustable backlighting, light temperature, drum depth, and glass reflection
+- Optional realistic 3D EM score reels with up to 400% backlighting, Player Up control, light temperature, drum depth, and glass reflection
+- Direct number entry beside adjustable sliders for exact, repeatable editor settings
 - Motion paths with editable entry and exit behavior
 - Trough animation with live ball-count updates, custom PNG artwork per ball, rolling, and feeder respawn
 - Physics boundaries, bumpers, switches, flippers, and launcher support

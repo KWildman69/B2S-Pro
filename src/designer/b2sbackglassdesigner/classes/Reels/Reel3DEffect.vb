@@ -20,7 +20,7 @@ Namespace ReelAndLED
                                           ByVal depth As Integer) As Bitmap
             If source Is Nothing Then Return Nothing
 
-            brightness = Math.Max(0, Math.Min(200, brightness))
+            brightness = Math.Max(0, Math.Min(400, brightness))
             temperature = Math.Max(2000, Math.Min(6500, temperature))
             depth = Math.Max(0, Math.Min(200, depth))
 

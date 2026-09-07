@@ -16,6 +16,7 @@ Public Class formToolLayers
     Private ReadOnly btnFront As New Button()
     Private ReadOnly btnBack As New Button()
     Private ReadOnly opacitySlider As New TrackBar()
+    Private ReadOnly opacityNumber As New NumericUpDown()
     Private ReadOnly opacityLabel As New Label()
     Private ReadOnly layerNumber As New NumericUpDown()
     Private ReadOnly btnSetLayer As New Button()
@@ -240,10 +241,11 @@ Public Class formToolLayers
         layerPanel.Controls.Add(layerNumber)
         layerPanel.Controls.Add(btnSetLayer)
 
-        Dim opacityPanel As New TableLayoutPanel With {.Name = "pnlLayerOpacity", .Dock = DockStyle.Bottom, .Height = 37, .BackColor = BackColor, .Padding = New Padding(5, 1, 5, 1), .ColumnCount = 2, .RowCount = 1}
-        opacityPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 94.0F))
+        Dim opacityPanel As New TableLayoutPanel With {.Name = "pnlLayerOpacity", .Dock = DockStyle.Bottom, .Height = 37, .BackColor = BackColor, .Padding = New Padding(5, 1, 5, 1), .ColumnCount = 3, .RowCount = 1}
+        opacityPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 82.0F))
         opacityPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        opacityLabel.Text = "Opacity: 100%"
+        opacityPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 62.0F))
+        opacityLabel.Text = "Opacity (%)"
         opacityLabel.ForeColor = ForeColor
         opacityLabel.Font = Font
         opacityLabel.Dock = DockStyle.Fill
@@ -253,9 +255,13 @@ Public Class formToolLayers
         opacitySlider.Maximum = 100
         opacitySlider.TickFrequency = 10
         opacitySlider.Value = 100
-        AddHandler opacitySlider.Scroll, AddressOf OpacityChanged
+        TrackBarNumericLink.Bind(opacitySlider, opacityNumber)
+        AddHandler opacitySlider.ValueChanged, AddressOf OpacityChanged
         opacityPanel.Controls.Add(opacityLabel, 0, 0)
         opacityPanel.Controls.Add(opacitySlider, 1, 0)
+        opacityNumber.Dock = DockStyle.Fill
+        opacityNumber.Margin = New Padding(2, 5, 0, 5)
+        opacityPanel.Controls.Add(opacityNumber, 2, 0)
 
         Controls.Add(layers)
         Controls.Add(buttons)
@@ -850,9 +856,14 @@ Public Class formToolLayers
             If TypeOf selectedItem Is InfoBase Then canvasSelection.Add(DirectCast(selectedItem, InfoBase))
         Next
         Backglass.currentTabPage.Mouse.SetSelection(canvasSelection, TryCast(item, InfoBase))
-        opacitySlider.Value = LayerManager.GetOpacity(item)
-        opacitySlider.Enabled = TypeOf item Is Illumination.BulbInfo AndAlso DirectCast(item, Illumination.BulbInfo).IsImageSnippit
-        opacityLabel.Text = If(opacitySlider.Enabled, "Opacity: " & opacitySlider.Value & "%", "Opacity: snippets")
+        refreshing = True
+        Try
+            opacitySlider.Value = LayerManager.GetOpacity(item)
+            opacitySlider.Enabled = TypeOf item Is Illumination.BulbInfo AndAlso DirectCast(item, Illumination.BulbInfo).IsImageSnippit
+        Finally
+            refreshing = False
+        End Try
+        opacityLabel.Text = If(opacitySlider.Enabled, "Opacity (%)", "Opacity: snippets")
         If TypeOf item Is Illumination.BulbInfo OrElse TypeOf item Is ReelAndLED.ScoreInfo Then
             layerNumber.Value = Math.Max(layerNumber.Minimum, Math.Min(layerNumber.Maximum, CDec(GetVisualZ(item))))
         End If
@@ -910,6 +921,7 @@ Public Class formToolLayers
     End Sub
 
     Private Sub OpacityChanged(sender As Object, e As EventArgs)
+        If refreshing Then Return
         Dim item As Object = SelectedObject()
         If item Is Nothing Then Return
         Dim members As List(Of Illumination.BulbInfo) = PictureAnimationMembers(TryCast(item, Illumination.BulbInfo))
@@ -920,7 +932,7 @@ Public Class formToolLayers
         Else
             LayerManager.SetOpacity(item, opacitySlider.Value)
         End If
-        opacityLabel.Text = "Opacity: " & opacitySlider.Value & "%"
+        opacityLabel.Text = "Opacity (%)"
         If Backglass.currentTabPage IsNot Nothing Then Backglass.currentTabPage.Invalidate()
     End Sub
 

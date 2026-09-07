@@ -268,7 +268,7 @@
         <li>Create or select an <strong>EM reel score frame</strong> on the backglass.</li>
         <li>In the <strong>Reels &amp; LEDs</strong> window, click <strong>Reel Lighting &amp; 3D...</strong>.</li>
         <li>Enable <strong>Realistic 3D backlighting</strong>. The complete selected score display updates immediately.</li>
-        <li>Set <strong>Backlight brightness</strong> for the lamp strength and <strong>Color temperature</strong> for warm incandescent through cool LED-style light.</li>
+        <li>Set <strong>Backlight brightness</strong> from 0–400% for the lamp strength and <strong>Color temperature</strong> for warm incandescent through cool LED-style light. Drag a slider or type an exact value in its number box.</li>
         <li>Raise <strong>3D depth</strong> to exaggerate drum curvature and the recessed window shadow.</li>
         <li>Raise <strong>Glass reflection</strong> to add the highlight that runs continuously across the whole score window.</li>
         <li>Close the window when the reel looks right. Every setting is retained automatically and remains attached to that score frame in the project and exported DirectB2S file.</li>
@@ -276,7 +276,7 @@
       </ol>
       <table>
         <tr><th>Control</th><th>Effect</th></tr>
-        <tr><td>Backlight brightness</td><td>Controls how strongly the translucent reel paper glows while the printed number remains dark.</td></tr>
+        <tr><td>Backlight brightness</td><td>Controls how strongly the translucent reel paper glows while the printed number remains dark. The full range is 0–400%.</td></tr>
         <tr><td>Color temperature</td><td>Runs from 2000 K warm incandescent light to 6500 K cool light, matching the illumination tools.</td></tr>
         <tr><td>3D depth</td><td>Adds drum curvature, edge shading, and recessed depth to each reel opening.</td></tr>
         <tr><td>Glass reflection</td><td>Adds a restrained reflection across the complete score display instead of repeating it separately on every digit.</td></tr>
@@ -286,6 +286,7 @@
         <figcaption>The live comparison shows the original flat reels beside the 3D backlit result, with brightness, color temperature, depth, and glass-reflection controls visible together.</figcaption>
       </figure>
       <div class="note">For the strongest behind-glass effect, place the score frame behind the canvas and use a transparent score-window opening. B2S Pro's neutral transparency backing preserves lighting headroom in both the editor and the B2S Pro Server.</div>
+      <div class="note">When the reel uses a Player Up trigger, its 3D backlight follows that player automatically. Reel Illumination Location may remain Off; the unlit digits stay visible and the Player Up event controls only the simulated backlight.</div>
       <div class="note">Build the first reel exactly the way you want it, then add the remaining reels. B2S Pro repeats that setup and assigns each new frame the next reel number.</div>
       <div class="compat">3D reel settings are opt-in. Existing EM reels without the new settings continue through the original reel-rendering path unchanged.</div>
     </section>

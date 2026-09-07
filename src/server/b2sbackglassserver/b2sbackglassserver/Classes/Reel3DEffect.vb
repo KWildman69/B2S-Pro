@@ -14,7 +14,7 @@ Public NotInheritable Class Reel3DEffect
                                       ByVal temperature As Integer,
                                       ByVal depth As Integer) As Bitmap
         If source Is Nothing OrElse targetSize.Width <= 0 OrElse targetSize.Height <= 0 Then Return Nothing
-        brightness = Math.Max(0, Math.Min(200, brightness))
+        brightness = Math.Max(0, Math.Min(400, brightness))
         temperature = Math.Max(2000, Math.Min(6500, temperature))
         depth = Math.Max(0, Math.Min(200, depth))
 

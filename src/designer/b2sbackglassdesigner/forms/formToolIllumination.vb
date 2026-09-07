@@ -8,6 +8,7 @@ Public Class formToolIllumination
     Private lblSelectedType As Label
     Private lblLampPropertiesHeader As Label
     Private illuminationToolTip As ToolTip
+    Private ReadOnly numericIntensity As New NumericUpDown()
 
     Public Enum eIlluminationDataType
         NotDefined = 0
@@ -107,8 +108,13 @@ Public Class formToolIllumination
         AddHandler Me.DpiChanged, AddressOf ReflowIlluminationLayout
         Me.Controls.Add(btnGlow)
 
+        numericIntensity.Name = "numericIntensity"
+        TrackBarNumericLink.Bind(TrackBarIntensity, numericIntensity)
+        Me.Controls.Add(numericIntensity)
+
         ReflowIlluminationLayout(Nothing, EventArgs.Empty)
         btnGlow.BringToFront()
+        numericIntensity.BringToFront()
 
     End Sub
 
@@ -154,7 +160,8 @@ Public Class formToolIllumination
 
         ' Intensity and color.
         lblIntensity.SetBounds(labelLeft, ScaleLogical(274), labelWidth, ScaleLogical(21))
-        TrackBarIntensity.SetBounds(contentLeft, ScaleLogical(268), Math.Max(ScaleLogical(58), contentWidth - ScaleLogical(34)), ScaleLogical(31))
+        TrackBarIntensity.SetBounds(contentLeft, ScaleLogical(268), Math.Max(ScaleLogical(42), contentWidth - ScaleLogical(92)), ScaleLogical(31))
+        numericIntensity.SetBounds(contentLeft + contentWidth - ScaleLogical(86), ScaleLogical(272), ScaleLogical(54), ScaleLogical(23))
         btnLightColor.SetBounds(contentLeft + contentWidth - ScaleLogical(28), ScaleLogical(272), ScaleLogical(28), ScaleLogical(23))
         lblDodgeColor.SetBounds(labelLeft, ScaleLogical(300), labelWidth, ScaleLogical(21))
         cmbDodgeColor.SetBounds(contentLeft, ScaleLogical(299), contentWidth, ScaleLogical(22))
@@ -371,7 +378,8 @@ Public Class formToolIllumination
         RaiseEvent DataChanged(Me, New IlluminationEventArgs(eIlluminationDataType.RomInverted, chkRomInverted.Checked))
     End Sub
 
-    Private Sub Intensity_Scroll(sender As System.Object, e As System.EventArgs) Handles TrackBarIntensity.Scroll
+    Private Sub Intensity_Scroll(sender As System.Object, e As System.EventArgs) Handles TrackBarIntensity.ValueChanged
+        If ignoreChange Then Return
         RaiseEvent DataChanged(Me, New IlluminationEventArgs(eIlluminationDataType.Intensity, TrackBarIntensity.Value))
     End Sub
     Private Sub LightColor_Click(sender As System.Object, e As System.EventArgs) Handles btnLightColor.Click

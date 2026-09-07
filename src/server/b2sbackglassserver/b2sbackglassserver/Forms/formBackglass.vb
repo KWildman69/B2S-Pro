@@ -3095,7 +3095,7 @@ Public Class formBackglass
                         If innerNode.Attributes("Reel3DTemperature") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DTemperature").InnerText, parsedReel3DValue) Then reel3DTemperature = parsedReel3DValue
                         If innerNode.Attributes("Reel3DDepth") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DDepth").InnerText, parsedReel3DValue) Then reel3DDepth = parsedReel3DValue
                         If innerNode.Attributes("Reel3DGlass") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DGlass").InnerText, parsedReel3DValue) Then reel3DGlass = parsedReel3DValue
-                        reel3DBrightness = Math.Max(0, Math.Min(200, reel3DBrightness))
+                        reel3DBrightness = Math.Max(0, Math.Min(400, reel3DBrightness))
                         reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
                         reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
                         reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
