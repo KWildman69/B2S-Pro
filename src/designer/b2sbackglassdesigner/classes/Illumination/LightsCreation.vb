@@ -733,43 +733,25 @@ Namespace Illumination
 
             ' maybe create the scaled and illuminated image part
             If imageBackground IsNot Nothing Then
-                ' Every normal Light object now illuminates the pixels already present
-                ' in the backglass artwork.  LightPurpose still distinguishes a lamp
-                ' from a flasher for trigger/pulse behavior, but no longer sends lamps
-                ' through the synthetic RGB glow renderer.  The explicit flag remains
-                ' for Flasher-purpose lights whose IlluMode is Standard.
-                Dim useArtworkPixels As Boolean =
-                    (illumode = Illumination.eIlluMode.Standard OrElse
-                     illumode = Illumination.eIlluMode.Flasher OrElse
-                     artworkPixelLighting)
+                ' Normal lamps—including text lamps and Quick Selection lamps—must
+                ' keep the established synthetic lamp/text renderer.  Only an actual
+                ' flasher uses the artwork-pixel renderer.  Routing ordinary lamps
+                ' through the flasher renderer discards sharp text RGB and replaces a
+                ' masked lamp with illuminated artwork, which can disappear completely
+                ' over transparent canvas areas.
                 Dim isFlasherLighting As Boolean = artworkPixelLighting OrElse
                                                        illumode = Illumination.eIlluMode.Flasher
+                Dim useArtworkPixels As Boolean = isFlasherLighting
                 Dim artworkExposure As Integer =
                     GetArtworkExposure(glowIntensity, isFlasherLighting)
                 Dim currentimage As Bitmap = imageBackground.Clone(rectX, Imaging.PixelFormat.Format32bppArgb)
                 ' 2.8.8: reuse the expensive anti-aliased glow/text template while
                 ' dragging. The returned bitmap is a clone and remains safe to clip
                 ' and merge into the current background crop.
-                Dim image As Bitmap = Nothing
-
-                ' Legacy masked lamps keep their authored artwork renderer. A
-                ' flasher must retain the same alpha-field renderer and settings
-                ' whether or not Quick Selection is present; its mask is applied
-                ' only as the final clipping step below.
-                If Not isFlasherLighting AndAlso useArtworkPixels AndAlso Not String.IsNullOrEmpty(selectionMaskData) AndAlso
-                   Math.Abs(lightRotationAngle) < 0.001F Then
-                    image = ArtworkFlasherRenderer.Render(currentimage, rectX, selectionMaskData, selectionFeather, artworkExposure, lightcolor, flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, glowSoftness, Math.Max(0, glowIntensity), glowFalloff, transmissionContrast, maskRadius, maskSmartRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, transmitTransparentCanvas)
-                    If image Is Nothing Then
-                        image = GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment, illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion)
-                    Else
-                        ApplyTemperatureToRenderedLight(image, lightTemperature)
-                        If applyGlobalMask Then ApplyGlobalIlluminationMask(image, rectX)
-                        currentimage.Dispose()
-                        Return image
-                    End If
-                Else
-                    image = GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment, illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion)
-                End If
+                Dim image As Bitmap =
+                    GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment,
+                                    illumode, glowSoftness, glowFalloff,
+                                    glowIntensity, lightDiffusion)
 
                 If Math.Abs(lightRotationAngle) >= 0.001F Then
                     Dim rotatedImage As Bitmap = PositionRotatedLightTemplate(image, rect, rectX, lightRotationAngle)

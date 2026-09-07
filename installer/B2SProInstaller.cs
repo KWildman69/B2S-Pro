@@ -15,6 +15,22 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
+#if SERVER_ONLY
+[assembly: AssemblyTitle("B2S Server Setup")]
+[assembly: AssemblyProduct("B2S Pro Server")]
+[assembly: AssemblyVersion("3.0.0.0")]
+[assembly: AssemblyFileVersion("3.0.0.0")]
+[assembly: AssemblyInformationalVersion("3.0.0")]
+#else
+[assembly: AssemblyTitle("B2S Pro Setup")]
+[assembly: AssemblyProduct("B2S Pro Backglass Designer")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyInformationalVersion("1.0.1")]
+#endif
+[assembly: AssemblyCompany("B2S Pro")]
+[assembly: AssemblyCopyright("Copyright © 2026 Ken Wildman")]
+
 namespace B2SPro.Setup
 {
     internal static class Program
@@ -34,9 +50,24 @@ namespace B2SPro.Setup
         }
     }
 
+    internal static class SetupEdition
+    {
+#if SERVER_ONLY
+        public static readonly bool ServerOnly = true;
+        public const string Title = "B2S Server Setup & Updater";
+        public const string Product = "B2S Server";
+        public const string ButtonText = "Install / Update Server";
+#else
+        public static readonly bool ServerOnly = false;
+        public const string Title = "B2S Pro Setup & Updater";
+        public const string Product = "B2S Pro";
+        public const string ButtonText = "Install / Update B2S Pro";
+#endif
+    }
+
     internal sealed class InstallerForm : Form
     {
-        private const string LocalPackageName = "B2S-Latest-Complete-Build.zip";
+        private const string CompletePackageName = "B2S-Latest-Complete-Build.zip";
         private readonly TextBox _vpxFolder = new TextBox();
         private readonly TextBox _designerFolder = new TextBox();
         private readonly TextBox _serverFolder = new TextBox();
@@ -46,17 +77,17 @@ namespace B2SPro.Setup
         private readonly Button _installButton = new Button();
         private readonly ProgressBar _progress = new ProgressBar();
         private readonly Label _status = new Label();
-        private readonly Label _sourceHelp = new Label();
         private readonly string _localPackage;
 
         public InstallerForm()
         {
-            _localPackage = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LocalPackageName);
-            Text = "B2S Pro Setup";
+            _localPackage = FindLocalPackage();
+            Text = SetupEdition.Title;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(760, 690);
-            Size = new Size(820, 730);
+            MinimumSize = SetupEdition.ServerOnly ? new Size(700, 450) : new Size(700, 550);
+            Size = SetupEdition.ServerOnly ? new Size(720, 460) : new Size(720, 565);
+            MaximizeBox = false;
             BackColor = Color.FromArgb(9, 13, 20);
             ForeColor = Color.White;
             Font = new Font("Segoe UI", 9F);
@@ -69,51 +100,59 @@ namespace B2SPro.Setup
         {
             var root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
-            root.Padding = new Padding(24);
+            root.Padding = new Padding(16, 12, 16, 12);
             root.ColumnCount = 1;
-            root.RowCount = 9;
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            root.RowCount = SetupEdition.ServerOnly ? 7 : 9;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, SetupEdition.ServerOnly ? 78 : 82));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, SetupEdition.ServerOnly ? 48 : 56));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            if (!SetupEdition.ServerOnly)
+            {
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            }
+            else root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
             Controls.Add(root);
 
             root.Controls.Add(CreateHeader(), 0, 0);
             root.Controls.Add(CreateIntro(), 0, 1);
-            root.Controls.Add(CreatePathRow("1. Visual Pinball folder", "Select the folder containing VPinballX.exe.", _vpxFolder, BrowseVpx, "Browse..."), 0, 2);
-            root.Controls.Add(CreatePathRow("2. B2S Pro Designer folder", "B2S Pro installs separately; the original Designer stays untouched.", _designerFolder, delegate { BrowseFolder(_designerFolder); }, "Browse..."), 0, 3);
-            root.Controls.Add(CreatePathRow("B2S Server folder — automatically detected", "Change this only when your server is stored elsewhere.", _serverFolder, delegate { BrowseFolder(_serverFolder); }, "Change..."), 0, 4);
+            root.Controls.Add(CreatePathRow("1. Visual Pinball folder", _vpxFolder, BrowseVpx, "Browse..."), 0, 2);
+            int nextRow = 3;
+            if (!SetupEdition.ServerOnly)
+            {
+                root.Controls.Add(CreatePathRow("2. B2S Pro Designer folder", _designerFolder, delegate { BrowseFolder(_designerFolder); }, "Browse..."), 0, nextRow++);
+            }
+            root.Controls.Add(CreatePathRow(SetupEdition.ServerOnly ? "2. B2S Server folder — automatically detected" : "B2S Server folder — automatically detected", _serverFolder, delegate { BrowseFolder(_serverFolder); }, "Change..."), 0, nextRow++);
             _serverFolder.ReadOnly = true;
-            root.Controls.Add(CreateArchitectureRow(), 0, 5);
-            root.Controls.Add(CreateSourcePanel(), 0, 6);
+            if (!SetupEdition.ServerOnly) root.Controls.Add(CreateArchitectureRow(), 0, nextRow++);
+            root.Controls.Add(CreateSourcePanel(), 0, nextRow++);
 
             var statusPanel = new Panel { Dock = DockStyle.Fill };
             _progress.Dock = DockStyle.Top;
-            _progress.Height = 20;
+            _progress.Height = 8;
             _progress.Style = ProgressBarStyle.Continuous;
             _status.Dock = DockStyle.Fill;
-            _status.Padding = new Padding(0, 10, 0, 0);
+            _status.Padding = new Padding(2, 8, 2, 0);
             _status.ForeColor = Color.FromArgb(140, 220, 255);
-            _status.Text = "Choose the three folders, then click Install.";
+            _status.Text = SetupEdition.ServerOnly ? "Choose the Visual Pinball and Server folders, then click Install / Update." : "Choose the three folders, then click Install / Update.";
             statusPanel.Controls.Add(_status);
             statusPanel.Controls.Add(_progress);
-            root.Controls.Add(statusPanel, 0, 7);
+            root.Controls.Add(statusPanel, 0, nextRow++);
 
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-            var close = StyledButton("Close", 112);
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
+            var close = StyledButton("Close", 104);
             close.Click += delegate { Close(); };
-            _installButton.Text = "Install B2S Pro";
-            StyleButton(_installButton, 160);
+            _installButton.Text = SetupEdition.ButtonText;
+            StyleButton(_installButton, SetupEdition.ServerOnly ? 184 : 178);
             _installButton.BackColor = Color.FromArgb(25, 112, 68);
             _installButton.Click += InstallClicked;
             buttons.Controls.Add(close);
             buttons.Controls.Add(_installButton);
-            root.Controls.Add(buttons, 0, 8);
+            root.Controls.Add(buttons, 0, nextRow);
         }
 
         private Control CreateHeader()
@@ -141,33 +180,34 @@ namespace B2SPro.Setup
         {
             var label = new Label();
             label.Dock = DockStyle.Fill;
-            label.Text = "B2S Pro installs beside the original Backglass Designer. Nothing is written until all locations are validated and every existing program-file replacement is approved.";
+            label.Text = SetupEdition.ServerOnly
+                ? "Installs or updates only the B2S Server used by Visual Pinball. B2S Pro and the original Backglass Designer are not installed or changed."
+                : "B2S Pro installs beside the original Backglass Designer and includes the required B2S Server update. Nothing is written until all locations are validated and every existing program-file replacement is approved.";
             label.Font = new Font(Font, FontStyle.Bold);
             label.ForeColor = Color.FromArgb(230, 235, 245);
-            label.Padding = new Padding(2, 12, 2, 4);
+            label.Padding = new Padding(2, 8, 2, 2);
             return label;
         }
 
-        private Control CreatePathRow(string title, string help, TextBox textBox, EventHandler browse, string buttonText)
+        private Control CreatePathRow(string title, TextBox textBox, EventHandler browse, string buttonText)
         {
             var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 27));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 98));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
 
             var label = new Label { Text = title, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold) };
-            var helpLabel = new Label { Text = help, Dock = DockStyle.Fill, ForeColor = Color.Silver, TextAlign = ContentAlignment.MiddleRight };
             textBox.Dock = DockStyle.Fill;
             textBox.BackColor = Color.FromArgb(27, 33, 45);
             textBox.ForeColor = Color.White;
             textBox.BorderStyle = BorderStyle.FixedSingle;
-            var button = StyledButton(buttonText, 96);
+            var button = StyledButton(buttonText, 90);
             button.Dock = DockStyle.Fill;
             button.Click += browse;
 
             panel.Controls.Add(label, 0, 0);
-            panel.Controls.Add(helpLabel, 1, 0);
+            panel.SetColumnSpan(label, 2);
             panel.Controls.Add(textBox, 0, 1);
             panel.Controls.Add(button, 1, 1);
             return panel;
@@ -175,47 +215,37 @@ namespace B2SPro.Setup
 
         private Control CreateArchitectureRow()
         {
-            var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 6, 0, 0) };
-            panel.Controls.Add(new Label { Text = "Designer edition:", Width = 120, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold), Height = 30 });
+            var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 3, 0, 0), WrapContents = false };
+            panel.Controls.Add(new Label { Text = "Designer edition:", Width = 114, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold), Height = 27 });
             _architecture.DropDownStyle = ComboBoxStyle.DropDownList;
             _architecture.Items.AddRange(new object[] { "64-bit (recommended)", "32-bit" });
             _architecture.SelectedIndex = Environment.Is64BitOperatingSystem ? 0 : 1;
-            _architecture.Width = 210;
+            _architecture.Width = 194;
             panel.Controls.Add(_architecture);
-            panel.Controls.Add(new Label { Text = "The B2S Server itself supports both x86 and x64.", Width = 330, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver });
+            panel.Controls.Add(new Label { Text = "Server supports both x86 and x64.", Width = 250, Height = 27, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver });
             return panel;
         }
 
         private Control CreateSourcePanel()
         {
-            var group = new GroupBox { Text = "Build source", Dock = DockStyle.Fill, ForeColor = Color.White, Padding = new Padding(12) };
-            var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(6, 2, 0, 0) };
-            _localSource.Text = "Use the local test build beside this installer";
-            _localSource.AutoSize = false;
-            _localSource.Width = 650;
-            _localSource.Height = 23;
+            var group = new GroupBox { Text = "Build source", Dock = DockStyle.Fill, ForeColor = Color.White, Padding = new Padding(10, 7, 10, 5) };
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(4, 1, 0, 0) };
+            _localSource.Text = SetupEdition.ServerOnly ? "Install from the verified server package beside this updater" : "Install from the verified complete package beside this updater";
+            _localSource.AutoSize = true;
+            _localSource.Margin = new Padding(3, 0, 3, 0);
             _localSource.ForeColor = Color.White;
             _localSource.BackColor = Color.Transparent;
             _localSource.UseVisualStyleBackColor = false;
             _localSource.Enabled = File.Exists(_localPackage);
-            _githubSource.Text = "Download the latest verified release from GitHub";
-            _githubSource.AutoSize = false;
-            _githubSource.Width = 650;
-            _githubSource.Height = 23;
+            _githubSource.Text = "Download the latest verified " + SetupEdition.Product + " release from GitHub";
+            _githubSource.AutoSize = true;
+            _githubSource.Margin = new Padding(3, 0, 3, 0);
             _githubSource.ForeColor = Color.White;
             _githubSource.BackColor = Color.Transparent;
             _githubSource.UseVisualStyleBackColor = false;
-            _sourceHelp.AutoSize = false;
-            _sourceHelp.Width = 680;
-            _sourceHelp.Height = 34;
-            _sourceHelp.ForeColor = Color.FromArgb(185, 205, 225);
-            _sourceHelp.Text = _localSource.Enabled
-                ? "Local package found. GitHub downloading will work anonymously after the repository is public."
-                : "No local package was found. The private repository cannot be downloaded anonymously.";
             if (_localSource.Enabled) _localSource.Checked = true; else _githubSource.Checked = true;
             flow.Controls.Add(_localSource);
             flow.Controls.Add(_githubSource);
-            flow.Controls.Add(_sourceHelp);
             group.Controls.Add(flow);
             return group;
         }
@@ -230,15 +260,18 @@ namespace B2SPro.Setup
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 _vpxFolder.Text = Path.GetDirectoryName(dialog.FileName);
                 SetSuggestedFolders(_vpxFolder.Text);
-                if (PeArchitecture.Is32Bit(dialog.FileName)) _architecture.SelectedIndex = 1;
-                else if (Environment.Is64BitOperatingSystem) _architecture.SelectedIndex = 0;
+                if (!SetupEdition.ServerOnly)
+                {
+                    if (PeArchitecture.Is32Bit(dialog.FileName)) _architecture.SelectedIndex = 1;
+                    else if (Environment.Is64BitOperatingSystem) _architecture.SelectedIndex = 0;
+                }
             }
         }
 
         private void SetSuggestedFolders(string vpxRoot)
         {
             if (String.IsNullOrWhiteSpace(vpxRoot)) return;
-            if (String.IsNullOrWhiteSpace(_designerFolder.Text)) _designerFolder.Text = Path.Combine(vpxRoot, "B2SPro");
+            if (!SetupEdition.ServerOnly && String.IsNullOrWhiteSpace(_designerFolder.Text)) _designerFolder.Text = Path.Combine(vpxRoot, "B2SPro");
             _serverFolder.Text = ServerLocator.FindOrSuggest(vpxRoot);
             if (File.Exists(Path.Combine(_serverFolder.Text, "B2SBackglassServer.dll")))
                 _status.Text = "Existing B2S Server detected: " + _serverFolder.Text;
@@ -262,7 +295,7 @@ namespace B2SPro.Setup
             string validation = ValidateInputs();
             if (validation != null)
             {
-                MessageBox.Show(this, validation, "B2S Pro Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, validation, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -278,16 +311,16 @@ namespace B2SPro.Setup
                 }
                 else
                 {
-                    downloadFolder = Path.Combine(Path.GetTempPath(), "B2SProSetup-" + Guid.NewGuid().ToString("N"));
+                    downloadFolder = Path.Combine(Path.GetTempPath(), (SetupEdition.ServerOnly ? "B2SServerSetup-" : "B2SProSetup-") + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(downloadFolder);
-                    packagePath = await GitHubRelease.DownloadLatestAsync(downloadFolder, ReportDownloadProgress);
+                    packagePath = await GitHubRelease.DownloadLatestAsync(downloadFolder, SetupEdition.ServerOnly, ReportDownloadProgress);
                 }
 
-                string arch = _architecture.SelectedIndex == 1 ? "x86" : "x64";
+                string arch = SetupEdition.ServerOnly ? "x64" : (_architecture.SelectedIndex == 1 ? "x86" : "x64");
                 using (var package = new ReleasePackage(packagePath))
                 {
-                    package.Validate(arch);
-                    var plan = package.CreatePlan(_designerFolder.Text.Trim(), _serverFolder.Text.Trim(), arch);
+                    package.Validate(arch, !SetupEdition.ServerOnly);
+                    var plan = package.CreatePlan(SetupEdition.ServerOnly ? null : _designerFolder.Text.Trim(), _serverFolder.Text.Trim(), arch, !SetupEdition.ServerOnly);
                     if (!ConfirmReplacement(plan))
                     {
                         SetBusy(false, "Installation cancelled. No files were changed.");
@@ -295,16 +328,16 @@ namespace B2SPro.Setup
                     }
 
                     SetBusy(true, "Backing up and installing files...");
-                    InstallResult result = await Task.Run(delegate { return plan.Execute(true, true); });
-                    SetBusy(false, "B2S Pro installation completed successfully.");
+                    InstallResult result = await Task.Run(delegate { return plan.Execute(true, !SetupEdition.ServerOnly); });
+                    SetBusy(false, SetupEdition.Product + " installation completed successfully.");
                     string message = result.BuildSummary();
-                    MessageBox.Show(this, message, "B2S Pro Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(this, message, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
                 SetBusy(false, "Installation stopped. No unprotected settings were intentionally replaced.");
-                MessageBox.Show(this, ex.Message, "B2S Pro Setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, ex.Message, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -321,12 +354,15 @@ namespace B2SPro.Setup
             if (!Directory.Exists(vpx)) return "Choose an existing Visual Pinball folder.";
             string[] executables = Directory.GetFiles(vpx, "VPinballX*.exe", SearchOption.TopDirectoryOnly);
             if (executables.Length == 0) return "The selected Visual Pinball folder does not contain VPinballX*.exe.";
-            if (String.IsNullOrWhiteSpace(_designerFolder.Text)) return "Choose a separate B2S Pro Designer folder.";
             if (String.IsNullOrWhiteSpace(_serverFolder.Text)) return "Choose the B2S Server folder.";
-            if (PathEquals(_designerFolder.Text, _serverFolder.Text)) return "The Designer and Server must use separate folders.";
-            if (PathEquals(_designerFolder.Text, vpx) && File.Exists(Path.Combine(vpx, "B2SBackglassDesigner.exe")))
-                return "Choose a separate B2S Pro Designer folder so the original Designer remains untouched.";
-            if (_localSource.Checked && !File.Exists(_localPackage)) return "The local complete-build ZIP is no longer beside the installer.";
+            if (!SetupEdition.ServerOnly)
+            {
+                if (String.IsNullOrWhiteSpace(_designerFolder.Text)) return "Choose a separate B2S Pro Designer folder.";
+                if (PathEquals(_designerFolder.Text, _serverFolder.Text)) return "The Designer and Server must use separate folders.";
+                if (PathEquals(_designerFolder.Text, vpx) && File.Exists(Path.Combine(vpx, "B2SBackglassDesigner.exe")))
+                    return "Choose a separate B2S Pro Designer folder so the original Designer remains untouched.";
+            }
+            if (_localSource.Checked && !File.Exists(_localPackage)) return "The local verified ZIP is no longer beside the installer.";
             return null;
         }
 
@@ -338,10 +374,27 @@ namespace B2SPro.Setup
             message.AppendLine();
             foreach (string file in plan.ExistingProgramFiles) message.AppendLine("• " + file);
             message.AppendLine();
-            message.AppendLine("The B2S Pro Server update is required. Do you want to back up and overwrite these program files?");
+            message.AppendLine(SetupEdition.ServerOnly
+                ? "Do you want to back up and overwrite these B2S Server program files?"
+                : "The B2S Server update is included. Do you want to back up and overwrite these program files?");
             message.AppendLine();
             message.AppendLine("ScreenRes.txt, B2STableSettings.xml, plug-ins, projects, tables, and backglasses will not be overwritten.");
             return MessageBox.Show(this, message.ToString(), "Existing installation found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        }
+
+        private static string FindLocalPackage()
+        {
+            string folder = AppDomain.CurrentDomain.BaseDirectory;
+            if (!SetupEdition.ServerOnly) return Path.Combine(folder, CompletePackageName);
+            string stable = Path.Combine(folder, "B2S-Latest-Server.zip");
+            if (File.Exists(stable)) return stable;
+            string[] matches = Directory.GetFiles(folder, "B2S-Pro-Server-*.zip", SearchOption.TopDirectoryOnly);
+            Array.Sort(matches, StringComparer.OrdinalIgnoreCase);
+            for (int index = matches.Length - 1; index >= 0; index--)
+            {
+                if (matches[index].IndexOf("-Source-", StringComparison.OrdinalIgnoreCase) < 0) return matches[index];
+            }
+            return stable;
         }
 
         private void ReportDownloadProgress(int percent, string text)
@@ -368,7 +421,7 @@ namespace B2SPro.Setup
         private static void VerifySidecarIfPresent(string zipPath)
         {
             string sidecar = zipPath + ".sha256";
-            if (!File.Exists(sidecar)) return;
+            if (!File.Exists(sidecar)) throw new InvalidDataException("The SHA-256 verification file is missing. Nothing was installed.");
             string expected = Regex.Match(File.ReadAllText(sidecar), "[A-Fa-f0-9]{64}").Value;
             if (expected.Length != 64) throw new InvalidDataException("The local SHA-256 file is invalid.");
             string actual = Hashing.Sha256(zipPath);
@@ -392,7 +445,7 @@ namespace B2SPro.Setup
         private static void StyleButton(Button button, int width)
         {
             button.Width = width;
-            button.Height = 34;
+            button.Height = 30;
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderColor = Color.FromArgb(55, 145, 255);
             button.BackColor = Color.FromArgb(28, 48, 82);
@@ -403,15 +456,14 @@ namespace B2SPro.Setup
     internal static class GitHubRelease
     {
         private const string LatestApi = "https://api.github.com/repos/KWildman69/B2S-Pro/releases/latest";
-        private const string PackageName = "B2S-Latest-Complete-Build.zip";
-        private const string HashName = "B2S-Latest-Complete-Build.zip.sha256";
+        private const string CompletePackageName = "B2S-Latest-Complete-Build.zip";
 
-        public static async Task<string> DownloadLatestAsync(string destination, Action<int, string> progress)
+        public static async Task<string> DownloadLatestAsync(string destination, bool serverOnly, Action<int, string> progress)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             using (var client = new HttpClient())
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("B2S-Pro-Installer/1.0.1");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(serverOnly ? "B2S-Server-Updater/3.0.0" : "B2S-Pro-Installer/1.0.1");
                 string json;
                 try
                 {
@@ -419,20 +471,22 @@ namespace B2SPro.Setup
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new InvalidOperationException("The latest GitHub release could not be reached. While the repository is private, use the local complete-build ZIP beside the installer.\r\n\r\n" + ex.Message);
+                    throw new InvalidOperationException("The latest GitHub release could not be reached. While the repository is private or the cabinet is offline, use the verified local ZIP beside this setup program.\r\n\r\n" + ex.Message);
                 }
 
                 var serializer = new JavaScriptSerializer();
                 var release = serializer.DeserializeObject(json) as Dictionary<string, object>;
                 if (release == null) throw new InvalidDataException("GitHub returned an unreadable release response.");
                 string tag = release.ContainsKey("tag_name") ? Convert.ToString(release["tag_name"]) : "latest";
-                string packageUrl = FindAsset(release, PackageName);
-                string hashUrl = FindAsset(release, HashName);
-                if (packageUrl == null || hashUrl == null) throw new InvalidDataException("The latest release does not contain the required complete-build ZIP and SHA-256 file.");
+                string packageName = serverOnly ? FindServerPackageName(release) : CompletePackageName;
+                string hashName = packageName == null ? null : packageName + ".sha256";
+                string packageUrl = packageName == null ? null : FindAsset(release, packageName);
+                string hashUrl = hashName == null ? null : FindAsset(release, hashName);
+                if (packageUrl == null || hashUrl == null) throw new InvalidDataException("The latest release does not contain the required " + (serverOnly ? "server" : "complete-build") + " ZIP and SHA-256 file.");
 
-                string zipPath = Path.Combine(destination, PackageName);
-                string hashPath = Path.Combine(destination, HashName);
-                await DownloadFile(client, packageUrl, zipPath, tag, progress);
+                string zipPath = Path.Combine(destination, packageName);
+                string hashPath = Path.Combine(destination, hashName);
+                await DownloadFile(client, packageUrl, zipPath, tag, serverOnly ? "B2S Server" : "B2S Pro", progress);
                 File.WriteAllBytes(hashPath, await client.GetByteArrayAsync(hashUrl));
                 string expected = Regex.Match(File.ReadAllText(hashPath), "[A-Fa-f0-9]{64}").Value;
                 string actual = Hashing.Sha256(zipPath);
@@ -441,6 +495,23 @@ namespace B2SPro.Setup
                 progress(100, "Downloaded and verified " + tag + ".");
                 return zipPath;
             }
+        }
+
+        private static string FindServerPackageName(Dictionary<string, object> release)
+        {
+            object rawAssets;
+            if (!release.TryGetValue("assets", out rawAssets)) return null;
+            var assets = rawAssets as object[];
+            if (assets == null) return null;
+            foreach (object raw in assets)
+            {
+                var asset = raw as Dictionary<string, object>;
+                if (asset == null) continue;
+                string name = Convert.ToString(asset["name"]);
+                if (Regex.IsMatch(name, "^B2S-Pro-Server-[0-9][A-Za-z0-9._-]*\\.zip$", RegexOptions.IgnoreCase)
+                    && name.IndexOf("-Source-", StringComparison.OrdinalIgnoreCase) < 0) return name;
+            }
+            return null;
         }
 
         private static string FindAsset(Dictionary<string, object> release, string name)
@@ -459,7 +530,7 @@ namespace B2SPro.Setup
             return null;
         }
 
-        private static async Task DownloadFile(HttpClient client, string url, string destination, string tag, Action<int, string> progress)
+        private static async Task DownloadFile(HttpClient client, string url, string destination, string tag, string product, Action<int, string> progress)
         {
             using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
             {
@@ -476,7 +547,7 @@ namespace B2SPro.Setup
                         await output.WriteAsync(buffer, 0, read);
                         readTotal += read;
                         int percent = total > 0 ? (int)(readTotal * 100L / total) : 0;
-                        progress(percent, "Downloading B2S Pro " + tag + "... " + percent + "%");
+                        progress(percent, "Downloading " + product + " " + tag + "... " + percent + "%");
                     }
                 }
             }
@@ -491,18 +562,27 @@ namespace B2SPro.Setup
             _archive = ZipFile.OpenRead(path);
         }
 
-        public void Validate(string arch)
+        public void Validate(string arch, bool installDesigner)
         {
-            Require("Runtime/" + arch + "/B2SPro.exe");
-            Require("Runtime/" + arch + "/B2SPro.exe.config");
-            Require("Runtime/" + arch + "/B2SVPinMAMEStarter.exe");
-            Require("Runtime/B2SServer/B2SBackglassServer.dll");
-            Require("Runtime/B2SServer/B2SBackglassServerRegisterApp.exe");
+            if (installDesigner)
+            {
+                Require("Runtime/" + arch + "/B2SPro.exe");
+                Require("Runtime/" + arch + "/B2SPro.exe.config");
+                Require("Runtime/" + arch + "/B2SVPinMAMEStarter.exe");
+            }
+            string serverPrefix = GetServerPrefix();
+            Require(serverPrefix + "B2SBackglassServer.dll");
+            Require(serverPrefix + "B2SBackglassServerRegisterApp.exe");
         }
 
-        public InstallPlan CreatePlan(string designer, string server, string arch)
+        public InstallPlan CreatePlan(string designer, string server, string arch, bool installDesigner)
         {
-            return new InstallPlan(_archive, designer, server, arch);
+            return new InstallPlan(_archive, designer, server, arch, installDesigner, GetServerPrefix());
+        }
+
+        private string GetServerPrefix()
+        {
+            return _archive.GetEntry("Runtime/B2SServer/B2SBackglassServer.dll") != null ? "Runtime/B2SServer/" : String.Empty;
         }
 
         private void Require(string name)
@@ -519,16 +599,20 @@ namespace B2SPro.Setup
         private readonly string _designer;
         private readonly string _server;
         private readonly string _arch;
+        private readonly bool _installDesigner;
+        private readonly string _serverPrefix;
         private readonly bool _freshServer;
         private readonly List<CopyItem> _items = new List<CopyItem>();
         public readonly List<string> ExistingProgramFiles = new List<string>();
 
-        public InstallPlan(ZipArchive archive, string designer, string server, string arch)
+        public InstallPlan(ZipArchive archive, string designer, string server, string arch, bool installDesigner, string serverPrefix)
         {
             _archive = archive;
-            _designer = Path.GetFullPath(designer);
+            _installDesigner = installDesigner;
+            _designer = installDesigner ? Path.GetFullPath(designer) : null;
             _server = Path.GetFullPath(server);
             _arch = arch;
+            _serverPrefix = serverPrefix ?? String.Empty;
             _freshServer = !File.Exists(Path.Combine(_server, "B2SBackglassServer.dll"));
             BuildItems();
         }
@@ -536,27 +620,26 @@ namespace B2SPro.Setup
         private void BuildItems()
         {
             string designerPrefix = "Runtime/" + _arch + "/";
-            string serverPrefix = "Runtime/B2SServer/";
             foreach (ZipArchiveEntry entry in _archive.Entries)
             {
                 if (String.IsNullOrEmpty(entry.Name)) continue;
-                if (entry.FullName.StartsWith(designerPrefix, StringComparison.OrdinalIgnoreCase))
+                if (_installDesigner && entry.FullName.StartsWith(designerPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     string relative = entry.FullName.Substring(designerPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
-                    Add(entry, Path.Combine(_designer, relative), false);
+                    Add(entry, Path.Combine(_designer, relative), false, true);
                 }
-                else if (entry.FullName.StartsWith(serverPrefix, StringComparison.OrdinalIgnoreCase))
+                else if (entry.FullName.StartsWith(_serverPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    string relative = entry.FullName.Substring(serverPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
+                    string relative = entry.FullName.Substring(_serverPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
                     bool protect = IsProtectedServerPath(relative);
-                    Add(entry, Path.Combine(_server, relative), protect);
+                    Add(entry, Path.Combine(_server, relative), protect, false);
                 }
             }
         }
 
-        private void Add(ZipArchiveEntry entry, string destination, bool protect)
+        private void Add(ZipArchiveEntry entry, string destination, bool protect, bool isDesigner)
         {
-            var item = new CopyItem(entry, destination, protect);
+            var item = new CopyItem(entry, destination, protect, isDesigner);
             _items.Add(item);
             if (File.Exists(destination) && !protect) ExistingProgramFiles.Add(destination);
         }
@@ -574,10 +657,10 @@ namespace B2SPro.Setup
 
         public InstallResult Execute(bool registerServer, bool createShortcuts)
         {
-            Directory.CreateDirectory(_designer);
+            if (_installDesigner) Directory.CreateDirectory(_designer);
             Directory.CreateDirectory(_server);
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            string designerBackup = Path.Combine(_designer, "B2SPro-Backups", stamp);
+            string designerBackup = _installDesigner ? Path.Combine(_designer, "B2SPro-Backups", stamp) : null;
             string serverBackup = Path.Combine(_server, "B2SPro-Backups", stamp);
             var changed = new List<RollbackItem>();
             int installed = 0;
@@ -592,8 +675,8 @@ namespace B2SPro.Setup
                         continue;
                     }
 
-                    string root = item.Destination.StartsWith(_designer, StringComparison.OrdinalIgnoreCase) ? _designer : _server;
-                    string backupRoot = root == _designer ? designerBackup : serverBackup;
+                    string root = item.IsDesigner ? _designer : _server;
+                    string backupRoot = item.IsDesigner ? designerBackup : serverBackup;
                     string relative = item.Destination.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar);
                     bool existed = File.Exists(item.Destination);
                     if (existed)
@@ -611,7 +694,7 @@ namespace B2SPro.Setup
                     using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None)) input.CopyTo(output);
                     if (File.Exists(item.Destination)) File.Delete(item.Destination);
                     File.Move(temporary, item.Destination);
-                    ApplyVisibility(item.Destination, root == _designer);
+                    ApplyVisibility(item.Destination, item.IsDesigner);
                     installed++;
                 }
 
@@ -629,12 +712,13 @@ namespace B2SPro.Setup
                     catch (Exception ex) { shortcutError = ex.Message; }
                 }
 
-                string log = Path.Combine(_designer, "B2SPro-Install.log");
+                string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
                 File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
                 MarkProtected(log);
-                MarkProtected(Path.Combine(_designer, "B2SPro-Backups"));
+                if (_installDesigner) MarkProtected(Path.Combine(_designer, "B2SPro-Backups"));
                 MarkProtected(Path.Combine(_server, "B2SPro-Backups"));
-                return new InstallResult(_designer, _server, installed, preserved, Directory.Exists(designerBackup) || Directory.Exists(serverBackup) ? stamp : null, _freshServer, registerServer, registrationError, createShortcuts, shortcutError);
+                bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
+                return new InstallResult(_designer, _server, installed, preserved, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, createShortcuts, shortcutError, _installDesigner);
             }
             catch
             {
@@ -705,11 +789,13 @@ namespace B2SPro.Setup
         public readonly ZipArchiveEntry Entry;
         public readonly string Destination;
         public readonly bool Protected;
-        public CopyItem(ZipArchiveEntry entry, string destination, bool protect)
+        public readonly bool IsDesigner;
+        public CopyItem(ZipArchiveEntry entry, string destination, bool protect, bool isDesigner)
         {
             Entry = entry;
             Destination = destination;
             Protected = protect;
+            IsDesigner = isDesigner;
         }
     }
 
@@ -738,7 +824,8 @@ namespace B2SPro.Setup
         private readonly string _registrationError;
         private readonly bool _shortcutsAttempted;
         private readonly string _shortcutError;
-        public InstallResult(string designer, string server, int installed, int preserved, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool shortcutsAttempted, string shortcutError)
+        private readonly bool _installedDesigner;
+        public InstallResult(string designer, string server, int installed, int preserved, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool shortcutsAttempted, string shortcutError, bool installedDesigner)
         {
             _designer = designer;
             _server = server;
@@ -750,21 +837,22 @@ namespace B2SPro.Setup
             _registrationError = registrationError;
             _shortcutsAttempted = shortcutsAttempted;
             _shortcutError = shortcutError;
+            _installedDesigner = installedDesigner;
         }
 
         public string BuildSummary()
         {
             var text = new StringBuilder();
-            text.AppendLine("B2S Pro was installed successfully.");
+            text.AppendLine((_installedDesigner ? "B2S Pro and B2S Server were" : "B2S Server was") + " installed successfully.");
             text.AppendLine();
-            text.AppendLine("Designer: " + _designer);
+            if (_installedDesigner) text.AppendLine("Designer: " + _designer);
             text.AppendLine("Server: " + _server);
             text.AppendLine("Server installation: " + (_freshServer ? "Fresh installation" : "Existing installation updated"));
             text.AppendLine("Files installed: " + _installed);
             text.AppendLine("Protected existing files preserved: " + _preserved);
             if (_backupStamp != null) text.AppendLine("Backup: B2SPro-Backups\\" + _backupStamp);
             text.AppendLine();
-            text.AppendLine("The original Backglass Designer was not changed.");
+            text.AppendLine(_installedDesigner ? "The original Backglass Designer was not changed." : "No B2S Designer files were installed or changed.");
             text.AppendLine();
             if (_registrationAttempted && _registrationError == null)
             {
@@ -902,7 +990,7 @@ namespace B2SPro.Setup
         {
             try
             {
-                if (args.Length < 2 || !File.Exists(args[1])) throw new ArgumentException("Usage: B2SProInstaller.exe --self-test <complete-build.zip>");
+                if (args.Length < 2 || !File.Exists(args[1])) throw new ArgumentException("Usage: B2SSetup.exe --self-test <complete-build.zip> [server-build.zip]");
                 string sandbox = Path.Combine(Path.GetTempPath(), "B2SProInstallerSelfTest-" + Guid.NewGuid().ToString("N"));
                 string originalDesigner = Path.Combine(sandbox, "OriginalDesigner");
                 Directory.CreateDirectory(originalDesigner);
@@ -930,8 +1018,8 @@ namespace B2SPro.Setup
 
                     using (var package = new ReleasePackage(args[1]))
                     {
-                        package.Validate(arch);
-                        InstallPlan plan = package.CreatePlan(designer, server, arch);
+                        package.Validate(arch, true);
+                        InstallPlan plan = package.CreatePlan(designer, server, arch, true);
                         if (plan.ExistingProgramFiles.Count < 2) throw new Exception(arch + " existing-program detection failed.");
                         plan.Execute(false, false);
                         if (File.ReadAllText(Path.Combine(server, "ScreenRes.txt")) != "SELF-TEST-SCREENRES") throw new Exception(arch + " ScreenRes.txt was overwritten.");
@@ -962,8 +1050,8 @@ namespace B2SPro.Setup
                     throw new Exception("The fresh server location was not suggested correctly.");
                 using (var package = new ReleasePackage(args[1]))
                 {
-                    package.Validate("x64");
-                    package.CreatePlan(Path.Combine(freshVpx, "B2SPro"), freshServer, "x64").Execute(false, false);
+                    package.Validate("x64", true);
+                    package.CreatePlan(Path.Combine(freshVpx, "B2SPro"), freshServer, "x64", true).Execute(false, false);
                 }
                 if (!File.Exists(Path.Combine(freshVpx, "B2SPro", "B2SPro.exe"))) throw new Exception("The fresh Designer was not installed in its separate folder.");
                 if (!File.Exists(Path.Combine(freshServer, "B2SBackglassServer.dll"))) throw new Exception("The fresh Server was not installed in the suggested B2SServer folder.");
@@ -973,8 +1061,32 @@ namespace B2SPro.Setup
                 if (!File.Exists(Path.Combine(testDesktop, "B2S Pro.lnk"))) throw new Exception("The desktop shortcut was not created.");
                 if (!File.Exists(Path.Combine(testPrograms, "B2S Pro", "B2S Pro.lnk"))) throw new Exception("The Start Menu shortcut was not created.");
 
+                if (args.Length >= 3)
+                {
+                    if (!File.Exists(args[2])) throw new ArgumentException("The server-only package does not exist: " + args[2]);
+                    string serverOnlyRoot = Path.Combine(sandbox, "ServerOnly");
+                    Directory.CreateDirectory(serverOnlyRoot);
+                    File.WriteAllText(Path.Combine(serverOnlyRoot, "ScreenRes.txt"), "SERVER-ONLY-SCREENRES");
+                    Directory.CreateDirectory(Path.Combine(serverOnlyRoot, "Plugins"));
+                    File.WriteAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt"), "SERVER-ONLY-PLUGIN");
+                    File.WriteAllText(Path.Combine(serverOnlyRoot, "B2SBackglassServer.dll"), "OLD-SERVER");
+                    using (var package = new ReleasePackage(args[2]))
+                    {
+                        package.Validate("x64", false);
+                        InstallPlan plan = package.CreatePlan(null, serverOnlyRoot, "x64", false);
+                        if (plan.ExistingProgramFiles.Count == 0) throw new Exception("Server-only existing-program detection failed.");
+                        plan.Execute(false, false);
+                    }
+                    if (File.ReadAllText(Path.Combine(serverOnlyRoot, "ScreenRes.txt")) != "SERVER-ONLY-SCREENRES") throw new Exception("Server-only setup overwrote ScreenRes.txt.");
+                    if (File.ReadAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt")) != "SERVER-ONLY-PLUGIN") throw new Exception("Server-only setup overwrote plugin settings.");
+                    if (new FileInfo(Path.Combine(serverOnlyRoot, "B2SBackglassServer.dll")).Length < 100000) throw new Exception("Server-only payload was not installed.");
+                    if (Directory.GetFiles(Path.Combine(serverOnlyRoot, "B2SPro-Backups"), "B2SBackglassServer.dll", SearchOption.AllDirectories).Length != 1) throw new Exception("Server-only backup was not created.");
+                    if (!File.Exists(Path.Combine(serverOnlyRoot, "B2SServer-Install.log"))) throw new Exception("Server-only install log was not created.");
+                    if (Directory.GetFiles(serverOnlyRoot, "B2SPro.exe", SearchOption.AllDirectories).Length != 0) throw new Exception("Server-only setup installed Designer files.");
+                }
+
                 Directory.Delete(sandbox, true);
-                Console.WriteLine("SELF-TEST PASSED: x64, x86, fresh install locations, backups, protected files, hidden support files, original Designer isolation, desktop and Start Menu shortcuts; live registration skipped");
+                Console.WriteLine("SELF-TEST PASSED: full x64/x86 plus server-only install, online/offline package layouts, backups, protected files, Designer isolation, and shortcuts; live registration skipped");
                 return 0;
             }
             catch (Exception ex)

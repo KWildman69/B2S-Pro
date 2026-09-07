@@ -829,7 +829,13 @@ Public Class formQuickSelection
 
         If DialogResult = DialogResult.OK Then
             If Not activeEllipse.IsEmpty Then CommitActiveEllipseSelection()
-            bulb.SelectionMaskData = EncodeMask(mask)
+            ' A completely clear mask means "no mask". Saving an all-transparent
+            ' PNG leaves a non-empty Base64 value that the renderer correctly
+            ' interprets as an active mask with no selected pixels, which makes
+            ' the light disappear permanently after Clear Mask.
+            bulb.SelectionMaskData = If(SelectedBounds.IsEmpty,
+                                        String.Empty,
+                                        EncodeMask(mask))
             bulb.IsIlluminatedImageDirty = True
         Else
             bulb.SelectionMaskData = originalMask

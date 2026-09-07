@@ -12,6 +12,11 @@ B2S Pro is a modernized backglass designer and animation workspace for creating 
 
 The tested runtime and source packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases/latest) page. Compiled release files are not stored in the source tree.
 
+Two setup choices are provided: the complete B2S Pro setup installs the
+Designer plus the required Server, while the smaller server-only setup updates
+VPX cabinets that do not need the Designer. Both support verified GitHub
+release downloads and verified local packages for offline cabinets.
+
 ## Highlights
 
 - Modernized workspace, toolbar, menus, and persistent window layouts

@@ -464,6 +464,16 @@ Public Class B2SPictureBox
     ' drag repaint based only on Location/Size leaves the old outer glow behind.
     Friend Function BulbEditorBounds(ByVal bulb As Illumination.BulbInfo,
                                      ByVal displayScale As Single) As Rectangle
+        If bulb IsNot Nothing AndAlso Not bulb.IsImageSnippit Then
+            Return LightRotationEditorBounds(bulb, displayScale, bulb.LightRotationAngle)
+        End If
+        Return BulbEditorBoundsAtAngle(bulb, displayScale,
+                                       If(bulb Is Nothing, 0.0F, bulb.LightRotationAngle))
+    End Function
+
+    Private Function BulbEditorBoundsAtAngle(ByVal bulb As Illumination.BulbInfo,
+                                             ByVal displayScale As Single,
+                                             ByVal rotationAngle As Single) As Rectangle
         If bulb Is Nothing Then Return Rectangle.Empty
 
         Dim safeScale As Double = Math.Max(0.0001R, CDbl(displayScale))
@@ -490,7 +500,7 @@ Public Class B2SPictureBox
             nativeRect.Inflate(CInt(Math.Round(bulb.GlowSpread * glowScaleX)),
                                CInt(Math.Round(bulb.GlowSpread * glowScaleY)))
         End If
-        nativeRect = Illumination.Create.RotatedLightBounds(nativeRect, bulb.LightRotationAngle)
+        nativeRect = Illumination.Create.RotatedLightBounds(nativeRect, rotationAngle)
         If Me.Image IsNot Nothing Then
             nativeRect.Intersect(New Rectangle(0, 0, Me.Image.Width, Me.Image.Height))
         End If
@@ -505,6 +515,33 @@ Public Class B2SPictureBox
                                             Math.Max(1, renderedRight - renderedLeft),
                                             Math.Max(1, renderedBottom - renderedTop))
         Return Rectangle.Union(bounds, renderedBounds)
+    End Function
+
+    ' Include the complete temporary rotation footprint. During a light/flasher
+    ' drag the saved angle is intentionally unchanged until mouse-up, so repaint
+    ' bounds must use the pending angle or the old stem and handle remain onscreen.
+    Friend Function LightRotationEditorBounds(ByVal bulb As Illumination.BulbInfo,
+                                              ByVal displayScale As Single,
+                                              ByVal angle As Single) As Rectangle
+        If bulb Is Nothing OrElse displayScale <= 0.0F Then Return Rectangle.Empty
+
+        Dim bounds As Rectangle = BulbEditorBoundsAtAngle(bulb, displayScale, angle)
+        Dim selectionRect As New Rectangle(CInt(bulb.Location.X * displayScale),
+                                           CInt(bulb.Location.Y * displayScale),
+                                           Math.Max(1, CInt(bulb.Size.Width * displayScale)),
+                                           Math.Max(1, CInt(bulb.Size.Height * displayScale)))
+        Dim centerX As Single = selectionRect.X + selectionRect.Width / 2.0F
+        Dim centerY As Single = selectionRect.Y + selectionRect.Height / 2.0F
+        Dim handleRadius As Single = selectionRect.Height / 2.0F + 24.0F
+        Dim radians As Double = angle * Math.PI / 180.0R
+        Dim handleX As Single = centerX + CSng(Math.Sin(radians) * handleRadius)
+        Dim handleY As Single = centerY - CSng(Math.Cos(radians) * handleRadius)
+        Dim handleBounds As Rectangle = Rectangle.FromLTRB(
+            CInt(Math.Floor(Math.Min(centerX, handleX))) - 10,
+            CInt(Math.Floor(Math.Min(centerY, handleY))) - 10,
+            CInt(Math.Ceiling(Math.Max(centerX, handleX))) + 11,
+            CInt(Math.Ceiling(Math.Max(centerY, handleY))) + 11)
+        Return Rectangle.Union(bounds, handleBounds)
     End Function
 
     ' Repaint only the union of the object's previous and current screen bounds.

@@ -729,6 +729,8 @@ Public Class Mouse
             ElseIf TypeOf item Is Illumination.BulbInfo AndAlso
                    IsSelectedSnippetTransform(DirectCast(item, Illumination.BulbInfo)) Then
                 itemBounds = parent.PictureAnimationEditorBounds(DirectCast(item, Illumination.BulbInfo), CSng(factor), pictureAnimationPendingAngle)
+            ElseIf TypeOf item Is Illumination.BulbInfo AndAlso IsMatchingLightRotation Then
+                itemBounds = parent.LightRotationEditorBounds(DirectCast(item, Illumination.BulbInfo), CSng(factor), lightRotationPendingAngle)
             ElseIf TypeOf item Is Illumination.BulbInfo Then
                 itemBounds = parent.BulbEditorBounds(DirectCast(item, Illumination.BulbInfo), CSng(factor))
             Else

@@ -29,6 +29,9 @@ First public B2S Pro baseline.
 - Added a repeating one-second test pulse with a fixed 75 ms flash duration.
 - Added mask-aware rendering and corrected light/flasher drag artifacts.
 - Added rotation behavior matching snippets for both lamps and flashers.
+- Restored the established normal-lamp renderer for sharp text and working Quick Selection masks while keeping flashers on their dedicated artwork renderer.
+- Fixed Clear Mask so it removes the mask instead of saving an all-transparent mask that permanently hides the light.
+- Fixed normal-light movement and resizing so the cyan rotation stem and handle are fully repainted without leaving trails across the canvas.
 - Corrected behind-canvas lighting so transparent score windows transmit light while opaque black artwork keeps its contrast.
 - Transparent pixels anywhere in the imported backglass canvas now display over a neutral-gray editor backing in the main, drag, animation, and light/flasher preview views, leaving visible headroom for light brightness and temperature while opaque black artwork remains black.
 
@@ -56,6 +59,7 @@ First public B2S Pro baseline.
 
 - Added an illustrated B2S Pro help section while retaining all original help topics.
 - Embedded the compiled help into B2S Pro.
+- Added separate complete B2S Pro and server-only setup programs, each with a verified GitHub-release mode and a three-file offline mode.
 - Updated B2S Pro branding, About information, credits, and versioning.
 - Standardized Designer version 1.0.1 and Server version 3.0.0 release names.
 - Preserved established legacy backglass behavior and file compatibility.

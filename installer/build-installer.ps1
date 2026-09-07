@@ -12,8 +12,9 @@ $source = Join-Path $installerRoot 'B2SProInstaller.cs'
 $manifest = Join-Path $installerRoot 'B2SProInstaller.manifest'
 $icon = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\B2SPro.ico'
 $logo = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\Resources\B2SProHeader.png'
-$output = Join-Path $outputRoot 'B2SProInstaller.exe'
-$testOutput = Join-Path $outputRoot 'B2SProInstaller.SelfTest.exe'
+$proOutput = Join-Path $outputRoot 'B2SProSetup.exe'
+$serverOutput = Join-Path $outputRoot 'B2SServerSetup.exe'
+$testOutput = Join-Path $outputRoot 'B2SSetup.SelfTest.exe'
 
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The .NET Framework C# compiler was not found at $compiler"
@@ -21,7 +22,7 @@ if (-not (Test-Path -LiteralPath $compiler)) {
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
-$compilerArguments = @(
+$commonCompilerArguments = @(
     '/nologo'
     '/target:winexe'
     '/platform:anycpu'
@@ -38,21 +39,37 @@ $compilerArguments = @(
     '/reference:System.IO.Compression.dll'
     '/reference:System.IO.Compression.FileSystem.dll'
     '/reference:System.Web.Extensions.dll'
-    "/out:$output"
+)
+
+$proCompilerArguments = @($commonCompilerArguments) + @(
+    "/out:$proOutput"
     $source
 )
 
-& $compiler $compilerArguments
+& $compiler $proCompilerArguments
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Installer compilation failed with exit code $LASTEXITCODE"
+    throw "B2S Pro installer compilation failed with exit code $LASTEXITCODE"
 }
 
-$built = Get-Item -LiteralPath $output
-$hash = Get-FileHash -Algorithm SHA256 -LiteralPath $output
-Write-Output "Built: $($built.FullName)"
-Write-Output "Size:  $($built.Length) bytes"
-Write-Output "SHA256: $($hash.Hash)"
+$serverCompilerArguments = @($commonCompilerArguments) + @(
+    '/define:SERVER_ONLY'
+    "/out:$serverOutput"
+    $source
+)
+
+& $compiler $serverCompilerArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "B2S Server installer compilation failed with exit code $LASTEXITCODE"
+}
+
+foreach ($builtPath in @($proOutput, $serverOutput)) {
+    $built = Get-Item -LiteralPath $builtPath
+    $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $builtPath
+    Write-Output "Built: $($built.FullName)"
+    Write-Output "Size:  $($built.Length) bytes"
+    Write-Output "SHA256: $($hash.Hash)"
+}
 
 $testArguments = @(
     '/nologo'
@@ -83,12 +100,17 @@ Write-Output "Test runner: $testOutput"
 
 if ($IncludeLocalPackage) {
     $assetRoot = Join-Path $repositoryRoot 'release-assets'
-    $package = Join-Path $assetRoot 'B2S-Latest-Complete-Build.zip'
-    $sidecar = "$package.sha256"
-    if (-not (Test-Path -LiteralPath $package) -or -not (Test-Path -LiteralPath $sidecar)) {
-        throw 'The local release package or its SHA-256 sidecar is missing from release-assets.'
+    $packages = @(
+        (Join-Path $assetRoot 'B2S-Latest-Complete-Build.zip'),
+        (Join-Path $assetRoot 'B2S-Pro-Server-3.0.0.zip')
+    )
+    foreach ($package in $packages) {
+        $sidecar = "$package.sha256"
+        if (-not (Test-Path -LiteralPath $package) -or -not (Test-Path -LiteralPath $sidecar)) {
+            throw "The local release package or SHA-256 sidecar is missing: $package"
+        }
+        Copy-Item -LiteralPath $package -Destination $outputRoot -Force
+        Copy-Item -LiteralPath $sidecar -Destination $outputRoot -Force
     }
-    Copy-Item -LiteralPath $package -Destination $outputRoot -Force
-    Copy-Item -LiteralPath $sidecar -Destination $outputRoot -Force
-    Write-Output 'Included the verified local complete-build package for private testing.'
+    Write-Output 'Included the verified complete and server-only packages for private/offline testing.'
 }
