@@ -21,6 +21,11 @@ Public Class Save
         Catch ex As Exception
             B2SMessageBox.Show(String.Format(My.Resources.MSG_LoadError, ex.Message), AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
+
+        Return LoadData(_backglassData, XML)
+    End Function
+
+    Public Function LoadData(ByRef _backglassData As Backglass.Data, ByVal XML As Xml.XmlDocument) As Boolean
         If XML IsNot Nothing AndAlso XML.SelectSingleNode("B2SBackglassData") IsNot Nothing Then
             Dim version As String = XML.SelectSingleNode("B2SBackglassData").Attributes("Version").InnerText
             Dim topnode As Xml.XmlElement = XML.SelectNodes("B2SBackglassData")(0)
@@ -451,6 +456,9 @@ Public Class Save
                                 bulb.SnippitInfo.PhysicsBoundaryLocks.Add(token.Trim() = "1" OrElse token.Trim().Equals("true", StringComparison.OrdinalIgnoreCase))
                             Next
                         End If
+                        If innerNode.Attributes("PhysicsBoundarySegmentBounces") IsNot Nothing Then
+                            bulb.SnippitInfo.PhysicsBoundarySegmentBounces.AddRange(ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText))
+                        End If
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
                         bulb.SnippitInfo.PhysicsLauncherEnabled = ReadIntegerAttribute(innerNode, "PhysicsLauncherEnabled", 0, 0, 1) = 1
@@ -577,35 +585,45 @@ Public Class Save
         Return True
 
     End Function
-    Public Sub SaveData(ByRef _backglassData As Backglass.Data, Optional ByVal backupname As String = "", Optional ByRef recent As Recent = Nothing)
+    Public Sub SaveData(ByRef _backglassData As Backglass.Data,
+                        Optional ByVal backupname As String = "",
+                        Optional ByRef recent As Recent = Nothing,
+                        Optional ByRef serializedXml As Xml.XmlDocument = Nothing,
+                        Optional ByVal writeProjectFile As Boolean = True)
+
+        If writeProjectFile Then
+            Throw New NotSupportedException("P2B2S Pro saves editable projects inside .directb2s files only. Writing .b2s or .b2b is disabled.")
+        End If
 
         'Dim path As String = IO.Path.Combine(EXEDir, ProjectDir)
-        If CheckSaveDir(BackglassProjectsPath) Then
+        If Not writeProjectFile OrElse CheckSaveDir(BackglassProjectsPath) Then
 
             Dim filename As String = Backglass.currentData.Name & If(Not String.IsNullOrEmpty(backupname), "_" & Secured(backupname) & ".b2b", ".b2s")
 
             ' create or rename the project directory
-            If Not String.IsNullOrEmpty(Backglass.currentData.Name) AndAlso Not String.IsNullOrEmpty(Backglass.currentData.LoadedName) AndAlso Not Backglass.currentData.Name.Equals(Backglass.currentData.LoadedName) Then
-                If IO.Directory.Exists(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName)) Then
-                    FileIO.FileSystem.RenameDirectory(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName), Backglass.currentData.Name)
+            If writeProjectFile Then
+                If Not String.IsNullOrEmpty(Backglass.currentData.Name) AndAlso Not String.IsNullOrEmpty(Backglass.currentData.LoadedName) AndAlso Not Backglass.currentData.Name.Equals(Backglass.currentData.LoadedName) Then
+                    If IO.Directory.Exists(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName)) Then
+                        FileIO.FileSystem.RenameDirectory(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName), Backglass.currentData.Name)
+                    End If
+                    Dim oldfilename As String = Backglass.currentData.LoadedName & If(Not String.IsNullOrEmpty(backupname), "_" & Secured(backupname) & ".b2b", ".b2s")
+                    If IO.File.Exists(IO.Path.Combine(BackglassProjectsPath, oldfilename)) Then
+                        FileIO.FileSystem.RenameFile(IO.Path.Combine(BackglassProjectsPath, oldfilename), filename)
+                    End If
+                    If recent IsNot Nothing Then
+                        recent.RenameRecentEntry(Backglass.currentData.LoadedName, Backglass.currentData.Name)
+                    End If
                 End If
-                Dim oldfilename As String = Backglass.currentData.LoadedName & If(Not String.IsNullOrEmpty(backupname), "_" & Secured(backupname) & ".b2b", ".b2s")
-                If IO.File.Exists(IO.Path.Combine(BackglassProjectsPath, oldfilename)) Then
-                    FileIO.FileSystem.RenameFile(IO.Path.Combine(BackglassProjectsPath, oldfilename), filename)
+                If Not IO.Directory.Exists(ProjectPath) Then
+                    IO.Directory.CreateDirectory(ProjectPath)
                 End If
-                If recent IsNot Nothing Then
-                    recent.RenameRecentEntry(Backglass.currentData.LoadedName, Backglass.currentData.Name)
+                If Not IO.Directory.Exists(ProjectImagesPath) Then
+                    IO.Directory.CreateDirectory(ProjectImagesPath)
                 End If
-            End If
-            If Not IO.Directory.Exists(ProjectPath) Then
-                IO.Directory.CreateDirectory(ProjectPath)
-            End If
-            If Not IO.Directory.Exists(ProjectImagesPath) Then
-                IO.Directory.CreateDirectory(ProjectImagesPath)
-            End If
 
-            ' the current name becomes the loaded name too
-            Backglass.currentData.LoadedName = Backglass.currentData.Name
+                ' the current name becomes the loaded name too
+                Backglass.currentData.LoadedName = Backglass.currentData.Name
+            End If
 
             ' save data
             Dim XML As Xml.XmlDocument = New Xml.XmlDocument
@@ -881,7 +899,10 @@ Public Class Save
                                     If .SnippitInfo.PhysicsBoundaryPaths.Any(Function(path) path IsNot Nothing AndAlso path.Count >= 2) Then nodeBulb.SetAttribute("PhysicsBoundaries", SerializePhysicsBoundaries(.SnippitInfo.PhysicsBoundaryPaths))
                                     If .SnippitInfo.PhysicsBoundaryNames.Count > 0 Then nodeBulb.SetAttribute("PhysicsBoundaryNames", String.Join("|", .SnippitInfo.PhysicsBoundaryNames.Select(Function(name) name.Replace("|", " ").Trim()).ToArray()))
                                     If .SnippitInfo.PhysicsBoundaryLocks.Count > 0 Then nodeBulb.SetAttribute("PhysicsBoundaryLocks", String.Join("|", .SnippitInfo.PhysicsBoundaryLocks.Select(Function(locked) If(locked, "1", "0")).ToArray()))
-                                If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
+                                    If .SnippitInfo.PhysicsBoundarySegmentBounces.Any(Function(values) values IsNot Nothing AndAlso values.Any(Function(value) value >= 0.0F)) Then
+                                        nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
+                                    End If
+                                    If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
                                 If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
                                 If .SnippitInfo.PhysicsLauncherEnabled Then
                                     nodeBulb.SetAttribute("PhysicsLauncherEnabled", "1")
@@ -974,7 +995,7 @@ Public Class Save
                 nodeBIMain.SetAttribute("RomIDType", "0")
                 nodeBIMain.SetAttribute("FileName", .ImageFileName)
                 nodeBIMain.SetAttribute("Image", ImageToBase64(.Image))
-                If Not String.IsNullOrEmpty(.ImageFileName) Then
+                If writeProjectFile AndAlso Not String.IsNullOrEmpty(.ImageFileName) Then
                     If Not .ImageFileName.StartsWith(".") AndAlso IO.File.Exists(.ImageFileName) Then
                         Try
                             IO.File.Copy(.ImageFileName, IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.ImageFileName).Name), True)
@@ -994,7 +1015,7 @@ Public Class Save
                 If .DMDImage IsNot Nothing Then
                     nodeDIMain.SetAttribute("FileName", .DMDImageFileName)
                     nodeDIMain.SetAttribute("Image", ImageToBase64(.DMDImage))
-                    If Not String.IsNullOrEmpty(.DMDImageFileName) Then
+                    If writeProjectFile AndAlso Not String.IsNullOrEmpty(.DMDImageFileName) Then
                         If Not .DMDImageFileName.StartsWith(".") AndAlso IO.File.Exists(.DMDImageFileName) Then
                             Try
                                 IO.File.Copy(.DMDImageFileName, IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.DMDImageFileName).Name), True)
@@ -1046,20 +1067,23 @@ Public Class Save
                 Next
             End With
 
-            ' save data
-            Dim savedFilePath As String = IO.Path.Combine(BackglassProjectsPath, filename)
-            XML.Save(savedFilePath)
-            ' A recovered project enters Recent as its temporary .b2b source.
-            ' Once the user performs a normal save, Recent must point back to
-            ' the canonical .b2s or the next launch reopens stale recovery data.
-            If recent IsNot Nothing AndAlso String.IsNullOrEmpty(backupname) Then
-                recent.AddToRecentList(_backglassData, savedFilePath)
-                _backglassData.SourceFilePath = IO.Path.GetFullPath(savedFilePath)
+            serializedXml = XML
+            If writeProjectFile Then
+                ' save data
+                Dim savedFilePath As String = IO.Path.Combine(BackglassProjectsPath, filename)
+                XML.Save(savedFilePath)
+                ' A recovered project enters Recent as its temporary .b2b source.
+                ' Once the user performs a normal save, Recent must point back to
+                ' the canonical .b2s or the next launch reopens stale recovery data.
+                If recent IsNot Nothing AndAlso String.IsNullOrEmpty(backupname) Then
+                    recent.AddToRecentList(_backglassData, savedFilePath)
+                    _backglassData.SourceFilePath = IO.Path.GetFullPath(savedFilePath)
+                End If
             End If
 
         End If
 
-        _backglassData.IsDirty = False
+        If writeProjectFile Then _backglassData.IsDirty = False
 
     End Sub
 
@@ -1117,6 +1141,41 @@ Public Class Save
         For Each encoded As String In value.Split("|"c)
             Dim path As List(Of PointF) = ParseMotionPathPoints(encoded)
             If path.Count >= 2 Then paths.Add(path)
+        Next
+        Return paths
+    End Function
+
+    Private Shared Function SerializePhysicsBoundarySegmentBounces(ByVal paths As IList(Of List(Of PointF)),
+                                                                    ByVal segmentBounces As IList(Of List(Of Single))) As String
+        Dim encodedPaths As New List(Of String)()
+        For pathIndex As Integer = 0 To paths.Count - 1
+            Dim path As List(Of PointF) = paths(pathIndex)
+            If path Is Nothing OrElse path.Count < 2 Then Continue For
+            Dim encodedSegments As New List(Of String)()
+            Dim saved As List(Of Single) = If(pathIndex < segmentBounces.Count, segmentBounces(pathIndex), Nothing)
+            For segmentIndex As Integer = 0 To path.Count - 2
+                Dim value As Single = If(saved IsNot Nothing AndAlso segmentIndex < saved.Count, saved(segmentIndex), -1.0F)
+                encodedSegments.Add(Math.Max(-1.0F, Math.Min(3.0F, value)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+            Next
+            encodedPaths.Add(String.Join(",", encodedSegments.ToArray()))
+        Next
+        Return String.Join("|", encodedPaths.ToArray())
+    End Function
+
+    Private Shared Function ParsePhysicsBoundarySegmentBounces(ByVal value As String) As List(Of List(Of Single))
+        Dim paths As New List(Of List(Of Single))()
+        If String.IsNullOrWhiteSpace(value) Then Return paths
+        For Each encodedPath As String In value.Split("|"c)
+            Dim segments As New List(Of Single)()
+            For Each encodedSegment As String In encodedPath.Split(","c)
+                Dim parsed As Single
+                If Single.TryParse(encodedSegment, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) Then
+                    segments.Add(Math.Max(-1.0F, Math.Min(3.0F, parsed)))
+                Else
+                    segments.Add(-1.0F)
+                End If
+            Next
+            paths.Add(segments)
         Next
         Return paths
     End Function

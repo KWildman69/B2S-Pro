@@ -1205,7 +1205,27 @@ Public Class B2STabPage
     End Sub
     Public Sub Illumination_SetSnippitInfo(ByVal snippitinfo As Illumination.SnippitInfo)
         If SelectedBulb IsNot Nothing Then
-            SelectedBulb.SnippitInfo = snippitinfo
+            ' The snippet settings dialogs edit only these basic/rotation fields.
+            ' Keep the existing object so pivot, physics, motion-path, and external
+            ' animation settings configured in their dedicated editors survive.
+            With SelectedBulb.SnippitInfo
+                .Brightness = snippitinfo.Brightness
+                .BehindCanvas = snippitinfo.BehindCanvas
+                .SnippitType = snippitinfo.SnippitType
+                .SnippitMechID = snippitinfo.SnippitMechID
+                .SnippitRotatingSteps = snippitinfo.SnippitRotatingSteps
+                .SnippitRotatingInterval = snippitinfo.SnippitRotatingInterval
+                .SnippitRotatingDirection = snippitinfo.SnippitRotatingDirection
+                .SnippitRotatingStopBehaviour = snippitinfo.SnippitRotatingStopBehaviour
+                .AutomaticRotationEnabled = snippitinfo.AutomaticRotationEnabled
+                .AutomaticRotationContinuous = snippitinfo.AutomaticRotationContinuous
+                .AutomaticRotationTriggerID = snippitinfo.AutomaticRotationTriggerID
+                .AutomaticRotationTriggerType = snippitinfo.AutomaticRotationTriggerType
+                .AutomaticRotationSteps = snippitinfo.AutomaticRotationSteps
+                .AutomaticRotationInterval = snippitinfo.AutomaticRotationInterval
+                .AutomaticRotationDirection = snippitinfo.AutomaticRotationDirection
+                .AutomaticRotationStopBehaviour = snippitinfo.AutomaticRotationStopBehaviour
+            End With
             SelectedBulb.IsIlluminatedImageDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()

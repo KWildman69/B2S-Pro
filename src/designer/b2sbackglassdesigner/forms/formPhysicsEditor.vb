@@ -39,9 +39,12 @@ Public Class formPhysicsEditor
     Private ReadOnly gravityBox As New NumericUpDown()
     Private ReadOnly strengthBox As New NumericUpDown()
     Private ReadOnly bounceBox As New NumericUpDown()
+    Private ReadOnly segmentUseDefaultCheck As New CheckBox()
+    Private ReadOnly segmentBounceBox As New NumericUpDown()
     Private ReadOnly xBox As New NumericUpDown()
     Private ReadOnly yBox As New NumericUpDown()
     Private updatingCoordinates As Boolean
+    Private updatingSegmentBounce As Boolean
 
     Public Sub New(ByVal ball As Illumination.BulbInfo,
                    ByVal backglassImage As Image,
@@ -162,6 +165,21 @@ Public Class formPhysicsEditor
         bounceBox.Width = 62
         bounceBox.Margin = New Padding(0, 3, 8, 0)
 
+        Dim segmentBounceLabel As Label = ToolbarLabel("Selected segment bounce (0.00–3.00):")
+        segmentUseDefaultCheck.Text = "Use normal boundary bounce"
+        segmentUseDefaultCheck.Checked = True
+        segmentUseDefaultCheck.ForeColor = Color.White
+        segmentUseDefaultCheck.AutoSize = True
+        segmentUseDefaultCheck.Enabled = False
+        segmentBounceBox.Minimum = 0D
+        segmentBounceBox.Maximum = 3D
+        segmentBounceBox.DecimalPlaces = 2
+        segmentBounceBox.Increment = 0.05D
+        segmentBounceBox.Value = bounceBox.Value
+        segmentBounceBox.Enabled = False
+        AddHandler segmentUseDefaultCheck.CheckedChanged, AddressOf SegmentBounceChanged
+        AddHandler segmentBounceBox.ValueChanged, AddressOf SegmentBounceChanged
+
         Dim boundaryLabel As Label = ToolbarLabel("Boundary:")
         boundaryBox.DropDownStyle = ComboBoxStyle.DropDownList
         boundaryBox.Width = 130
@@ -177,7 +195,8 @@ Public Class formPhysicsEditor
 
         AddPageControls(ballPage, New Control() {enabledCheck, rollBallCheckBox, flipperLabel, flipperBox, gravityLabel, gravityBox,
                                                  strengthLabel, strengthBox, bounceLabel, bounceBox})
-        AddPageControls(boundaryPage, New Control() {boundaryLabel, boundaryBox, lockBoundaryButton, newBoundaryButton,
+        AddPageControls(boundaryPage, New Control() {boundaryLabel, boundaryBox, segmentBounceLabel, segmentUseDefaultCheck,
+                                                     segmentBounceBox, lockBoundaryButton, newBoundaryButton,
                                                      renameBoundaryButton, spliceBoundaryButton, deleteBoundaryButton,
                                                      clearButton, deleteButton, xLabel, xBox, yLabel, yBox})
         AddPageControls(objectsPage, New Control() {SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
@@ -203,7 +222,7 @@ Public Class formPhysicsEditor
         Dim help As New Label With {
             .Dock = DockStyle.Bottom, .Height = 30, .TextAlign = ContentAlignment.MiddleCenter,
             .ForeColor = Color.White, .BackColor = Color.FromArgb(22, 25, 38),
-            .Text = "Select or create a boundary. Click to add points; drag for exact placement. Separate boundaries never connect."
+            .Text = "Click a line between two points to select its bounce; click empty space to add points. Separate boundaries never connect."
         }
 
         canvas.Dock = DockStyle.Fill
@@ -230,6 +249,11 @@ Public Class formPhysicsEditor
             canvas.BoundaryNames.Add(If(savedName.Length > 0, savedName, "Boundary " & (index + 1).ToString()))
             canvas.BoundaryLocks.Add(index < ball.SnippitInfo.PhysicsBoundaryLocks.Count AndAlso
                                      ball.SnippitInfo.PhysicsBoundaryLocks(index))
+            Dim savedSegmentBounces As New List(Of Single)()
+            If index < ball.SnippitInfo.PhysicsBoundarySegmentBounces.Count Then
+                savedSegmentBounces.AddRange(ball.SnippitInfo.PhysicsBoundarySegmentBounces(index))
+            End If
+            canvas.BoundarySegmentBounces.Add(savedSegmentBounces)
         Next
         canvas.Obstacles.AddRange(ball.SnippitInfo.PhysicsObstacles)
         canvas.SwitchZones.AddRange(ball.SnippitInfo.PhysicsSwitchZones)
@@ -314,6 +338,26 @@ Public Class formPhysicsEditor
             For index As Integer = 0 To canvas.Paths.Count - 1
                 If canvas.Paths(index).Count >= 2 Then
                     result.Add(index < canvas.BoundaryLocks.Count AndAlso canvas.BoundaryLocks(index))
+                End If
+            Next
+            Return result
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultBoundarySegmentBounces As List(Of List(Of Single))
+        Get
+            Dim result As New List(Of List(Of Single))()
+            For index As Integer = 0 To canvas.Paths.Count - 1
+                If canvas.Paths(index).Count >= 2 Then
+                    Dim values As New List(Of Single)()
+                    If index < canvas.BoundarySegmentBounces.Count Then values.AddRange(canvas.BoundarySegmentBounces(index))
+                    While values.Count < canvas.Paths(index).Count - 1
+                        values.Add(-1.0F)
+                    End While
+                    While values.Count > canvas.Paths(index).Count - 1
+                        values.RemoveAt(values.Count - 1)
+                    End While
+                    result.Add(values)
                 End If
             Next
             Return result
@@ -490,11 +534,30 @@ Public Class formPhysicsEditor
         switchIDBox.Enabled = switchID.HasValue
         deleteSwitchButton.Enabled = switchID.HasValue
         If switchID.HasValue Then switchIDBox.Value = Math.Max(switchIDBox.Minimum, Math.Min(switchIDBox.Maximum, switchID.Value))
+
+        updatingSegmentBounce = True
+        Dim hasSegment As Boolean = canvas.SelectedSegmentIndex >= 0
+        Dim segmentOverride As Single = canvas.SelectedSegmentBounceOverride
+        segmentUseDefaultCheck.Enabled = hasSegment AndAlso boundaryEditable
+        segmentUseDefaultCheck.Checked = Not hasSegment OrElse segmentOverride < 0.0F
+        If hasSegment Then
+            Dim displayedBounce As Single = If(segmentOverride >= 0.0F, segmentOverride, CSng(bounceBox.Value))
+            segmentBounceBox.Value = Math.Max(segmentBounceBox.Minimum, Math.Min(segmentBounceBox.Maximum, CDec(displayedBounce)))
+        End If
+        segmentBounceBox.Enabled = hasSegment AndAlso boundaryEditable AndAlso Not segmentUseDefaultCheck.Checked
+        updatingSegmentBounce = False
     End Sub
 
     Private Sub CoordinateChanged(ByVal sender As Object, ByVal e As EventArgs)
         If updatingCoordinates OrElse Not canvas.SelectedPoint.HasValue Then Return
         canvas.SetSelectedPoint(New PointF(CSng(xBox.Value), CSng(yBox.Value)))
+    End Sub
+
+    Private Sub SegmentBounceChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If updatingSegmentBounce OrElse canvas.SelectedSegmentIndex < 0 Then Return
+        Dim useDefault As Boolean = segmentUseDefaultCheck.Checked
+        segmentBounceBox.Enabled = Not useDefault AndAlso Not canvas.IsActiveBoundaryLocked
+        canvas.SetSelectedSegmentBounce(If(useDefault, -1.0F, CSng(segmentBounceBox.Value)))
     End Sub
 
     Private Sub ClearBoundaries(ByVal sender As Object, ByVal e As EventArgs)
@@ -509,6 +572,7 @@ Public Class formPhysicsEditor
         canvas.Paths.Add(New List(Of PointF)())
         canvas.BoundaryNames.Add("Boundary " & canvas.Paths.Count.ToString())
         canvas.BoundaryLocks.Add(False)
+        canvas.BoundarySegmentBounces.Add(New List(Of Single)())
         RefreshBoundaryList(canvas.Paths.Count - 1)
     End Sub
 
@@ -522,6 +586,7 @@ Public Class formPhysicsEditor
         canvas.Paths.RemoveAt(index)
         canvas.BoundaryNames.RemoveAt(index)
         If index < canvas.BoundaryLocks.Count Then canvas.BoundaryLocks.RemoveAt(index)
+        If index < canvas.BoundarySegmentBounces.Count Then canvas.BoundarySegmentBounces.RemoveAt(index)
         RefreshBoundaryList(Math.Min(index, canvas.Paths.Count - 1))
     End Sub
 
@@ -652,6 +717,7 @@ Public Class formPhysicsEditor
         Public ReadOnly Paths As New List(Of List(Of PointF))()
         Public ReadOnly BoundaryNames As New List(Of String)()
         Public ReadOnly BoundaryLocks As New List(Of Boolean)()
+        Public ReadOnly BoundarySegmentBounces As New List(Of List(Of Single))()
         Public ReadOnly Obstacles As New List(Of RectangleF)()
         Public ReadOnly SwitchZones As New List(Of RectangleF)()
         Public ReadOnly SwitchIDs As New List(Of Integer)()
@@ -662,6 +728,7 @@ Public Class formPhysicsEditor
         Public LauncherCaptureRadius As Single
         Public Property ActivePathIndex As Integer = 0
         Private selectedIndex As Integer = -1
+        Private selectedSegment As Integer = -1
         Private dragging As Boolean
         Private selectedObstacle As Integer = -1
         Private resizingObstacle As Boolean
@@ -687,6 +754,29 @@ Public Class formPhysicsEditor
             End Get
         End Property
 
+        Public ReadOnly Property SelectedSegmentIndex As Integer
+            Get
+                Return selectedSegment
+            End Get
+        End Property
+
+        Public ReadOnly Property SelectedSegmentBounceOverride As Single
+            Get
+                EnsureBoundaryMetadata()
+                If ActivePathIndex < 0 OrElse ActivePathIndex >= BoundarySegmentBounces.Count OrElse
+                   selectedSegment < 0 OrElse selectedSegment >= BoundarySegmentBounces(ActivePathIndex).Count Then Return -1.0F
+                Return BoundarySegmentBounces(ActivePathIndex)(selectedSegment)
+            End Get
+        End Property
+
+        Public Sub SetSelectedSegmentBounce(ByVal value As Single)
+            EnsureBoundaryMetadata()
+            If ActivePathIndex < 0 OrElse ActivePathIndex >= BoundarySegmentBounces.Count OrElse
+               selectedSegment < 0 OrElse selectedSegment >= BoundarySegmentBounces(ActivePathIndex).Count Then Return
+            BoundarySegmentBounces(ActivePathIndex)(selectedSegment) = Math.Max(-1.0F, Math.Min(3.0F, value))
+            Invalidate()
+        End Sub
+
         Public ReadOnly Property IsActiveBoundaryLocked As Boolean
             Get
                 Return IsBoundaryLocked(ActivePathIndex)
@@ -702,6 +792,7 @@ Public Class formPhysicsEditor
             If index < 0 OrElse index >= BoundaryLocks.Count Then Return
             BoundaryLocks(index) = locked
             selectedIndex = -1
+            selectedSegment = -1
             dragging = False
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -718,6 +809,7 @@ Public Class formPhysicsEditor
             EnsureBoundaryMetadata()
             If Paths.Count = 0 Then ActivePathIndex = -1 Else ActivePathIndex = Math.Max(0, Math.Min(index, Paths.Count - 1))
             selectedIndex = -1
+            selectedSegment = -1
             dragging = False
             selectedObstacle = -1
             selectedSwitch = -1
@@ -730,6 +822,7 @@ Public Class formPhysicsEditor
             Obstacles.Add(New RectangleF((AuthoredSize.Width - diameter) / 2.0F, (AuthoredSize.Height - diameter) / 2.0F, diameter, diameter))
             selectedObstacle = Obstacles.Count - 1
             selectedIndex = -1
+            selectedSegment = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
@@ -750,6 +843,7 @@ Public Class formPhysicsEditor
             selectedSwitch = SwitchZones.Count - 1
             selectedObstacle = -1
             selectedIndex = -1
+            selectedSegment = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
@@ -771,6 +865,7 @@ Public Class formPhysicsEditor
 
         Public Function SpliceActiveBoundary() As Boolean
             If IsActiveBoundaryLocked Then Return False
+            EnsureBoundaryMetadata()
             Dim merged As Boolean = MergeActivePathAtIntersections()
             If merged Then RaiseEvent BoundaryStructureChanged(Me, EventArgs.Empty)
             Return merged
@@ -788,8 +883,23 @@ Public Class formPhysicsEditor
             If IsActiveBoundaryLocked Then Return
             Dim points As List(Of PointF) = ActivePoints()
             If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return
+            Dim values As List(Of Single) = ActiveSegmentBounces()
+            If points.Count >= 2 Then
+                If selectedIndex = 0 Then
+                    If values.Count > 0 Then values.RemoveAt(0)
+                ElseIf selectedIndex = points.Count - 1 Then
+                    If values.Count > 0 Then values.RemoveAt(values.Count - 1)
+                Else
+                    Dim leftValue As Single = If(selectedIndex - 1 < values.Count, values(selectedIndex - 1), -1.0F)
+                    Dim rightValue As Single = If(selectedIndex < values.Count, values(selectedIndex), -1.0F)
+                    If selectedIndex < values.Count Then values.RemoveAt(selectedIndex)
+                    If selectedIndex - 1 < values.Count Then values.RemoveAt(selectedIndex - 1)
+                    values.Insert(selectedIndex - 1, If(Math.Abs(leftValue - rightValue) < 0.0001F, leftValue, -1.0F))
+                End If
+            End If
             points.RemoveAt(selectedIndex)
             selectedIndex = Math.Min(selectedIndex, points.Count - 1)
+            selectedSegment = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
@@ -797,7 +907,9 @@ Public Class formPhysicsEditor
         Public Sub ClearPoints()
             If IsActiveBoundaryLocked Then Return
             ActivePoints().Clear()
+            ActiveSegmentBounces().Clear()
             selectedIndex = -1
+            selectedSegment = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
@@ -826,19 +938,28 @@ Public Class formPhysicsEditor
             For pathIndex As Integer = 0 To Paths.Count - 1
                 Dim path As List(Of PointF) = Paths(pathIndex)
                 If path.Count > 1 Then
-                    Dim boundaryColor As Color
-                    If IsBoundaryLocked(pathIndex) Then
-                        boundaryColor = If(pathIndex = ActivePathIndex, Color.Gold, Color.FromArgb(210, 150, 150, 150))
-                    Else
-                        boundaryColor = If(pathIndex = ActivePathIndex, Color.FromArgb(255, 0, 230, 255), Color.FromArgb(210, 255, 80, 190))
-                    End If
-                    Using shadow As New Pen(Color.Black, 7.0F / scale),
-                          boundary As New Pen(boundaryColor, 3.0F / scale)
-                        shadow.LineJoin = LineJoin.Round
-                        boundary.LineJoin = LineJoin.Round
-                        e.Graphics.DrawLines(shadow, path.ToArray())
-                        e.Graphics.DrawLines(boundary, path.ToArray())
-                    End Using
+                    For segmentIndex As Integer = 0 To path.Count - 2
+                        Dim boundaryColor As Color
+                        Dim hasOverride As Boolean = pathIndex < BoundarySegmentBounces.Count AndAlso
+                                                     segmentIndex < BoundarySegmentBounces(pathIndex).Count AndAlso
+                                                     BoundarySegmentBounces(pathIndex)(segmentIndex) >= 0.0F
+                        If pathIndex = ActivePathIndex AndAlso segmentIndex = selectedSegment Then
+                            boundaryColor = Color.Yellow
+                        ElseIf hasOverride Then
+                            boundaryColor = Color.Lime
+                        ElseIf IsBoundaryLocked(pathIndex) Then
+                            boundaryColor = If(pathIndex = ActivePathIndex, Color.Gold, Color.FromArgb(210, 150, 150, 150))
+                        Else
+                            boundaryColor = If(pathIndex = ActivePathIndex, Color.FromArgb(255, 0, 230, 255), Color.FromArgb(210, 255, 80, 190))
+                        End If
+                        Using shadow As New Pen(Color.Black, 7.0F / scale),
+                              boundary As New Pen(boundaryColor, 3.0F / scale)
+                            shadow.StartCap = LineCap.Round : shadow.EndCap = LineCap.Round
+                            boundary.StartCap = LineCap.Round : boundary.EndCap = LineCap.Round
+                            e.Graphics.DrawLine(shadow, path(segmentIndex), path(segmentIndex + 1))
+                            e.Graphics.DrawLine(boundary, path(segmentIndex), path(segmentIndex + 1))
+                        End Using
+                    Next
                 End If
             Next
             For obstacleIndex As Integer = 0 To Obstacles.Count - 1
@@ -912,6 +1033,7 @@ Public Class formPhysicsEditor
                 selectedSwitch = switchHit
                 selectedObstacle = -1
                 selectedIndex = -1
+                selectedSegment = -1
                 resizingSwitch = HitSwitchHandle(authored, SwitchZones(switchHit))
                 dragging = True
                 Invalidate()
@@ -923,6 +1045,7 @@ Public Class formPhysicsEditor
                 selectedObstacle = obstacleHit
                 selectedSwitch = -1
                 selectedIndex = -1
+                selectedSegment = -1
                 resizingObstacle = HitObstacleHandle(authored, Obstacles(obstacleHit))
                 dragging = True
                 Invalidate()
@@ -931,6 +1054,7 @@ Public Class formPhysicsEditor
             End If
             If IsActiveBoundaryLocked Then
                 selectedIndex = -1
+                selectedSegment = -1
                 dragging = False
                 Invalidate()
                 RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -947,12 +1071,29 @@ Public Class formPhysicsEditor
             If e.Button <> MouseButtons.Left Then Return
             If hit >= 0 Then
                 selectedIndex = hit
+                selectedSegment = -1
+                selectedObstacle = -1
+                selectedSwitch = -1
                 dragging = True
-            ElseIf IsInsideImage(e.Location) Then
-                Dim points As List(Of PointF) = ActivePoints()
-                points.Add(ClampPoint(authored))
-                selectedIndex = points.Count - 1
-                dragging = True
+            Else
+                Dim segmentHit As Integer = HitSegment(authored)
+                If segmentHit >= 0 Then
+                    selectedIndex = -1
+                    selectedSegment = segmentHit
+                    selectedObstacle = -1
+                    selectedSwitch = -1
+                    dragging = False
+                ElseIf IsInsideImage(e.Location) Then
+                    Dim points As List(Of PointF) = ActivePoints()
+                    Dim values As List(Of Single) = ActiveSegmentBounces()
+                    If points.Count > 0 Then values.Add(-1.0F)
+                    points.Add(ClampPoint(authored))
+                    selectedIndex = points.Count - 1
+                    selectedSegment = -1
+                    selectedObstacle = -1
+                    selectedSwitch = -1
+                    dragging = True
+                End If
             End If
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -1074,6 +1215,28 @@ Public Class formPhysicsEditor
             Return -1
         End Function
 
+        Private Function HitSegment(ByVal point As PointF) As Integer
+            Dim view As RectangleF = ImageView()
+            Dim scale As Single = view.Width / AuthoredSize.Width
+            Dim tolerance As Single = 8.0F / Math.Max(0.01F, scale)
+            Dim toleranceSquared As Single = tolerance * tolerance
+            Dim points As List(Of PointF) = ActivePoints()
+            For index As Integer = points.Count - 2 To 0 Step -1
+                Dim segmentX As Single = points(index + 1).X - points(index).X
+                Dim segmentY As Single = points(index + 1).Y - points(index).Y
+                Dim lengthSquared As Single = segmentX * segmentX + segmentY * segmentY
+                If lengthSquared <= 0.0001F Then Continue For
+                Dim fraction As Single = ((point.X - points(index).X) * segmentX + (point.Y - points(index).Y) * segmentY) / lengthSquared
+                fraction = Math.Max(0.0F, Math.Min(1.0F, fraction))
+                Dim contactX As Single = points(index).X + segmentX * fraction
+                Dim contactY As Single = points(index).Y + segmentY * fraction
+                Dim dx As Single = point.X - contactX
+                Dim dy As Single = point.Y - contactY
+                If dx * dx + dy * dy <= toleranceSquared Then Return index
+            Next
+            Return -1
+        End Function
+
         Private Class PathIntersection
             Public Point As PointF
             Public SourcePosition As Single
@@ -1084,9 +1247,11 @@ Public Class formPhysicsEditor
             Dim sourceIndex As Integer = ActivePathIndex
             If sourceIndex <= 0 OrElse sourceIndex >= Paths.Count OrElse Paths(sourceIndex).Count < 2 Then Return False
             Dim source As List(Of PointF) = Paths(sourceIndex)
+            Dim sourceBounces As New List(Of Single)(BoundarySegmentBounces(sourceIndex))
             For targetIndex As Integer = sourceIndex - 1 To 0 Step -1
                 If IsBoundaryLocked(targetIndex) Then Continue For
                 Dim target As List(Of PointF) = Paths(targetIndex)
+                Dim targetBounces As New List(Of Single)(BoundarySegmentBounces(targetIndex))
                 If target.Count < 2 Then Continue For
                 Dim hits As List(Of PathIntersection) = FindIntersections(source, target)
                 If hits.Count < 2 Then Continue For
@@ -1114,14 +1279,53 @@ Public Class formPhysicsEditor
                 Next
 
                 Paths(targetIndex) = merged
+                BoundarySegmentBounces(targetIndex) = BuildMergedSegmentBounces(merged, target, targetBounces, source, sourceBounces)
                 Paths.RemoveAt(sourceIndex)
                 BoundaryNames.RemoveAt(sourceIndex)
                 If sourceIndex < BoundaryLocks.Count Then BoundaryLocks.RemoveAt(sourceIndex)
+                If sourceIndex < BoundarySegmentBounces.Count Then BoundarySegmentBounces.RemoveAt(sourceIndex)
                 ActivePathIndex = targetIndex
                 selectedIndex = -1
                 Invalidate()
                 RaiseEvent SelectionChanged(Me, EventArgs.Empty)
                 Return True
+            Next
+            Return False
+        End Function
+
+        Private Function BuildMergedSegmentBounces(ByVal merged As List(Of PointF),
+                                                    ByVal target As List(Of PointF), ByVal targetBounces As List(Of Single),
+                                                    ByVal source As List(Of PointF), ByVal sourceBounces As List(Of Single)) As List(Of Single)
+            Dim result As New List(Of Single)()
+            For index As Integer = 0 To merged.Count - 2
+                Dim midpoint As New PointF((merged(index).X + merged(index + 1).X) / 2.0F,
+                                            (merged(index).Y + merged(index + 1).Y) / 2.0F)
+                Dim value As Single = -1.0F
+                If Not TryGetBounceAtPoint(midpoint, source, sourceBounces, value) Then
+                    TryGetBounceAtPoint(midpoint, target, targetBounces, value)
+                End If
+                result.Add(value)
+            Next
+            Return result
+        End Function
+
+        Private Function TryGetBounceAtPoint(ByVal point As PointF, ByVal path As List(Of PointF),
+                                             ByVal bounces As List(Of Single), ByRef value As Single) As Boolean
+            For index As Integer = 0 To path.Count - 2
+                Dim segmentX As Single = path(index + 1).X - path(index).X
+                Dim segmentY As Single = path(index + 1).Y - path(index).Y
+                Dim lengthSquared As Single = segmentX * segmentX + segmentY * segmentY
+                If lengthSquared <= 0.0001F Then Continue For
+                Dim fraction As Single = ((point.X - path(index).X) * segmentX + (point.Y - path(index).Y) * segmentY) / lengthSquared
+                If fraction < -0.0001F OrElse fraction > 1.0001F Then Continue For
+                Dim contactX As Single = path(index).X + segmentX * fraction
+                Dim contactY As Single = path(index).Y + segmentY * fraction
+                Dim dx As Single = point.X - contactX
+                Dim dy As Single = point.Y - contactY
+                If dx * dx + dy * dy <= 0.25F Then
+                    value = If(index < bounces.Count, bounces(index), -1.0F)
+                    Return True
+                End If
             Next
             Return False
         End Function
@@ -1201,11 +1405,18 @@ Public Class formPhysicsEditor
                 Paths.Add(New List(Of PointF)())
                 BoundaryNames.Add("Boundary 1")
                 BoundaryLocks.Add(False)
+                BoundarySegmentBounces.Add(New List(Of Single)())
                 ActivePathIndex = 0
             End If
             EnsureBoundaryMetadata()
             ActivePathIndex = Math.Max(0, Math.Min(ActivePathIndex, Paths.Count - 1))
             Return Paths(ActivePathIndex)
+        End Function
+
+        Private Function ActiveSegmentBounces() As List(Of Single)
+            ActivePoints()
+            EnsureBoundaryMetadata()
+            Return BoundarySegmentBounces(ActivePathIndex)
         End Function
 
         Private Sub EnsureBoundaryMetadata()
@@ -1218,6 +1429,21 @@ Public Class formPhysicsEditor
             While BoundaryLocks.Count > Paths.Count
                 BoundaryLocks.RemoveAt(BoundaryLocks.Count - 1)
             End While
+            While BoundarySegmentBounces.Count < Paths.Count
+                BoundarySegmentBounces.Add(New List(Of Single)())
+            End While
+            While BoundarySegmentBounces.Count > Paths.Count
+                BoundarySegmentBounces.RemoveAt(BoundarySegmentBounces.Count - 1)
+            End While
+            For index As Integer = 0 To Paths.Count - 1
+                Dim expectedSegments As Integer = Math.Max(0, Paths(index).Count - 1)
+                While BoundarySegmentBounces(index).Count < expectedSegments
+                    BoundarySegmentBounces(index).Add(-1.0F)
+                End While
+                While BoundarySegmentBounces(index).Count > expectedSegments
+                    BoundarySegmentBounces(index).RemoveAt(BoundarySegmentBounces(index).Count - 1)
+                End While
+            Next
         End Sub
     End Class
 End Class

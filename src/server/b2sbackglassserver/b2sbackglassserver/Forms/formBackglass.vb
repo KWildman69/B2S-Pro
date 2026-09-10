@@ -2724,6 +2724,7 @@ Public Class formBackglass
                         Dim physicsBoundaryBounce As Single = 0.12F
                         Dim physicsFloorPoints As List(Of PointF) = Nothing
                         Dim physicsBoundaryPaths As List(Of List(Of PointF)) = Nothing
+                        Dim physicsBoundarySegmentBounces As List(Of List(Of Single)) = Nothing
                         Dim physicsObstacles As List(Of RectangleF) = Nothing
                         Dim physicsSwitchZones As List(Of B2SData.PhysicsSwitchZone) = Nothing
                         Dim physicsLauncher As B2SData.PhysicsLauncher = Nothing
@@ -2763,6 +2764,7 @@ Public Class formBackglass
                         If innerNode.Attributes("PhysicsBoundaryBounce") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PhysicsBoundaryBounce").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, physicsBoundaryBounce)
                         If innerNode.Attributes("PhysicsFloorPoints") IsNot Nothing Then physicsFloorPoints = ParseMotionPathPoints(innerNode.Attributes("PhysicsFloorPoints").InnerText)
                         If innerNode.Attributes("PhysicsBoundaries") IsNot Nothing Then physicsBoundaryPaths = ParsePhysicsBoundaries(innerNode.Attributes("PhysicsBoundaries").InnerText)
+                        If innerNode.Attributes("PhysicsBoundarySegmentBounces") IsNot Nothing Then physicsBoundarySegmentBounces = ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText)
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then physicsObstacles = ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText)
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then physicsSwitchZones = ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText)
                         If innerNode.Attributes("PhysicsLauncherEnabled") IsNot Nothing AndAlso innerNode.Attributes("PhysicsLauncherEnabled").InnerText = "1" Then
@@ -2981,7 +2983,8 @@ Public Class formBackglass
                         End If
                         If physicsBall AndAlso Not physicsBounds.IsEmpty Then
                             B2SData.RegisterPhysicsBall(picbox, physicsFlipperName, physicsBounds, physicsGravity,
-                                                        physicsFlipperStrength, physicsBoundaryBounce, physicsBoundaryPaths, physicsObstacles, physicsSwitchZones, physicsLauncher)
+                                                        physicsFlipperStrength, physicsBoundaryBounce, physicsBoundaryPaths, physicsObstacles, physicsSwitchZones, physicsLauncher,
+                                                        physicsBoundarySegmentBounces)
                         End If
                         If picbox.MotionPathPoints.Count >= 2 AndAlso motionPathSolenoidID > 0 Then
                             If Not B2SData.UsedMotionPathSolenoidIDs.ContainsKey(motionPathSolenoidID) Then
@@ -4000,6 +4003,24 @@ Public Class formBackglass
         For Each encoded As String In value.Split("|"c)
             Dim path As List(Of PointF) = ParseMotionPathPoints(encoded)
             If path.Count >= 2 Then paths.Add(path)
+        Next
+        Return paths
+    End Function
+
+    Private Function ParsePhysicsBoundarySegmentBounces(ByVal value As String) As List(Of List(Of Single))
+        Dim paths As New List(Of List(Of Single))()
+        If String.IsNullOrWhiteSpace(value) Then Return paths
+        For Each encodedPath As String In value.Split("|"c)
+            Dim segments As New List(Of Single)()
+            For Each encodedSegment As String In encodedPath.Split(","c)
+                Dim parsed As Single
+                If Single.TryParse(encodedSegment, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) Then
+                    segments.Add(Math.Max(-1.0F, Math.Min(3.0F, parsed)))
+                Else
+                    segments.Add(-1.0F)
+                End If
+            Next
+            paths.Add(segments)
         Next
         Return paths
     End Function

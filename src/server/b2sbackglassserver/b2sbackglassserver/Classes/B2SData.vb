@@ -350,13 +350,15 @@ Public Class B2SData
                                           ByVal boundaryPaths As Generic.List(Of Generic.List(Of PointF)),
                                           ByVal obstacles As Generic.List(Of RectangleF),
                                           ByVal switchZones As Generic.List(Of PhysicsSwitchZone),
-                                          ByVal launcher As PhysicsLauncher)
+                                          ByVal launcher As PhysicsLauncher,
+                                          Optional ByVal boundarySegmentBounces As Generic.List(Of Generic.List(Of Single)) = Nothing)
         If pictureBox Is Nothing OrElse bounds.IsEmpty Then Return
         Dim normalizedFlipperName As String = If(flipperName, String.Empty).Trim()
         Dim state As New PhysicsBallState(pictureBox, normalizedFlipperName, bounds,
                                           Math.Max(0.0F, Math.Min(10000.0F, gravity)),
                                           Math.Max(0.0F, Math.Min(5.0F, flipperStrength)),
-                                          Math.Max(0.0F, Math.Min(1.0F, boundaryBounce)), boundaryPaths, obstacles, switchZones, launcher)
+                                          Math.Max(0.0F, Math.Min(1.0F, boundaryBounce)), boundaryPaths, obstacles, switchZones, launcher,
+                                          boundarySegmentBounces)
         PhysicsBalls.Add(state)
         If launcher IsNot Nothing AndAlso launcher.TriggerID > 0 Then
             Dim routes = If(launcher.TriggerType = 3, PhysicsLauncherB2SIDs, PhysicsLauncherSolenoidIDs)
@@ -1340,6 +1342,11 @@ Public Class B2SData
     Private Class PhysicsBallState
         Implements IDisposable
 
+        Private Const PhysicsSubstepSeconds As Single = 0.001F
+        Private Const ShallowSurfaceSlopeLimit As Single = 0.35F
+        Private Const ShallowSurfaceRollMultiplier As Single = 2.0F
+        Private Const BoundaryScatterDegrees As Single = 10.0F
+        Private Const BoundaryScatterMinimumImpactSpeed As Single = 150.0F
         Private ReadOnly ball As B2SPictureBox
         Private ReadOnly flipperName As String
         Private ReadOnly bounds As RectangleF
@@ -1347,11 +1354,13 @@ Public Class B2SData
         Private ReadOnly flipperStrength As Single
         Private ReadOnly boundaryBounce As Single
         Private ReadOnly boundaryPaths As New Generic.List(Of Generic.List(Of PointF))()
+        Private ReadOnly boundarySegmentBounces As New Generic.List(Of Generic.List(Of Single))()
         Private ReadOnly obstacles As New Generic.List(Of RectangleF)()
         Private ReadOnly switchZones As New Generic.List(Of PhysicsSwitchZone)()
         Private ReadOnly switchZoneInside As New Generic.List(Of Boolean)()
         Private ReadOnly launcher As PhysicsLauncher
         Private Shared ReadOnly launcherRandom As New Random()
+        Private Shared boundaryScatterRandom As New Random()
         Private launcherArmed As Boolean = True
         Private launcherHolding As Boolean
         Private launcherExitedCapture As Boolean
@@ -1362,13 +1371,13 @@ Public Class B2SData
         Private velocity As PointF = PointF.Empty
         Private lastFlipperAngle As Single
         Private hasLastFlipperAngle As Boolean
-
         Public Sub New(ByVal pictureBox As B2SPictureBox, ByVal pivotName As String, ByVal playBounds As RectangleF,
                        ByVal gravityValue As Single, ByVal strengthValue As Single, ByVal bounceValue As Single,
                         ByVal returnBoundaries As Generic.List(Of Generic.List(Of PointF)),
                         ByVal returnObstacles As Generic.List(Of RectangleF),
                         ByVal returnSwitchZones As Generic.List(Of PhysicsSwitchZone),
-                        ByVal returnLauncher As PhysicsLauncher)
+                        ByVal returnLauncher As PhysicsLauncher,
+                        ByVal returnBoundarySegmentBounces As Generic.List(Of Generic.List(Of Single)))
             ball = pictureBox
             flipperName = pivotName
             bounds = playBounds
@@ -1378,8 +1387,20 @@ Public Class B2SData
             authoredBallWidth = If(pictureBox.Width > 0, pictureBox.Width, pictureBox.RectangleF.Width)
             authoredBallHeight = If(pictureBox.Height > 0, pictureBox.Height, pictureBox.RectangleF.Height)
             If returnBoundaries IsNot Nothing Then
-                For Each path As Generic.List(Of PointF) In returnBoundaries
-                    If path IsNot Nothing AndAlso path.Count >= 2 Then boundaryPaths.Add(New Generic.List(Of PointF)(path))
+                For pathIndex As Integer = 0 To returnBoundaries.Count - 1
+                    Dim path As Generic.List(Of PointF) = returnBoundaries(pathIndex)
+                    If path IsNot Nothing AndAlso path.Count >= 2 Then
+                        boundaryPaths.Add(New Generic.List(Of PointF)(path))
+                        Dim values As New Generic.List(Of Single)()
+                        Dim saved As Generic.List(Of Single) = If(returnBoundarySegmentBounces IsNot Nothing AndAlso
+                                                                  pathIndex < returnBoundarySegmentBounces.Count,
+                                                                  returnBoundarySegmentBounces(pathIndex), Nothing)
+                        For segmentIndex As Integer = 0 To path.Count - 2
+                            Dim value As Single = If(saved IsNot Nothing AndAlso segmentIndex < saved.Count, saved(segmentIndex), -1.0F)
+                            values.Add(Math.Max(-1.0F, Math.Min(3.0F, value)))
+                        Next
+                        boundarySegmentBounces.Add(values)
+                    End If
                 Next
             End If
             If returnObstacles IsNot Nothing Then
@@ -1440,7 +1461,7 @@ Public Class B2SData
                 lastFlipperAngle = flipper.RotationAngle
                 hasLastFlipperAngle = True
             End If
-            Dim steps As Integer = Math.Max(1, CInt(Math.Ceiling(elapsed / 0.008F)))
+            Dim steps As Integer = Math.Max(1, CInt(Math.Ceiling(elapsed / PhysicsSubstepSeconds)))
             Dim stepTime As Single = elapsed / steps
             For index As Integer = 1 To steps
                 StepPhysics(stepTime, flipper, angularVelocity)
@@ -1459,7 +1480,6 @@ Public Class B2SData
             Dim runtimeBounds As RectangleF = RectangleF.FromLTRB(bounds.Left * scaleX, bounds.Top * scaleY, bounds.Right * scaleX, bounds.Bottom * scaleY)
             Dim previousCenter As PointF = center
             velocity.Y += gravity * scaleY * elapsed
-            velocity.X *= 0.999F
             center.X += velocity.X * elapsed
             center.Y += velocity.Y * elapsed
             Dim radius As Single = Math.Max(2.0F, Math.Min(ball.RectangleF.Width, ball.RectangleF.Height) * 0.43F)
@@ -1468,11 +1488,27 @@ Public Class B2SData
             If center.Y - radius < runtimeBounds.Top Then center.Y = runtimeBounds.Top + radius : velocity.Y = Math.Abs(velocity.Y) * 0.55F
             If center.Y + radius > runtimeBounds.Bottom Then center.Y = runtimeBounds.Bottom - radius : velocity.Y = -Math.Abs(velocity.Y) * 0.55F
             If flipper IsNot Nothing Then ResolveFlipperCollision(center, radius, velocity, flipper, angularVelocity)
-            For Each path As Generic.List(Of PointF) In boundaryPaths
-                For index As Integer = 0 To path.Count - 2
-                    Dim fromPoint As New PointF(path(index).X * scaleX, path(index).Y * scaleY)
-                    Dim toPoint As New PointF(path(index + 1).X * scaleX, path(index + 1).Y * scaleY)
-                    ResolveStaticFloorCollision(center, previousCenter, radius, velocity, fromPoint, toPoint)
+            For pathIndex As Integer = 0 To boundaryPaths.Count - 1
+                Dim path As Generic.List(Of PointF) = boundaryPaths(pathIndex)
+                For segmentIndex As Integer = 0 To path.Count - 2
+                    Dim fromPoint As New PointF(path(segmentIndex).X * scaleX, path(segmentIndex).Y * scaleY)
+                    Dim toPoint As New PointF(path(segmentIndex + 1).X * scaleX, path(segmentIndex + 1).Y * scaleY)
+                    Dim segmentBounce As Single = boundaryBounce
+                    If pathIndex < boundarySegmentBounces.Count AndAlso segmentIndex < boundarySegmentBounces(pathIndex).Count AndAlso
+                       boundarySegmentBounces(pathIndex)(segmentIndex) >= 0.0F Then
+                        segmentBounce = boundarySegmentBounces(pathIndex)(segmentIndex)
+                    End If
+                    Dim beforeCollisionCenter As PointF = center
+                    Dim beforeCollisionVelocity As PointF = velocity
+                    ResolveStaticFloorCollision(center, previousCenter, radius, velocity, fromPoint, toPoint, segmentBounce)
+                    Dim collisionResolved As Boolean =
+                        Math.Abs(center.X - beforeCollisionCenter.X) > 0.0001F OrElse
+                        Math.Abs(center.Y - beforeCollisionCenter.Y) > 0.0001F OrElse
+                        Math.Abs(velocity.X - beforeCollisionVelocity.X) > 0.0001F OrElse
+                        Math.Abs(velocity.Y - beforeCollisionVelocity.Y) > 0.0001F
+                    If collisionResolved Then
+                        ApplyShallowSurfaceRollingBoost(velocity, fromPoint, toPoint, elapsed, gravity * scaleY)
+                    End If
                 Next
             Next
             For Each obstacle As RectangleF In obstacles
@@ -1481,6 +1517,27 @@ Public Class B2SData
             CheckLauncherCapture(center, scaleX, scaleY)
             CheckSwitchZones(center, scaleX, scaleY)
             ball.SetMotionPathPosition(center, True)
+        End Sub
+
+        Private Shared Sub ApplyShallowSurfaceRollingBoost(ByRef ballVelocity As PointF,
+                                                            ByVal fromPoint As PointF,
+                                                            ByVal toPoint As PointF,
+                                                            ByVal elapsed As Single,
+                                                            ByVal gravityAcceleration As Single)
+            Dim segmentX As Single = toPoint.X - fromPoint.X
+            Dim segmentY As Single = toPoint.Y - fromPoint.Y
+            Dim length As Single = CSng(Math.Sqrt(segmentX * segmentX + segmentY * segmentY))
+            If length <= 0.01F Then Return
+
+            Dim tangentX As Single = segmentX / length
+            Dim tangentY As Single = segmentY / length
+            Dim absoluteSlope As Single = Math.Abs(tangentY)
+            If absoluteSlope <= 0.001F OrElse absoluteSlope > ShallowSurfaceSlopeLimit Then Return
+
+            Dim extraProjectedGravity As Single =
+                gravityAcceleration * tangentY * (ShallowSurfaceRollMultiplier - 1.0F)
+            ballVelocity.X += tangentX * extraProjectedGravity * elapsed
+            ballVelocity.Y += tangentY * extraProjectedGravity * elapsed
         End Sub
 
         Private Sub CheckLauncherCapture(ByRef center As PointF, ByVal scaleX As Single, ByVal scaleY As Single)
@@ -1542,8 +1599,9 @@ Public Class B2SData
         End Sub
 
         Private Sub ResolveStaticFloorCollision(ByRef center As PointF, ByVal previousCenter As PointF,
-                                                ByVal radius As Single, ByRef ballVelocity As PointF,
-                                                ByVal fromPoint As PointF, ByVal toPoint As PointF)
+                                                 ByVal radius As Single, ByRef ballVelocity As PointF,
+                                                 ByVal fromPoint As PointF, ByVal toPoint As PointF,
+                                                 ByVal bounce As Single)
             Dim segmentX As Single = toPoint.X - fromPoint.X
             Dim segmentY As Single = toPoint.Y - fromPoint.Y
             Dim lengthSquared As Single = segmentX * segmentX + segmentY * segmentY
@@ -1556,7 +1614,25 @@ Public Class B2SData
             Dim offsetX As Single = center.X - contactX
             Dim offsetY As Single = center.Y - contactY
             Dim distanceSquared As Single = offsetX * offsetX + offsetY * offsetY
-            If distanceSquared >= radius * radius Then Return
+            If distanceSquared >= radius * radius Then
+                ' A fast ball can cross the entire boundary between timer steps and
+                ' finish beyond it without overlapping. Sweep the ball's full path
+                ' against the segment capsule before treating this as no collision.
+                Dim sweptCenter As PointF
+                Dim sweptNormal As PointF
+                If Not TryGetSweptStaticFloorCollision(previousCenter, center, radius,
+                                                       fromPoint, toPoint,
+                                                       sweptCenter, sweptNormal) Then Return
+
+                center.X = sweptCenter.X + sweptNormal.X * 0.01F
+                center.Y = sweptCenter.Y + sweptNormal.Y * 0.01F
+                Dim sweptNormalSpeed As Single =
+                    ballVelocity.X * sweptNormal.X + ballVelocity.Y * sweptNormal.Y
+                If sweptNormalSpeed < 0.0F Then
+                    ReflectBoundaryVelocity(ballVelocity, sweptNormal.X, sweptNormal.Y, bounce, sweptNormalSpeed)
+                End If
+                Return
+            End If
 
             Dim distance As Single = CSng(Math.Sqrt(distanceSquared))
             Dim normalX As Single
@@ -1565,12 +1641,15 @@ Public Class B2SData
                 Dim previousOffsetX As Single = previousCenter.X - contactX
                 Dim previousOffsetY As Single = previousCenter.Y - contactY
                 Dim previousDistance As Single = CSng(Math.Sqrt(previousOffsetX * previousOffsetX + previousOffsetY * previousOffsetY))
-                If previousDistance >= 0.001F Then
-                    normalX = previousOffsetX / previousDistance
-                    normalY = previousOffsetY / previousDistance
-                ElseIf distance >= 0.001F Then
+                ' Resolve against the ball's current radial direction so a slow
+                ' contact can roll around a segment endpoint instead of being
+                ' anchored to its previous position until enough speed builds.
+                If distance >= 0.001F Then
                     normalX = offsetX / distance
                     normalY = offsetY / distance
+                ElseIf previousDistance >= 0.001F Then
+                    normalX = previousOffsetX / previousDistance
+                    normalY = previousOffsetY / previousDistance
                 Else
                     Return
                 End If
@@ -1597,12 +1676,155 @@ Public Class B2SData
             center.Y = contactY + normalY * radius
             Dim normalSpeed As Single = ballVelocity.X * normalX + ballVelocity.Y * normalY
             If normalSpeed < 0.0F Then
-                ballVelocity.X -= (1.0F + boundaryBounce) * normalSpeed * normalX
-                ballVelocity.Y -= (1.0F + boundaryBounce) * normalSpeed * normalY
-                ballVelocity.X *= 0.995F
-                ballVelocity.Y *= 0.995F
+                ReflectBoundaryVelocity(ballVelocity, normalX, normalY, bounce, normalSpeed)
             End If
         End Sub
+
+        Private Shared Sub ReflectBoundaryVelocity(ByRef ballVelocity As PointF,
+                                                    ByVal normalX As Single,
+                                                    ByVal normalY As Single,
+                                                    ByVal bounce As Single,
+                                                    ByVal incomingNormalSpeed As Single)
+            ballVelocity.X -= (1.0F + bounce) * incomingNormalSpeed * normalX
+            ballVelocity.Y -= (1.0F + bounce) * incomingNormalSpeed * normalY
+            If -incomingNormalSpeed < BoundaryScatterMinimumImpactSpeed Then Return
+
+            Dim scatterDegrees As Single
+            SyncLock boundaryScatterRandom
+                scatterDegrees = CSng((boundaryScatterRandom.NextDouble() * 2.0R - 1.0R) * BoundaryScatterDegrees)
+            End SyncLock
+            RotateBoundaryVelocity(ballVelocity, normalX, normalY, scatterDegrees)
+        End Sub
+
+        Private Shared Sub RotateBoundaryVelocity(ByRef ballVelocity As PointF,
+                                                   ByVal normalX As Single,
+                                                   ByVal normalY As Single,
+                                                   ByVal degrees As Single)
+            Dim radians As Double = degrees * Math.PI / 180.0R
+            Dim cosine As Single = CSng(Math.Cos(radians))
+            Dim sine As Single = CSng(Math.Sin(radians))
+            Dim rotatedX As Single = ballVelocity.X * cosine - ballVelocity.Y * sine
+            Dim rotatedY As Single = ballVelocity.X * sine + ballVelocity.Y * cosine
+            If rotatedX * normalX + rotatedY * normalY <= 0.0F Then Return
+            ballVelocity.X = rotatedX
+            ballVelocity.Y = rotatedY
+        End Sub
+
+        Private Function TryGetSweptStaticFloorCollision(ByVal previousCenter As PointF,
+                                                         ByVal currentCenter As PointF,
+                                                         ByVal radius As Single,
+                                                         ByVal fromPoint As PointF,
+                                                         ByVal toPoint As PointF,
+                                                         ByRef impactCenter As PointF,
+                                                         ByRef impactNormal As PointF) As Boolean
+            Dim motionX As Single = currentCenter.X - previousCenter.X
+            Dim motionY As Single = currentCenter.Y - previousCenter.Y
+            Dim motionLengthSquared As Single = motionX * motionX + motionY * motionY
+            If motionLengthSquared <= 0.000001F Then Return False
+
+            Dim segmentX As Single = toPoint.X - fromPoint.X
+            Dim segmentY As Single = toPoint.Y - fromPoint.Y
+            Dim segmentLengthSquared As Single = segmentX * segmentX + segmentY * segmentY
+            If segmentLengthSquared <= 0.01F Then Return False
+
+            Dim segmentLength As Single = CSng(Math.Sqrt(segmentLengthSquared))
+            Dim tangentX As Single = segmentX / segmentLength
+            Dim tangentY As Single = segmentY / segmentLength
+            Dim baseNormalX As Single = tangentY
+            Dim baseNormalY As Single = -tangentX
+            Dim previousSignedDistance As Single =
+                (previousCenter.X - fromPoint.X) * baseNormalX +
+                (previousCenter.Y - fromPoint.Y) * baseNormalY
+            Dim currentSignedDistance As Single =
+                (currentCenter.X - fromPoint.X) * baseNormalX +
+                (currentCenter.Y - fromPoint.Y) * baseNormalY
+            Dim signedDistanceChange As Single = currentSignedDistance - previousSignedDistance
+            Dim bestTime As Single = Single.MaxValue
+            Dim found As Boolean = False
+
+            ' A collision with a neighboring corner segment can push the ball
+            ' inside this segment after it was already processed for the step.
+            ' If the next movement crosses from that embedded position to the
+            ' opposite side, restore it to the side it occupied before crossing.
+            Dim previousProjection As Single =
+                (previousCenter.X - fromPoint.X) * tangentX +
+                (previousCenter.Y - fromPoint.Y) * tangentY
+            Dim currentProjection As Single =
+                (currentCenter.X - fromPoint.X) * tangentX +
+                (currentCenter.Y - fromPoint.Y) * tangentY
+            If previousProjection >= 0.0F AndAlso previousProjection <= segmentLength AndAlso
+               currentProjection >= 0.0F AndAlso currentProjection <= segmentLength AndAlso
+               Math.Abs(previousSignedDistance) < radius AndAlso
+               previousSignedDistance * currentSignedDistance <= 0.0F AndAlso
+               Math.Abs(currentSignedDistance) >= radius Then
+                Dim retainedSide As Single
+                If Math.Abs(previousSignedDistance) >= 0.000001F Then
+                    retainedSide = If(previousSignedDistance > 0.0F, 1.0F, -1.0F)
+                Else
+                    retainedSide = If(signedDistanceChange < 0.0F, 1.0F, -1.0F)
+                End If
+                impactCenter = New PointF(fromPoint.X + tangentX * previousProjection + baseNormalX * retainedSide * radius,
+                                          fromPoint.Y + tangentY * previousProjection + baseNormalY * retainedSide * radius)
+                impactNormal = New PointF(baseNormalX * retainedSide, baseNormalY * retainedSide)
+                Return True
+            End If
+
+            ' Test the two parallel sides of the segment's radius-expanded capsule.
+            For sideIndex As Integer = 0 To 1
+                Dim sideSign As Single = If(sideIndex = 0, 1.0F, -1.0F)
+                If sideSign * signedDistanceChange < -0.000001F Then
+                    Dim hitTime As Single =
+                        (sideSign * radius - previousSignedDistance) / signedDistanceChange
+                    If hitTime >= 0.0F AndAlso hitTime <= 1.0F AndAlso hitTime < bestTime Then
+                        Dim hitX As Single = previousCenter.X + motionX * hitTime
+                        Dim hitY As Single = previousCenter.Y + motionY * hitTime
+                        Dim segmentProjection As Single =
+                            (hitX - fromPoint.X) * tangentX + (hitY - fromPoint.Y) * tangentY
+                        If segmentProjection >= 0.0F AndAlso segmentProjection <= segmentLength Then
+                            bestTime = hitTime
+                            impactCenter = New PointF(hitX, hitY)
+                            impactNormal = New PointF(baseNormalX * sideSign, baseNormalY * sideSign)
+                            found = True
+                        End If
+                    End If
+                End If
+            Next
+
+            ' Test the round caps so high-speed movement cannot skip a boundary end.
+            For endpointIndex As Integer = 0 To 1
+                Dim endpoint As PointF = If(endpointIndex = 0, fromPoint, toPoint)
+                Dim relativeX As Single = previousCenter.X - endpoint.X
+                Dim relativeY As Single = previousCenter.Y - endpoint.Y
+                Dim circleConstant As Single =
+                    relativeX * relativeX + relativeY * relativeY - radius * radius
+                If circleConstant >= 0.0F Then
+                    Dim circleLinear As Single = 2.0F * (relativeX * motionX + relativeY * motionY)
+                    Dim discriminant As Double =
+                        CDbl(circleLinear) * CDbl(circleLinear) -
+                        4.0R * CDbl(motionLengthSquared) * CDbl(circleConstant)
+                    If discriminant >= 0.0R Then
+                        Dim hitTime As Single =
+                            CSng((-CDbl(circleLinear) - Math.Sqrt(discriminant)) /
+                                 (2.0R * CDbl(motionLengthSquared)))
+                        If hitTime >= 0.0F AndAlso hitTime <= 1.0F AndAlso hitTime < bestTime Then
+                            Dim hitX As Single = previousCenter.X + motionX * hitTime
+                            Dim hitY As Single = previousCenter.Y + motionY * hitTime
+                            Dim normalX As Single = hitX - endpoint.X
+                            Dim normalY As Single = hitY - endpoint.Y
+                            Dim normalLength As Single = CSng(Math.Sqrt(normalX * normalX + normalY * normalY))
+                            If normalLength >= 0.001F Then
+                                bestTime = hitTime
+                                impactCenter = New PointF(hitX, hitY)
+                                impactNormal = New PointF(normalX / normalLength, normalY / normalLength)
+                                found = True
+                            End If
+                        End If
+                    End If
+                End If
+            Next
+
+            Return found
+        End Function
 
         Private Sub ResolveFlipperCollision(ByRef center As PointF, ByVal ballRadius As Single, ByRef ballVelocity As PointF,
                                             ByVal flipper As B2SPictureBox, ByVal angularVelocity As Single)

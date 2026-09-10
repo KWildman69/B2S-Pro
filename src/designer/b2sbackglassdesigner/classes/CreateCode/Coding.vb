@@ -49,7 +49,7 @@ Public Class Coding
 
     ' main method(s)
 
-    Public Function CreateDirectB2SFile() As Boolean
+    Public Function CreateDirectB2SFile(Optional ByVal outputFilename As String = "") As Boolean
 
         If Not CheckData() Then Return False
 
@@ -61,10 +61,18 @@ Public Class Coding
 
         Dim projectname As String = Backglass.currentData.Name
         Dim assemblyname As String = Backglass.currentData.VSName
+        Dim exportedFile As String = If(String.IsNullOrWhiteSpace(outputFilename),
+                                        IO.Path.Combine(ProjectPath, assemblyname & ".directb2s"),
+                                        IO.Path.GetFullPath(outputFilename))
 
-        ' create direct B2S and project directory
-        IO.Directory.CreateDirectory(ProjectPath)
-        IO.Directory.SetCurrentDirectory(ProjectPath)
+        ' Create only the requested directB2S destination. The editor's normal
+        ' save paths always pass an explicit filename, so no separate project
+        ' folder or project-format file is needed.
+        Dim exportDirectory As String = IO.Path.GetDirectoryName(exportedFile)
+        If Not String.IsNullOrWhiteSpace(exportDirectory) Then IO.Directory.CreateDirectory(exportDirectory)
+        Dim workingDirectory As String = If(String.IsNullOrWhiteSpace(exportDirectory), currentDir, exportDirectory)
+        IO.Directory.SetCurrentDirectory(workingDirectory)
+        Try
 
         ' create direct B2S file
         Dim XML As Xml.XmlDocument = New Xml.XmlDocument
@@ -282,6 +290,7 @@ Public Class Coding
                     nodeScore.SetAttribute("Spacing", .Spacing.ToString())
                     nodeScore.SetAttribute("DisplayState", CInt(.DisplayState).ToString())
                     nodeScore.SetAttribute("ZOrder", .ZOrder.ToString())
+                    nodeScore.SetAttribute("DesignerZOrder", .ZOrder.ToString())
                     nodeScore.SetAttribute("BehindCanvas", If(.BehindCanvas, "1", "0"))
                     If Math.Abs(.RotationAngle) > 0.001F Then nodeScore.SetAttribute("RotationAngle", .RotationAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                             If Math.Abs(.PerspectiveDepth) > 0.001F Then nodeScore.SetAttribute("PerspectiveDepth", .PerspectiveDepth.ToString(Globalization.CultureInfo.InvariantCulture))
@@ -629,6 +638,10 @@ Public Class Coding
                             If runtimeZOrders.TryGetValue(bulb.Value, runtimeZOrder) Then
                                 nodeBulb.SetAttribute("ZOrder", runtimeZOrder.ToString())
                             End If
+                            ' ZOrder above is a positive runtime rank for the legacy
+                            ' server. Keep the editable layer value separately so a
+                            ' DirectB2S round trip does not replace the designer stack.
+                            nodeBulb.SetAttribute("DesignerZOrder", .ZOrder.ToString())
                             nodeBulb.SetAttribute("IsImageSnippit", If(.IsImageSnippit, "1", "0"))
                             If .SnippitInfo.SnippitType <> eSnippitType.StandardImage Then
                                 nodeBulb.SetAttribute("SnippitType", CInt(.SnippitInfo.SnippitType).ToString())
@@ -641,6 +654,7 @@ Public Class Coding
                             End If
                             If .IsImageSnippit Then
                                 nodeBulb.SetAttribute("SnippitBehindCanvas", If(.SnippitInfo.BehindCanvas, "1", "0"))
+                                nodeBulb.SetAttribute("DesignerSnippitBrightness", Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)).ToString())
                                 If .IsImageSnippit Then
                                     nodeBulb.SetAttribute("PivotAnimation", If(.SnippitInfo.PivotAnimationEnabled, "1", "0"))
                                     nodeBulb.SetAttribute("PivotX", .SnippitInfo.PivotX.ToString(Globalization.CultureInfo.InvariantCulture))
@@ -665,6 +679,9 @@ Public Class Coding
                                         If .SnippitInfo.PhysicsBoundaryPaths.Any(Function(path) path IsNot Nothing AndAlso path.Count >= 2) Then nodeBulb.SetAttribute("PhysicsBoundaries", SerializePhysicsBoundaries(.SnippitInfo.PhysicsBoundaryPaths))
                                         If .SnippitInfo.PhysicsBoundaryNames.Count > 0 Then nodeBulb.SetAttribute("PhysicsBoundaryNames", String.Join("|", .SnippitInfo.PhysicsBoundaryNames.Select(Function(name) name.Replace("|", " ").Trim()).ToArray()))
                                         If .SnippitInfo.PhysicsBoundaryLocks.Count > 0 Then nodeBulb.SetAttribute("PhysicsBoundaryLocks", String.Join("|", .SnippitInfo.PhysicsBoundaryLocks.Select(Function(locked) If(locked, "1", "0")).ToArray()))
+                                        If .SnippitInfo.PhysicsBoundarySegmentBounces.Any(Function(values) values IsNot Nothing AndAlso values.Any(Function(value) value >= 0.0F)) Then
+                                            nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
+                                        End If
                                     If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
                                     If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
                                     If .SnippitInfo.PhysicsLauncherEnabled Then
@@ -846,20 +863,45 @@ Public Class Coding
 
         End With
 
-        ' save XML file
-        Dim exportedFile As String = IO.Path.GetFullPath(assemblyname & ".directb2s")
-        XML.Save(exportedFile)
+        ' Keep the complete editable project inside the one .directb2s file.
+        ' B2S Server ignores this private node; P2B2S Pro uses it to restore
+        ' editor-only values that are not part of the runtime schema.
+        Dim designerXML As Xml.XmlDocument = Nothing
+        Dim projectSerializer As New Save()
+        projectSerializer.SaveData(Backglass.currentData,
+                                   serializedXml:=designerXML,
+                                   writeProjectFile:=False)
+        If designerXML Is Nothing Then Throw New InvalidOperationException("The embedded designer data could not be created.")
+        Dim nodeDesignerData As Xml.XmlElement = XML.CreateElement("B2SProDesignerData")
+        nodeDesignerData.SetAttribute("Encoding", "base64-utf8")
+        nodeDesignerData.InnerText = Convert.ToBase64String(Encoding.UTF8.GetBytes(designerXML.OuterXml))
+        nodeHeader.AppendChild(nodeDesignerData)
+
+        ' Save beside the destination and replace it atomically. If serialization
+        ' fails, the last known-good directB2S remains untouched.
+        Dim temporaryExport As String = IO.Path.Combine(workingDirectory,
+                                                        "." & IO.Path.GetFileName(exportedFile) & "." & Guid.NewGuid().ToString("N") & ".tmp")
+        Try
+            XML.Save(temporaryExport)
+            If IO.File.Exists(exportedFile) Then
+                IO.File.Replace(temporaryExport, exportedFile, Nothing)
+            Else
+                IO.File.Move(temporaryExport, exportedFile)
+            End If
+        Finally
+            If IO.File.Exists(temporaryExport) Then IO.File.Delete(temporaryExport)
+        End Try
 
         lastExportedData = Backglass.currentData
         lastExportedChangeVersion = Backglass.currentData.ChangeVersion
         lastExportedFile = exportedFile
 
-        ' get to the starting working dir
-        IO.Directory.SetCurrentDirectory(currentDir)
-
         RaiseEvent ReportProgress(Me, New CodingProgressEventArgs(100))
 
         Return ret
+        Finally
+            IO.Directory.SetCurrentDirectory(currentDir)
+        End Try
 
     End Function
 
@@ -887,11 +929,29 @@ Public Class Coding
 
             Else
 
+                Dim topnode As Xml.XmlElement = XML.SelectNodes("DirectB2SData")(0)
+                Dim designerDataNode As Xml.XmlNode = topnode.SelectSingleNode("B2SProDesignerData")
+                If designerDataNode IsNot Nothing AndAlso
+                   designerDataNode.Attributes("Encoding") IsNot Nothing AndAlso
+                   designerDataNode.Attributes("Encoding").InnerText.Equals("base64-utf8", StringComparison.OrdinalIgnoreCase) Then
+                    Try
+                        Dim designerXML As New Xml.XmlDocument()
+                        designerXML.LoadXml(Encoding.UTF8.GetString(Convert.FromBase64String(designerDataNode.InnerText)))
+                        Dim projectSerializer As New Save()
+                        If projectSerializer.LoadData(_backglassData, designerXML) AndAlso _backglassData IsNot Nothing Then
+                            _backglassData.BackupName = String.Empty
+                            _backglassData.VSName = IO.Path.GetFileNameWithoutExtension(filename)
+                            Return True
+                        End If
+                    Catch ex As Exception
+                        Debug.WriteLine("Embedded B2S Pro designer data could not be loaded; using legacy directB2S import: " & ex.Message)
+                    End Try
+                End If
+
                 If version >= DirectB2SVersionMaybeWithDataLost Then
                     B2SMessageBox.Show(My.Resources.MSG_ImportWarning, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
                 End If
 
-                Dim topnode As Xml.XmlElement = XML.SelectNodes("DirectB2SData")(0)
                 _backglassData = New Backglass.Data()
                 Dim myanimations As Animation.AnimationHeaderCollection = New Animation.AnimationHeaderCollection()
                 _backglassData.Animations = myanimations
@@ -1023,7 +1083,11 @@ Public Class Coding
                             score.Digits = CInt(innerNode.Attributes("Digits").InnerText)
                             score.Spacing = CInt(innerNode.Attributes("Spacing").InnerText)
                             If innerNode.Attributes("DisplayState") IsNot Nothing Then score.DisplayState = CInt(innerNode.Attributes("DisplayState").InnerText)
-                            If innerNode.Attributes("ZOrder") IsNot Nothing Then score.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
+                            If innerNode.Attributes("DesignerZOrder") IsNot Nothing Then
+                                score.ZOrder = CInt(innerNode.Attributes("DesignerZOrder").InnerText)
+                            ElseIf innerNode.Attributes("ZOrder") IsNot Nothing Then
+                                score.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
+                            End If
                             If innerNode.Attributes("BehindCanvas") IsNot Nothing Then score.BehindCanvas = (innerNode.Attributes("BehindCanvas").InnerText = "1")
                             If innerNode.Attributes("RotationAngle") IsNot Nothing Then score.RotationAngle = Single.Parse(innerNode.Attributes("RotationAngle").InnerText, Globalization.CultureInfo.InvariantCulture)
                         If innerNode.Attributes("PerspectiveDepth") IsNot Nothing Then score.PerspectiveDepth = Single.Parse(innerNode.Attributes("PerspectiveDepth").InnerText, Globalization.CultureInfo.InvariantCulture)
@@ -1221,13 +1285,20 @@ Public Class Coding
                             bulb.Intensity = CInt(innerNode.Attributes("Intensity").InnerText)
                             If innerNode.Attributes("LightColor") IsNot Nothing Then bulb.LightColor = String2Color(innerNode.Attributes("LightColor").InnerText)
                             If innerNode.Attributes("DodgeColor") IsNot Nothing Then bulb.DodgeColor = String2Color(innerNode.Attributes("DodgeColor").InnerText)
-                            If innerNode.Attributes("ZOrder") IsNot Nothing Then bulb.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
+                            If innerNode.Attributes("DesignerZOrder") IsNot Nothing Then
+                                bulb.ZOrder = CInt(innerNode.Attributes("DesignerZOrder").InnerText)
+                            ElseIf innerNode.Attributes("ZOrder") IsNot Nothing Then
+                                bulb.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
+                            End If
                             bulb.IsImageSnippit = (innerNode.Attributes("IsImageSnippit").InnerText = "1")
                             If innerNode.Attributes("BlinkEnabled") IsNot Nothing Then bulb.BlinkEnabled = (innerNode.Attributes("BlinkEnabled").InnerText = "1")
                             If innerNode.Attributes("BlinkInterval") IsNot Nothing Then bulb.BlinkInterval = Math.Max(1, Math.Min(60000, CInt(innerNode.Attributes("BlinkInterval").InnerText)))
                             If innerNode.Attributes("LightBehindCanvas") IsNot Nothing Then bulb.LightBehindCanvas = (innerNode.Attributes("LightBehindCanvas").InnerText = "1")
                             If bulb.IsImageSnippit Then bulb.Image = Base64ToImage(innerNode.Attributes("Image").InnerText)
                             If innerNode.Attributes("SnippitBehindCanvas") IsNot Nothing Then bulb.SnippitInfo.BehindCanvas = (innerNode.Attributes("SnippitBehindCanvas").InnerText = "1")
+                            If innerNode.Attributes("DesignerSnippitBrightness") IsNot Nothing Then
+                                bulb.SnippitInfo.Brightness = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("DesignerSnippitBrightness").InnerText)))
+                            End If
                             bulb.SnippitInfo.PivotAnimationEnabled = (innerNode.Attributes("PivotAnimation") IsNot Nothing AndAlso innerNode.Attributes("PivotAnimation").InnerText = "1")
                             bulb.SnippitInfo.PivotX = ReadPivotSingle(innerNode, "PivotX", 0.5F, 0.0F, 1.0F)
                             bulb.SnippitInfo.PivotY = ReadPivotSingle(innerNode, "PivotY", 0.5F, 0.0F, 1.0F)
@@ -1259,6 +1330,9 @@ Public Class Coding
                                 For Each token As String In innerNode.Attributes("PhysicsBoundaryLocks").InnerText.Split("|"c)
                                     bulb.SnippitInfo.PhysicsBoundaryLocks.Add(token.Trim() = "1" OrElse token.Trim().Equals("true", StringComparison.OrdinalIgnoreCase))
                                 Next
+                            End If
+                            If innerNode.Attributes("PhysicsBoundarySegmentBounces") IsNot Nothing Then
+                                bulb.SnippitInfo.PhysicsBoundarySegmentBounces.AddRange(ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText))
                             End If
                             If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
                             If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
@@ -3024,6 +3098,41 @@ Public Class Coding
         For Each encoded As String In value.Split("|"c)
             Dim path As List(Of PointF) = ParseMotionPathPoints(encoded)
             If path.Count >= 2 Then paths.Add(path)
+        Next
+        Return paths
+    End Function
+
+    Private Shared Function SerializePhysicsBoundarySegmentBounces(ByVal paths As IList(Of List(Of PointF)),
+                                                                    ByVal segmentBounces As IList(Of List(Of Single))) As String
+        Dim encodedPaths As New List(Of String)()
+        For pathIndex As Integer = 0 To paths.Count - 1
+            Dim path As List(Of PointF) = paths(pathIndex)
+            If path Is Nothing OrElse path.Count < 2 Then Continue For
+            Dim encodedSegments As New List(Of String)()
+            Dim saved As List(Of Single) = If(pathIndex < segmentBounces.Count, segmentBounces(pathIndex), Nothing)
+            For segmentIndex As Integer = 0 To path.Count - 2
+                Dim value As Single = If(saved IsNot Nothing AndAlso segmentIndex < saved.Count, saved(segmentIndex), -1.0F)
+                encodedSegments.Add(Math.Max(-1.0F, Math.Min(3.0F, value)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+            Next
+            encodedPaths.Add(String.Join(",", encodedSegments.ToArray()))
+        Next
+        Return String.Join("|", encodedPaths.ToArray())
+    End Function
+
+    Private Shared Function ParsePhysicsBoundarySegmentBounces(ByVal value As String) As List(Of List(Of Single))
+        Dim paths As New List(Of List(Of Single))()
+        If String.IsNullOrWhiteSpace(value) Then Return paths
+        For Each encodedPath As String In value.Split("|"c)
+            Dim segments As New List(Of Single)()
+            For Each encodedSegment As String In encodedPath.Split(","c)
+                Dim parsed As Single
+                If Single.TryParse(encodedSegment, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) Then
+                    segments.Add(Math.Max(-1.0F, Math.Min(3.0F, parsed)))
+                Else
+                    segments.Add(-1.0F)
+                End If
+            Next
+            paths.Add(segments)
         Next
         Return paths
     End Function

@@ -18,8 +18,7 @@ Public Class B2STab
     Public Event LightsReportProgress(ByVal sender As Object, ByVal e As Illumination.Lights.LightsProgressEventArgs)
     Public Event LightColorChanged(ByVal sedner As Object, ByVal e As Illumination.Lights.LightColorChangedEventArgs)
     Public Event NewProjectRequested(ByVal sender As Object, ByVal e As EventArgs)
-    Public Event ProjectSavedOnClose(ByVal data As Backglass.Data)
-    Public Event ProjectClosedWithoutSaving(ByVal data As Backglass.Data)
+    Public Event ProjectSaveRequestedOnClose(ByVal data As Backglass.Data, ByRef saveSucceeded As Boolean)
 
     Private Const tabheight As Integer = 32
 
@@ -515,13 +514,15 @@ Public Class B2STab
         If TabPages.Count > 0 AndAlso TabPages.Count > index Then
             Dim tabpage As B2STabPage = TabPages(index)
             If tabpage.BackglassData.IsDirty Then
-                ret = B2SMessageBox.Show(My.Resources.MSG_IsDirty, AppTitle, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
+                ret = B2SMessageBox.Show(My.Resources.MSG_IsDirty & Environment.NewLine & Environment.NewLine &
+                                         "Choosing Yes saves the .directb2s file.",
+                                         AppTitle,
+                                         MessageBoxButtons.YesNoCancel,
+                                         MessageBoxIcon.Question)
                 If ret = DialogResult.Yes Then
-                    Dim helper As Save = New Save()
-                    helper.SaveData(tabpage.BackglassData)
-                    RaiseEvent ProjectSavedOnClose(tabpage.BackglassData)
-                ElseIf ret = DialogResult.No Then
-                    RaiseEvent ProjectClosedWithoutSaving(tabpage.BackglassData)
+                    Dim saveSucceeded As Boolean = False
+                    RaiseEvent ProjectSaveRequestedOnClose(tabpage.BackglassData, saveSucceeded)
+                    ret = If(saveSucceeded, DialogResult.No, DialogResult.Cancel)
                 End If
             End If
             If ret = DialogResult.No Then

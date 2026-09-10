@@ -22,18 +22,22 @@ Public Class Recent
     End Sub
 
     Public Sub AddToRecentList(ByVal backglassdata As Backglass.Data, Optional ByVal filename As String = "")
-        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name & ".b2s")
+        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name, backglassdata.Name & ".directb2s")
         filename = IO.Path.GetFullPath(filename)
         Dim thumbnail As Image = backglassdata.ThumbnailImage
         If thumbnail Is Nothing AndAlso backglassdata.Image IsNot Nothing Then thumbnail = backglassdata.Image.Resized(New Size(32, 32))
         Dim newrecent As recentEntry = New recentEntry(backglassdata.Name, thumbnail, filename)
-        ' check whether the current entry is already included in the list
+        ' Remove every stale duplicate. Older settings files can already contain
+        ' more than one copy, so removing only the first match leaves duplicates.
+        Dim duplicateKeys As New Generic.List(Of Integer)()
         For Each recentEntry As KeyValuePair(Of Integer, recentEntry) In recentEntries
             If recentEntry.Value.FileName.Equals(newrecent.FileName, StringComparison.CurrentCultureIgnoreCase) OrElse
                recentEntry.Value.Name.Equals(newrecent.Name, StringComparison.CurrentCultureIgnoreCase) Then
-                recentEntries.Remove(recentEntry.Key)
-                Exit For
+                duplicateKeys.Add(recentEntry.Key)
             End If
+        Next
+        For Each duplicateKey As Integer In duplicateKeys
+            recentEntries.Remove(duplicateKey)
         Next
         ' not more than 10 entries
         Do While recentEntries.Count > 9
@@ -64,7 +68,7 @@ Public Class Recent
         For Each recentEntry As KeyValuePair(Of Integer, recentEntry) In recentEntries
             If recentEntry.Value.Name.Equals(oldname) Then
                 recentEntry.Value.Name = newname
-                recentEntry.Value.FileName = IO.Path.Combine(BackglassProjectsPath, newname & ".b2s")
+                recentEntry.Value.FileName = IO.Path.Combine(BackglassProjectsPath, newname, newname & ".directb2s")
             End If
         Next
         ' save data
@@ -100,6 +104,19 @@ Public Class Recent
         IsDirty = True
     End Sub
 
+    Public Sub RemoveNonDirectB2SEntries()
+        Dim obsoleteKeys As New Generic.List(Of Integer)
+        For Each item As KeyValuePair(Of Integer, recentEntry) In recentEntries
+            If Not IO.Path.GetExtension(item.Value.FileName).Equals(".directb2s", StringComparison.OrdinalIgnoreCase) Then obsoleteKeys.Add(item.Key)
+        Next
+        If obsoleteKeys.Count = 0 Then Return
+        For Each key As Integer In obsoleteKeys
+            recentEntries.Remove(key)
+        Next
+        SaveRecentList()
+        IsDirty = True
+    End Sub
+
     Private Sub LoadRecentList()
         If XmlSettings Is Nothing Then
             XmlSettings = New Xml.XmlDocument
@@ -111,7 +128,7 @@ Public Class Recent
                 Dim i As Integer = 1
                 For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Recent")
                     Dim name As String = innerNode.Attributes("Name").InnerText
-                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name & ".b2s")
+                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name, name & ".directb2s")
                     If innerNode.Attributes("FileName") IsNot Nothing AndAlso Not String.IsNullOrEmpty(innerNode.Attributes("FileName").InnerText) Then
                         filename = innerNode.Attributes("FileName").InnerText
                     End If

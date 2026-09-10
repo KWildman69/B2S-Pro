@@ -1239,6 +1239,10 @@ Public Class formToolLayers
             ball.SnippitInfo.PhysicsBoundaryNames.AddRange(editor.ResultBoundaryNames)
             ball.SnippitInfo.PhysicsBoundaryLocks.Clear()
             ball.SnippitInfo.PhysicsBoundaryLocks.AddRange(editor.ResultBoundaryLocks)
+            ball.SnippitInfo.PhysicsBoundarySegmentBounces.Clear()
+            For Each values As List(Of Single) In editor.ResultBoundarySegmentBounces
+                ball.SnippitInfo.PhysicsBoundarySegmentBounces.Add(New List(Of Single)(values))
+            Next
             ball.SnippitInfo.PhysicsObstacles.Clear()
             ball.SnippitInfo.PhysicsObstacles.AddRange(editor.ResultObstacles)
             ball.SnippitInfo.PhysicsSwitchZones.Clear()
