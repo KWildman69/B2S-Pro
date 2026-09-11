@@ -515,7 +515,7 @@ Public Class B2STab
             Dim tabpage As B2STabPage = TabPages(index)
             If tabpage.BackglassData.IsDirty Then
                 ret = B2SMessageBox.Show(My.Resources.MSG_IsDirty & Environment.NewLine & Environment.NewLine &
-                                         "Choosing Yes saves the .directb2s file.",
+                                          "Choosing Yes saves the .B2SPro file.",
                                          AppTitle,
                                          MessageBoxButtons.YesNoCancel,
                                          MessageBoxIcon.Question)

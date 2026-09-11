@@ -604,7 +604,7 @@
     <value>Top, Left, Right</value>
   </data>
   <data name="cmbDestType.Items" xml:space="preserve">
-    <value>B2S.Server 'directB2S' backglass</value>
+    <value>B2S Pro backglass</value>
   </data>
   <data name="cmbDestType.Items1" xml:space="preserve">
     <value>Microsoft Visual Studio 2010 project</value>

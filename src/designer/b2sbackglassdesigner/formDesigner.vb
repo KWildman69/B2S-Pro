@@ -299,12 +299,12 @@ Public Class formDesigner
         tsbHelp.Checked = True
         tsbHelp.ToolTipText = "Turn automatic recovery saves on or off"
 
-        ' Two-step DirectB2S workflow, reusing the exact commands from the
+        ' Two-step B2S Pro workflow, reusing the exact commands from the
         ' Backglass menu and keeping both actions in one dedicated group.
         tsbCreateDirectB2SEnhanced = New ToolStripButton() With {
             .Name = "tsbCreateDirectB2SBackglassFile",
-            .Text = "STEP 1" & vbLf & "CREATE" & vbLf & "DIRECTB2S FILE",
-            .ToolTipText = "Step 1: Create DirectB2S backglass file"
+            .Text = "STEP 1" & vbLf & "CREATE" & vbLf & "B2SPRO FILE",
+            .ToolTipText = "Step 1: Create B2S Pro backglass file"
         }
         tsbBackglassPreviewEnhanced = New ToolStripButton() With {
             .Name = "tsbBackglassPreviewAndTest",
@@ -934,9 +934,9 @@ Public Class formDesigner
         autoSaveInProgress = True
         Dim wasDirty As Boolean = Backglass.currentData.IsDirty
         Try
-            If SaveDirectB2S(Backglass.currentData, False) Then
+            If SaveB2SPro(Backglass.currentData, False) Then
                 Backglass.currentData.IsDirty = wasDirty
-                ShowStatus("Auto-saved directB2S at " & DateTime.Now.ToShortTimeString())
+                ShowStatus("Auto-saved B2S Pro file at " & DateTime.Now.ToShortTimeString())
             End If
         Catch ex As Exception
             ' Keep editing uninterrupted; a later timer tick will try again.
@@ -947,30 +947,25 @@ Public Class formDesigner
         End Try
     End Sub
 
-    Private Function DirectB2SFileFor(ByVal data As Backglass.Data) As String
+    Private Function B2SProFileFor(ByVal data As Backglass.Data) As String
         If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return String.Empty
-        If Not String.IsNullOrWhiteSpace(data.SourceFilePath) AndAlso
-           IO.Path.GetExtension(data.SourceFilePath).Equals(".directb2s", StringComparison.OrdinalIgnoreCase) Then
-            Return IO.Path.GetFullPath(data.SourceFilePath)
-        End If
-
-        Dim fileName As String = If(String.IsNullOrWhiteSpace(data.VSName), data.Name, data.VSName) & ".directb2s"
+        Dim fileName As String = If(String.IsNullOrWhiteSpace(data.VSName), data.Name, data.VSName) & B2SProFileExtension
         Return IO.Path.Combine(BackglassProjectsPath, data.Name, fileName)
     End Function
 
-    Private Function SaveDirectB2S(ByVal data As Backglass.Data,
-                                   Optional ByVal markClean As Boolean = True,
-                                   Optional ByVal outputFilename As String = "") As Boolean
+    Private Function SaveB2SPro(ByVal data As Backglass.Data,
+                                Optional ByVal markClean As Boolean = True,
+                                Optional ByVal outputFilename As String = "") As Boolean
         If data Is Nothing OrElse Not Object.ReferenceEquals(data, Backglass.currentData) Then Return False
 
-        Dim target As String = If(String.IsNullOrWhiteSpace(outputFilename), DirectB2SFileFor(data), IO.Path.GetFullPath(outputFilename))
+        Dim target As String = If(String.IsNullOrWhiteSpace(outputFilename), B2SProFileFor(data), B2SProFileName(IO.Path.GetFullPath(outputFilename)))
         If String.IsNullOrWhiteSpace(target) Then Return False
 
         Dim saveStartedUtc As DateTime = DateTime.UtcNow
-        TraceMotionPersistence("Saving directB2S only: " & target)
-        If Not coding.CreateDirectB2SFile(target) Then Return False
+        TraceMotionPersistence("Saving B2S Pro file: " & target)
+        If Not coding.CreateB2SProFile(target) Then Return False
         If Not IO.File.Exists(target) OrElse IO.File.GetLastWriteTimeUtc(target) < saveStartedUtc.AddSeconds(-2) Then
-            TraceMotionPersistence("directB2S save could not be verified: " & target)
+            TraceMotionPersistence("B2S Pro save could not be verified: " & target)
             Return False
         End If
 
@@ -980,7 +975,7 @@ Public Class formDesigner
         data.LoadedName = data.Name
         data.IsDirty = Not markClean
         recent.AddToRecentList(data, target)
-        TraceMotionPersistence("directB2S save verified: " & target)
+        TraceMotionPersistence("B2S Pro save verified: " & target)
         Return True
     End Function
 
@@ -1173,7 +1168,7 @@ Public Class formDesigner
             If Not IO.File.Exists(filename) Then Continue For
 
             Select Case IO.Path.GetExtension(filename).ToLowerInvariant()
-                Case ".directb2s"
+                Case B2SProFileExtension.ToLowerInvariant(), LegacyDirectB2SFileExtension
                     Return IO.Path.GetFullPath(filename)
             End Select
         Next
@@ -1185,8 +1180,8 @@ Public Class formDesigner
         startupFileOpened = True
 
         Select Case IO.Path.GetExtension(filename).ToLowerInvariant()
-            Case ".directb2s"
-                LoadDirectB2S(filename)
+            Case B2SProFileExtension.ToLowerInvariant(), LegacyDirectB2SFileExtension
+                LoadBackglassFile(filename)
         End Select
     End Sub
 
@@ -1270,10 +1265,10 @@ Public Class formDesigner
         saveSucceeded = False
         If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return
         Try
-            saveSucceeded = SaveDirectB2S(data)
-            If Not saveSucceeded Then TraceMotionPersistence("Close directB2S save failed; keeping tab open")
+            saveSucceeded = SaveB2SPro(data)
+            If Not saveSucceeded Then TraceMotionPersistence("Close B2S Pro save failed; keeping tab open")
         Catch ex As Exception
-            TraceMotionPersistence("Close directB2S save failed; keeping tab open: " & ex.ToString())
+            TraceMotionPersistence("Close B2S Pro save failed; keeping tab open: " & ex.ToString())
         End Try
     End Sub
 
@@ -1289,8 +1284,8 @@ Public Class formDesigner
         If e.Data.GetDataPresent(DataFormats.FileDrop) Then
             Dim file_paths As String() = CType(e.Data.GetData(DataFormats.FileDrop), String())
             For Each file_path As String In file_paths
-                If My.Computer.FileSystem.GetFileInfo(file_path).Extension.Equals(".directb2s", StringComparison.OrdinalIgnoreCase) Then
-                    LoadDirectB2S(file_path)
+                If IsSupportedBackglassFile(file_path) Then
+                    LoadBackglassFile(file_path)
                 ElseIf (My.Computer.FileSystem.GetFileInfo(file_path).Extension = ".png") Then
                     If Backglass.currentTabPage IsNot Nothing Then
                         Dim image As Image = Bitmap.FromFile(file_path).Copy(True)
@@ -1644,11 +1639,11 @@ Public Class formDesigner
     Private Sub Open_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiOpen.Click, tsbOpen.Click
         Using filedialog As OpenFileDialog = New OpenFileDialog
             With filedialog
-                .Filter = "directB2S backglass file (*.directb2s)|*.directb2s"
+                .Filter = "B2S Pro and directB2S backglass files (*.B2SPro;*.directb2s)|*.B2SPro;*.directb2s"
                 .FileName = String.Empty
                 .InitialDirectory = If(String.IsNullOrWhiteSpace(LatestImportDirectory), BackglassProjectsPath, LatestImportDirectory)
                 If .ShowDialog(Me) = DialogResult.OK Then
-                    LoadDirectB2S(.FileName)
+                    LoadBackglassFile(.FileName)
                 End If
             End With
         End Using
@@ -1721,7 +1716,7 @@ Public Class formDesigner
     Private Sub Save_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiSave.Click, tsbSave.Click
         If Backglass.currentTabPage IsNot Nothing Then
             Cursor.Current = Cursors.WaitCursor
-            SaveDirectB2S(Backglass.currentData)
+            SaveB2SPro(Backglass.currentData)
             Cursor.Current = Cursors.Default
         Else
             tsmiNew.PerformClick()
@@ -1734,17 +1729,17 @@ Public Class formDesigner
     Private Sub SaveAs_Click(sender As System.Object, e As System.EventArgs) Handles tsmiSaveAs.Click
         If Backglass.currentTabPage IsNot Nothing Then
             Using fileDialog As New SaveFileDialog()
-                fileDialog.Title = "Save directB2S As"
-                fileDialog.Filter = "directB2S backglass file (*.directb2s)|*.directb2s"
-                fileDialog.DefaultExt = "directb2s"
+                fileDialog.Title = "Save B2S Pro As"
+                fileDialog.Filter = "B2S Pro backglass file (*.B2SPro)|*.B2SPro"
+                fileDialog.DefaultExt = B2SProFileExtension.TrimStart("."c)
                 fileDialog.AddExtension = True
-                fileDialog.FileName = If(String.IsNullOrWhiteSpace(Backglass.currentData.VSName), Backglass.currentData.Name, Backglass.currentData.VSName) & ".directb2s"
+                fileDialog.FileName = If(String.IsNullOrWhiteSpace(Backglass.currentData.VSName), Backglass.currentData.Name, Backglass.currentData.VSName) & B2SProFileExtension
                 If Not String.IsNullOrWhiteSpace(Backglass.currentData.SourceFilePath) Then
                     fileDialog.InitialDirectory = IO.Path.GetDirectoryName(Backglass.currentData.SourceFilePath)
                 End If
                 If fileDialog.ShowDialog(Me) = DialogResult.OK Then
                     Cursor.Current = Cursors.WaitCursor
-                    SaveDirectB2S(Backglass.currentData, True, fileDialog.FileName)
+                    SaveB2SPro(Backglass.currentData, True, fileDialog.FileName)
                     Cursor.Current = Cursors.Default
                 End If
             End Using
@@ -1754,7 +1749,7 @@ Public Class formDesigner
         Dim originalIndex As Integer = B2STab.SelectedIndex
         For index As Integer = 0 To B2STab.TabPages.Count - 1
             B2STab.SelectedIndex = index
-            If Backglass.currentData IsNot Nothing Then SaveDirectB2S(Backglass.currentData)
+            If Backglass.currentData IsNot Nothing Then SaveB2SPro(Backglass.currentData)
         Next
         If originalIndex >= 0 AndAlso originalIndex < B2STab.TabPages.Count Then B2STab.SelectedIndex = originalIndex
     End Sub
@@ -1768,11 +1763,11 @@ Public Class formDesigner
     Private Sub ImportBackglassFile_Click(sender As System.Object, e As System.EventArgs) Handles tsmiImportBackglassFile.Click
         Using filedialog As OpenFileDialog = New OpenFileDialog
             With filedialog
-                .Filter = "'directB2S' backglass file (*.directb2s)|*.directb2s|ALL (*.*)|*.*"
+                .Filter = "B2S Pro and directB2S backglass files (*.B2SPro;*.directb2s)|*.B2SPro;*.directb2s"
                 .FileName = String.Empty
                 .InitialDirectory = If(LatestImportDirectory.Length, LatestImportDirectory, BackglassProjectsPath)
                 If .ShowDialog(Me) = DialogResult.OK Then
-                    LoadDirectB2S(.FileName)
+                    LoadBackglassFile(.FileName)
                 End If
             End With
             ShowStatus()
@@ -1788,7 +1783,7 @@ Public Class formDesigner
     Private Sub OpenRecent_DropDownOpening(ByVal sender As Object, ByVal e As System.EventArgs) Handles tsmiOpenRecent.DropDownOpening
         ' Older builds added new/unsaved projects to this file menu. Remove
         ' entries that have no source file before rebuilding it.
-        recent.RemoveNonDirectB2SEntries()
+        recent.RemoveUnsupportedBackglassEntries()
         recent.RemoveMissingEntries()
         If recent.IsDirty Then
             Do While True
@@ -1825,8 +1820,8 @@ Public Class formDesigner
         Dim entry As Recent.recentEntry = If(menuItem IsNot Nothing, TryCast(menuItem.Tag, Recent.recentEntry), Nothing)
         If entry IsNot Nothing AndAlso IO.File.Exists(entry.FileName) Then
             TraceMotionPersistence("Recent clicked: " & entry.FileName)
-            If IO.Path.GetExtension(entry.FileName).Equals(".directb2s", StringComparison.OrdinalIgnoreCase) Then
-                LoadDirectB2S(entry.FileName)
+            If IsSupportedBackglassFile(entry.FileName) Then
+                LoadBackglassFile(entry.FileName)
             End If
         End If
     End Sub
@@ -2949,7 +2944,7 @@ Public Class formDesigner
     Private Sub CreateDirectAccessBackglassCodeFile_Click(sender As System.Object, e As System.EventArgs) Handles tsmiCreateDirectAccessBackglassCodeFile.Click
 
         If Backglass.currentTabPage IsNot Nothing Then
-            SaveDirectB2S(Backglass.currentData)
+            SaveB2SPro(Backglass.currentData)
         End If
 
     End Sub
@@ -3108,13 +3103,13 @@ Public Class formDesigner
 
 #Region "private methods"
 
-    Private Sub LoadDirectB2S(ByVal filename As String)
+    Private Sub LoadBackglassFile(ByVal filename As String)
         Dim backglassdata As Backglass.Data = Nothing
         Cursor.Current = Cursors.WaitCursor
         LatestImportDirectory = IO.Path.GetDirectoryName(filename)
         SaveSettings()
         Try
-            coding.ImportDirectB2SFile(backglassdata, filename)
+            coding.ImportBackglassFile(backglassdata, filename)
             If backglassdata IsNot Nothing Then
                 LoadData(backglassdata, filename)
             End If
@@ -3756,9 +3751,8 @@ Public Class formDesigner
                        Not String.IsNullOrWhiteSpace(backglass.BackglassData.ProjectGUID) AndAlso
                        String.Equals(backglass.BackglassData.ProjectGUID, _backglassdata.ProjectGUID, StringComparison.OrdinalIgnoreCase) AndAlso
                        String.Equals(backglass.BackglassData.Name, _backglassdata.Name, StringComparison.OrdinalIgnoreCase) Then
-                        ' A .b2s project and its exported .directb2s have different
-                        ' paths but are the same logical document. Do not open the
-                        ' lossy runtime import as a second editable tab.
+                         ' A legacy project and its exported backglass can have
+                         ' different paths but still represent one logical document.
                         isSameDocument = True
                     End If
                 Else
@@ -3804,12 +3798,7 @@ Public Class formDesigner
     End Function
 
     Private Sub TraceMotionPersistence(ByVal message As String)
-        Try
-            IO.File.AppendAllText(IO.Path.Combine(Application.StartupPath, "MotionPathSaveTrace.log"),
-                                  DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") & " | " & message & Environment.NewLine)
-        Catch
-            ' Diagnostics must never interrupt editing or saving.
-        End Try
+        Debug.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") & " | " & message)
     End Sub
 
     Private Function NormalizeSourcePath(ByVal sourceFileName As String) As String

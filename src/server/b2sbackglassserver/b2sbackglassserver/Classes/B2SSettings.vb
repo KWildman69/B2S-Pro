@@ -9,6 +9,8 @@ Imports Microsoft.Win32
 Public Class B2SSettings
 
     Public Const MinimumDirectB2SVersion As String = "1.0"
+    Public Const B2SProFileExtension As String = ".B2SPro"
+    Public Const LegacyDirectB2SFileExtension As String = ".directb2s"
     Public Shared Property BackglassFileVersion() As String = String.Empty
 
     Public Enum eDefaultStartMode

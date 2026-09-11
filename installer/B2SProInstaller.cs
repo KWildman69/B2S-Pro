@@ -5,8 +5,10 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
+using Microsoft.Win32;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -328,7 +330,7 @@ namespace B2SPro.Setup
                     }
 
                     SetBusy(true, "Backing up and installing files...");
-                    InstallResult result = await Task.Run(delegate { return plan.Execute(true, !SetupEdition.ServerOnly); });
+                    InstallResult result = await Task.Run(delegate { return plan.Execute(true, !SetupEdition.ServerOnly, !SetupEdition.ServerOnly); });
                     SetBusy(false, SetupEdition.Product + " installation completed successfully.");
                     string message = result.BuildSummary();
                     MessageBox.Show(this, message, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -655,7 +657,7 @@ namespace B2SPro.Setup
             return false;
         }
 
-        public InstallResult Execute(bool registerServer, bool createShortcuts)
+        public InstallResult Execute(bool registerServer, bool createShortcuts, bool registerFileAssociations)
         {
             if (_installDesigner) Directory.CreateDirectory(_designer);
             Directory.CreateDirectory(_server);
@@ -705,6 +707,13 @@ namespace B2SPro.Setup
                     catch (Exception ex) { registrationError = ex.Message; }
                 }
 
+                string fileAssociationError = null;
+                if (registerFileAssociations)
+                {
+                    try { FileAssociationManager.Register(_designer); }
+                    catch (Exception ex) { fileAssociationError = ex.Message; }
+                }
+
                 string shortcutError = null;
                 if (createShortcuts)
                 {
@@ -713,12 +722,12 @@ namespace B2SPro.Setup
                 }
 
                 string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
-                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
+                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
                 MarkProtected(log);
                 if (_installDesigner) MarkProtected(Path.Combine(_designer, "B2SPro-Backups"));
                 MarkProtected(Path.Combine(_server, "B2SPro-Backups"));
                 bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
-                return new InstallResult(_designer, _server, installed, preserved, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, createShortcuts, shortcutError, _installDesigner);
+                return new InstallResult(_designer, _server, installed, preserved, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
             }
             catch
             {
@@ -822,10 +831,12 @@ namespace B2SPro.Setup
         private readonly bool _freshServer;
         private readonly bool _registrationAttempted;
         private readonly string _registrationError;
+        private readonly bool _fileAssociationsAttempted;
+        private readonly string _fileAssociationError;
         private readonly bool _shortcutsAttempted;
         private readonly string _shortcutError;
         private readonly bool _installedDesigner;
-        public InstallResult(string designer, string server, int installed, int preserved, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool shortcutsAttempted, string shortcutError, bool installedDesigner)
+        public InstallResult(string designer, string server, int installed, int preserved, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool fileAssociationsAttempted, string fileAssociationError, bool shortcutsAttempted, string shortcutError, bool installedDesigner)
         {
             _designer = designer;
             _server = server;
@@ -835,6 +846,8 @@ namespace B2SPro.Setup
             _freshServer = freshServer;
             _registrationAttempted = registrationAttempted;
             _registrationError = registrationError;
+            _fileAssociationsAttempted = fileAssociationsAttempted;
+            _fileAssociationError = fileAssociationError;
             _shortcutsAttempted = shortcutsAttempted;
             _shortcutError = shortcutError;
             _installedDesigner = installedDesigner;
@@ -865,6 +878,14 @@ namespace B2SPro.Setup
                 text.AppendLine("The installed files were kept so registration can be retried safely.");
             }
             else text.AppendLine("Server registration was skipped for this sandbox test.");
+            if (_fileAssociationsAttempted && _fileAssociationError == null)
+            {
+                text.AppendLine(".B2SPro and .directB2S files were associated with the B2S Pro editor.");
+            }
+            else if (_fileAssociationsAttempted)
+            {
+                text.AppendLine("WARNING: Backglass file associations could not be registered: " + _fileAssociationError);
+            }
             if (_shortcutsAttempted && _shortcutError == null)
             {
                 text.AppendLine("Desktop and Start Menu shortcuts were created for B2S Pro.");
@@ -874,6 +895,72 @@ namespace B2SPro.Setup
                 text.AppendLine("WARNING: The shortcuts could not be created: " + _shortcutError);
             }
             return text.ToString();
+        }
+    }
+
+    internal static class FileAssociationManager
+    {
+        private const string B2SProProgId = "B2SPro.Backglass";
+        private const string LegacyProgId = "B2SPro.LegacyDirectB2S";
+        private const uint AssociationChanged = 0x08000000;
+        private const uint IdList = 0x0000;
+
+        [DllImport("shell32.dll")]
+        private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
+
+        public static void Register(string designerFolder)
+        {
+            string editor = GetEditorPath(designerFolder);
+            if (!File.Exists(editor)) throw new FileNotFoundException("B2SPro.exe was not found for file association registration.", editor);
+
+            using (RegistryKey extension = Registry.ClassesRoot.CreateSubKey(".B2SPro"))
+                extension.SetValue("", B2SProProgId);
+            using (RegistryKey legacyExtension = Registry.ClassesRoot.CreateSubKey(".directb2s"))
+                legacyExtension.SetValue("", LegacyProgId);
+
+            RegisterFileType(B2SProProgId, ".B2SPro", editor, designerFolder);
+            RegisterFileType(LegacyProgId, ".directB2S", editor, designerFolder);
+            SHChangeNotify(AssociationChanged, IdList, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        private static void RegisterFileType(string progId, string description, string editor, string designerFolder)
+        {
+            using (RegistryKey fileType = Registry.ClassesRoot.CreateSubKey(progId))
+            {
+                fileType.SetValue("", description);
+                fileType.SetValue("FriendlyTypeName", description);
+                using (RegistryKey icon = fileType.CreateSubKey("DefaultIcon"))
+                    icon.SetValue("", Quote(editor) + ",0");
+                using (RegistryKey command = fileType.CreateSubKey("shell\\open\\command"))
+                    command.SetValue("", BuildOpenCommand(designerFolder));
+            }
+        }
+
+        internal static string GetProgId(string extension)
+        {
+            return String.Equals(extension, ".B2SPro", StringComparison.OrdinalIgnoreCase) ? B2SProProgId : LegacyProgId;
+        }
+
+        internal static string GetTypeDescription(string extension)
+        {
+            return String.Equals(extension, ".B2SPro", StringComparison.OrdinalIgnoreCase)
+                ? ".B2SPro"
+                : ".directB2S";
+        }
+
+        internal static string GetEditorPath(string designerFolder)
+        {
+            return Path.Combine(Path.GetFullPath(designerFolder), "B2SPro.exe");
+        }
+
+        internal static string BuildOpenCommand(string designerFolder)
+        {
+            return Quote(GetEditorPath(designerFolder)) + " \"%1\"";
+        }
+
+        private static string Quote(string value)
+        {
+            return "\"" + value + "\"";
         }
     }
 
@@ -1021,7 +1108,7 @@ namespace B2SPro.Setup
                         package.Validate(arch, true);
                         InstallPlan plan = package.CreatePlan(designer, server, arch, true);
                         if (plan.ExistingProgramFiles.Count < 2) throw new Exception(arch + " existing-program detection failed.");
-                        plan.Execute(false, false);
+                        plan.Execute(false, false, false);
                         if (File.ReadAllText(Path.Combine(server, "ScreenRes.txt")) != "SELF-TEST-SCREENRES") throw new Exception(arch + " ScreenRes.txt was overwritten.");
                         if (File.ReadAllText(Path.Combine(server, "Plugins", "Plugins.txt")) != "SELF-TEST-PLUGIN") throw new Exception(arch + " plugin settings were overwritten.");
                         if (new FileInfo(Path.Combine(designer, "B2SPro.exe")).Length < 1000000) throw new Exception(arch + " Designer payload was not installed.");
@@ -1051,10 +1138,22 @@ namespace B2SPro.Setup
                 using (var package = new ReleasePackage(args[1]))
                 {
                     package.Validate("x64", true);
-                    package.CreatePlan(Path.Combine(freshVpx, "B2SPro"), freshServer, "x64", true).Execute(false, false);
+                    package.CreatePlan(Path.Combine(freshVpx, "B2SPro"), freshServer, "x64", true).Execute(false, false, false);
                 }
                 if (!File.Exists(Path.Combine(freshVpx, "B2SPro", "B2SPro.exe"))) throw new Exception("The fresh Designer was not installed in its separate folder.");
                 if (!File.Exists(Path.Combine(freshServer, "B2SBackglassServer.dll"))) throw new Exception("The fresh Server was not installed in the suggested B2SServer folder.");
+                string expectedEditor = Path.Combine(freshVpx, "B2SPro", "B2SPro.exe");
+                string expectedOpenCommand = "\"" + expectedEditor + "\" \"%1\"";
+                if (!String.Equals(FileAssociationManager.GetEditorPath(Path.Combine(freshVpx, "B2SPro")), expectedEditor, StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("The B2S Pro file association did not target the installed Designer.");
+                if (!String.Equals(FileAssociationManager.BuildOpenCommand(Path.Combine(freshVpx, "B2SPro")), expectedOpenCommand, StringComparison.Ordinal))
+                    throw new Exception("The B2S Pro file association command was not quoted correctly.");
+                if (String.Equals(FileAssociationManager.GetProgId(".B2SPro"), FileAssociationManager.GetProgId(".directb2s"), StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("B2S Pro and legacy directB2S files were assigned the same Windows file type.");
+                if (!String.Equals(FileAssociationManager.GetTypeDescription(".B2SPro"), ".B2SPro", StringComparison.Ordinal))
+                    throw new Exception("The B2S Pro Windows file-type description is incorrect.");
+                if (!String.Equals(FileAssociationManager.GetTypeDescription(".directb2s"), ".directB2S", StringComparison.Ordinal))
+                    throw new Exception("The legacy directB2S Windows file-type description is incorrect.");
                 string testDesktop = Path.Combine(sandbox, "TestDesktop");
                 string testPrograms = Path.Combine(sandbox, "TestPrograms");
                 ShortcutManager.CreateAt(Path.Combine(freshVpx, "B2SPro"), testDesktop, testPrograms);
@@ -1075,7 +1174,7 @@ namespace B2SPro.Setup
                         package.Validate("x64", false);
                         InstallPlan plan = package.CreatePlan(null, serverOnlyRoot, "x64", false);
                         if (plan.ExistingProgramFiles.Count == 0) throw new Exception("Server-only existing-program detection failed.");
-                        plan.Execute(false, false);
+                        plan.Execute(false, false, false);
                     }
                     if (File.ReadAllText(Path.Combine(serverOnlyRoot, "ScreenRes.txt")) != "SERVER-ONLY-SCREENRES") throw new Exception("Server-only setup overwrote ScreenRes.txt.");
                     if (File.ReadAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt")) != "SERVER-ONLY-PLUGIN") throw new Exception("Server-only setup overwrote plugin settings.");

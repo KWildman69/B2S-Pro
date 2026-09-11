@@ -1,26 +1,35 @@
 [CmdletBinding()]
 param(
-    [switch]$IncludeLocalPackage
+    [switch]$IncludeLocalPackage,
+    [string]$OutputRoot,
+    [string]$AssetRoot
 )
 
 $ErrorActionPreference = 'Stop'
 $installerRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = Split-Path -Parent $installerRoot
-$outputRoot = Join-Path $installerRoot 'dist'
+$workspaceRoot = Split-Path -Parent $repositoryRoot
+$localWorkRoot = Join-Path $workspaceRoot 'B2S-Local-Work'
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    $OutputRoot = Join-Path $localWorkRoot 'Installer-Dist'
+}
+if ([string]::IsNullOrWhiteSpace($AssetRoot)) {
+    $AssetRoot = Join-Path $localWorkRoot 'Current-Release\Public'
+}
 $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $installerRoot 'B2SProInstaller.cs'
 $manifest = Join-Path $installerRoot 'B2SProInstaller.manifest'
 $icon = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\B2SPro.ico'
 $logo = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\Resources\B2SProHeader.png'
-$proOutput = Join-Path $outputRoot 'B2SProSetup.exe'
-$serverOutput = Join-Path $outputRoot 'B2SServerSetup.exe'
-$testOutput = Join-Path $outputRoot 'B2SSetup.SelfTest.exe'
+$proOutput = Join-Path $OutputRoot 'B2SProSetup.exe'
+$serverOutput = Join-Path $OutputRoot 'B2SServerSetup.exe'
+$testOutput = Join-Path $OutputRoot 'B2SSetup.SelfTest.exe'
 
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The .NET Framework C# compiler was not found at $compiler"
 }
 
-New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 
 $commonCompilerArguments = @(
     '/nologo'
@@ -99,18 +108,17 @@ if ($LASTEXITCODE -ne 0) {
 Write-Output "Test runner: $testOutput"
 
 if ($IncludeLocalPackage) {
-    $assetRoot = Join-Path $repositoryRoot 'release-assets'
     $packages = @(
-        (Join-Path $assetRoot 'B2S-Latest-Complete-Build.zip'),
-        (Join-Path $assetRoot 'B2S-Pro-Server-3.0.0.zip')
+        (Join-Path $AssetRoot 'B2S-Latest-Complete-Build.zip'),
+        (Join-Path $AssetRoot 'B2S-Pro-Server-3.0.0.zip')
     )
     foreach ($package in $packages) {
         $sidecar = "$package.sha256"
         if (-not (Test-Path -LiteralPath $package) -or -not (Test-Path -LiteralPath $sidecar)) {
             throw "The local release package or SHA-256 sidecar is missing: $package"
         }
-        Copy-Item -LiteralPath $package -Destination $outputRoot -Force
-        Copy-Item -LiteralPath $sidecar -Destination $outputRoot -Force
+        Copy-Item -LiteralPath $package -Destination $OutputRoot -Force
+        Copy-Item -LiteralPath $sidecar -Destination $OutputRoot -Force
     }
     Write-Output 'Included the verified complete and server-only packages for private/offline testing.'
 }

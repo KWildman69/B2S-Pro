@@ -1028,10 +1028,10 @@ Are you sure this is a valid backglass project file?</value>
   <data name="MSG_ImportError" xml:space="preserve">
     <value>An error occurred loading the backglass file ('{0}').
 
-Are you sure this is a valid 'directB2S' backglass file?</value>
+Are you sure this is a valid B2S Pro or legacy directB2S backglass file?</value>
   </data>
   <data name="MSG_CannotImport" xml:space="preserve">
-    <value>Can't import this 'directB2S' file. Necessary infos are missing. Please update the 'directB2S' backglass file to a newer version.</value>
+    <value>Can't import this backglass file. Necessary information is missing. Please update the legacy directB2S file with a newer compatible editor.</value>
   </data>
   <data name="MSG_ProjectNameEndsWithB2S" xml:space="preserve">
     <value>The project file name ends with 'B2S'. Please change this to avoid error messages with 'Hyperpin' or other tools.</value>

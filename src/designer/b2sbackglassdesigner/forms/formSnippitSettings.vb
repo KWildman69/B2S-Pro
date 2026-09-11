@@ -24,7 +24,6 @@ Public Class formSnippitSettings
     Private lblAutomaticRotationMilliseconds As Label
 
     Private Shared activeDialog As formSnippitSettings = Nothing
-    Private Shared ReadOnly diagnosticFile As String = IO.Path.Combine(IO.Path.GetTempPath(), "B2S-SnippetWindow.log")
     Private ReadOnly diagnosticID As String = Guid.NewGuid().ToString("N").Substring(0, 8)
     Public ignoreChange As Boolean = False
 
@@ -57,13 +56,9 @@ Public Class formSnippitSettings
     End Sub
 
     Private Sub TraceWindow(ByVal action As String)
-        Try
-            Dim line As String = String.Format("{0:HH:mm:ss.fff} id={1} {2} visible={3} opacity={4:0.00} bounds={5},{6},{7},{8}{9}",
-                                               DateTime.Now, diagnosticID, action, Me.Visible, Me.Opacity,
-                                               Me.Left, Me.Top, Me.Width, Me.Height, Environment.NewLine)
-            IO.File.AppendAllText(diagnosticFile, line)
-        Catch
-        End Try
+        Debug.WriteLine(String.Format("{0:HH:mm:ss.fff} id={1} {2} visible={3} opacity={4:0.00} bounds={5},{6},{7},{8}",
+                                      DateTime.Now, diagnosticID, action, Me.Visible, Me.Opacity,
+                                      Me.Left, Me.Top, Me.Width, Me.Height))
     End Sub
 
     Public Shadows Function ShowDialog(ByVal owner As IWin32Window,

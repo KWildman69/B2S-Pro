@@ -13,7 +13,7 @@ Imports System.Runtime.InteropServices
 <Assembly: AssemblyTitle("B2S Backglass Server EXE")>
 <Assembly: AssemblyProduct("B2S Backglass Server EXE")>
 #End If
-<Assembly: AssemblyDescription("Display directb2s Backglass files for Visual Pinball")>
+<Assembly: AssemblyDescription("Display B2S Pro and legacy directB2S backglass files for Visual Pinball")>
 <Assembly: AssemblyCompany("Visual Pinball")>
 <Assembly: AssemblyCopyright("Copyright (c) 2012-2026")>
 <Assembly: AssemblyTrademark("A Herweh & B2S Team production")>

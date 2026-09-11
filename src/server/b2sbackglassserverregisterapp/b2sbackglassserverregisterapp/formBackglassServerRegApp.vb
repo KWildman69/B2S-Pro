@@ -133,7 +133,6 @@ Public Class formBackglassServerRegApp
                 'keep ".directb2s" for VP preview handler!
                 rkReg.DeleteSubKeyTree("b2sserver.directb2s\shell", False)
             End If
-
             rkReg.DeleteSubKeyTree(B2SResFileEnding, False) ' Do not delete this one?
             rkReg.DeleteSubKeyTree("b2sserver.res", False)
 
@@ -142,6 +141,7 @@ Public Class formBackglassServerRegApp
                     'Remove the old .VPX right click... Computer\HKEY_CLASSES_ROOT\SystemFileAssociations\.vpx\shell\B2SServer\
                     sysFileKey.DeleteSubKeyTree(".vpx\shell\B2SServer", False)
                     sysFileKey.DeleteSubKeyTree(".directb2s", False)
+                    sysFileKey.DeleteSubKeyTree(".B2SPro", False)
 
                     If CommandSilent Or (dialogResult = DialogResult.Yes) Then
 
@@ -168,9 +168,14 @@ Public Class formBackglassServerRegApp
                             Dim sFiles() As String = Directory.GetFiles("ScreenResTemplates", "*" + B2SResFileEnding)
                             'And then add it in a Label in the way you want
                             If sFiles.Length > 0 Then
-                                Using b2stoolstoplevel As RegistryKey = sysFileKey.CreateSubKey(".directb2s\shell\B2SServer"),
+                                Using b2sprotoolstoplevel As RegistryKey = sysFileKey.CreateSubKey(".B2SPro\shell\B2SServer"),
+                                    b2stoolstoplevel As RegistryKey = sysFileKey.CreateSubKey(".directb2s\shell\B2SServer"),
                                     vpxtoolstoplevel As RegistryKey = sysFileKey.CreateSubKey(".vpx\shell\B2SServer")
-                                    
+
+                                    b2sprotoolstoplevel.SetValue("MUIVerb", "B2S Server copy Screenres template")
+                                    b2sprotoolstoplevel.SetValue("subcommands", "")
+                                    b2sprotoolstoplevel.SetValue("Icon", """" & IO.Path.Combine(Path.GetDirectoryName(Application.ExecutablePath()), "B2SBackglassServerEXE.exe") & """")
+
                                     b2stoolstoplevel.SetValue("MUIVerb", "B2S Server copy Screenres template")
                                     b2stoolstoplevel.SetValue("subcommands", "")
                                     b2stoolstoplevel.SetValue("Icon", """" & IO.Path.Combine(Path.GetDirectoryName(Application.ExecutablePath()), "B2SBackglassServerEXE.exe") & """")
@@ -182,6 +187,7 @@ Public Class formBackglassServerRegApp
                                     For Each resFileName As String In sFiles
                                         '           "D:\vPinball\VisualPinball\B2SServer\ScreenResTemplates.cmd" "ScreenResTemplates\Full Screen.res" "%L"
                                         Dim shellText As String = """" + IO.Path.Combine(Path.GetDirectoryName(Application.ExecutablePath()), "ScreenResTemplates.cmd") + """ """ + resFileName + """ ""%L"""
+                                        b2sprotoolstoplevel.CreateSubKey("shell\" + Path.GetFileNameWithoutExtension(resFileName) + "\command").SetValue("", shellText)
                                         b2stoolstoplevel.CreateSubKey("shell\" + Path.GetFileNameWithoutExtension(resFileName) + "\command").SetValue("", shellText)
 
                                         vpxtoolstoplevel.CreateSubKey("shell\" + Path.GetFileNameWithoutExtension(resFileName) + "\command").SetValue("", shellText)

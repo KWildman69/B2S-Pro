@@ -22,7 +22,7 @@ Public Class Recent
     End Sub
 
     Public Sub AddToRecentList(ByVal backglassdata As Backglass.Data, Optional ByVal filename As String = "")
-        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name, backglassdata.Name & ".directb2s")
+        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name, backglassdata.Name & B2SProFileExtension)
         filename = IO.Path.GetFullPath(filename)
         Dim thumbnail As Image = backglassdata.ThumbnailImage
         If thumbnail Is Nothing AndAlso backglassdata.Image IsNot Nothing Then thumbnail = backglassdata.Image.Resized(New Size(32, 32))
@@ -68,7 +68,7 @@ Public Class Recent
         For Each recentEntry As KeyValuePair(Of Integer, recentEntry) In recentEntries
             If recentEntry.Value.Name.Equals(oldname) Then
                 recentEntry.Value.Name = newname
-                recentEntry.Value.FileName = IO.Path.Combine(BackglassProjectsPath, newname, newname & ".directb2s")
+                recentEntry.Value.FileName = IO.Path.Combine(BackglassProjectsPath, newname, newname & B2SProFileExtension)
             End If
         Next
         ' save data
@@ -104,10 +104,10 @@ Public Class Recent
         IsDirty = True
     End Sub
 
-    Public Sub RemoveNonDirectB2SEntries()
+    Public Sub RemoveUnsupportedBackglassEntries()
         Dim obsoleteKeys As New Generic.List(Of Integer)
         For Each item As KeyValuePair(Of Integer, recentEntry) In recentEntries
-            If Not IO.Path.GetExtension(item.Value.FileName).Equals(".directb2s", StringComparison.OrdinalIgnoreCase) Then obsoleteKeys.Add(item.Key)
+            If Not IsSupportedBackglassFile(item.Value.FileName) Then obsoleteKeys.Add(item.Key)
         Next
         If obsoleteKeys.Count = 0 Then Return
         For Each key As Integer In obsoleteKeys
@@ -128,7 +128,7 @@ Public Class Recent
                 Dim i As Integer = 1
                 For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Recent")
                     Dim name As String = innerNode.Attributes("Name").InnerText
-                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name, name & ".directb2s")
+                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name, name & B2SProFileExtension)
                     If innerNode.Attributes("FileName") IsNot Nothing AndAlso Not String.IsNullOrEmpty(innerNode.Attributes("FileName").InnerText) Then
                         filename = innerNode.Attributes("FileName").InnerText
                     End If

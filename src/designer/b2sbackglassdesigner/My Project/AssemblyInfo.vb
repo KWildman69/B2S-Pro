@@ -9,7 +9,7 @@ Imports System.Runtime.InteropServices
 ' Die Werte der Assemblyattribute überprüfen
 
 <Assembly: AssemblyTitle("B2S Pro")>
-<Assembly: AssemblyDescription("The WYSIWYG editor for directB2S backglass files")>
+<Assembly: AssemblyDescription("The WYSIWYG editor for B2S Pro and legacy directB2S backglass files")>
 <Assembly: AssemblyCompany("")> 
 <Assembly: AssemblyProduct("B2S Pro")>
 <Assembly: AssemblyCopyright("Copyright © 2026 Ken Wildman. All rights reserved.")>

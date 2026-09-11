@@ -5,8 +5,22 @@ Imports System.Xml
 Module moduleB2S
 
     Public Const AppTitle As String = "B2S Pro"
+    Public Const B2SProFileExtension As String = ".B2SPro"
+    Public Const LegacyDirectB2SFileExtension As String = ".directb2s"
 
     Public Const MaxBulbIntensity As Integer = 5
+
+    Public Function IsSupportedBackglassFile(ByVal filename As String) As Boolean
+        If String.IsNullOrWhiteSpace(filename) Then Return False
+        Dim extension As String = IO.Path.GetExtension(filename)
+        Return extension.Equals(B2SProFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+               extension.Equals(LegacyDirectB2SFileExtension, StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    Public Function B2SProFileName(ByVal filename As String) As String
+        If String.IsNullOrWhiteSpace(filename) Then Return String.Empty
+        Return IO.Path.ChangeExtension(filename, B2SProFileExtension)
+    End Function
 
     Public DefaultEMReels As String() = New String() {"EMR_T1_0", "EMR_T2_0", "EMR_T3_0", "EMR_T4_0", "EMR_T5_0", "EMR_T6_0"}
     Public DefaultEMCreditReels As String() = New String() {"EMR_CT1_00", "EMR_CT2_00", "EMR_CT3_00"}

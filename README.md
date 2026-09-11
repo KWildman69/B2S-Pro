@@ -2,7 +2,7 @@
 
 ![B2S Pro](docs/help-source/pro-images/b2s-pro-logo.png)
 
-B2S Pro is a modernized backglass designer and animation workspace for creating and editing `directB2S` backglasses for Visual Pinball. It preserves the established B2S workflow while adding more capable lighting, flashers, snippets, animation, motion, physics, layering, and score tools.
+B2S Pro is a modernized backglass designer and animation workspace for creating and editing `.B2SPro` backglasses for Visual Pinball. It imports established `.directB2S` backglasses without overwriting them, then saves edited work in the B2S Pro format. It preserves the established B2S workflow while adding more capable lighting, flashers, snippets, animation, motion, physics, layering, and score tools.
 
 ## Current release
 
@@ -32,7 +32,8 @@ release downloads and verified local packages for offline cabinets.
 - Pixel-level lamp lighting that preserves dark-image contrast
 - Dedicated high-intensity flasher editor with live full-backglass preview, mask refinement, temperature, diffusion, and radial-spike controls
 - Embedded illustrated B2S Pro help while retaining the original help material
-- Backward-compatible handling for established backglass projects and legacy animation behavior
+- One complete editable and runtime-ready `.B2SPro` file for every saved backglass
+- Backward-compatible import and Server fallback for established `.directB2S` files
 
 ## Documentation
 

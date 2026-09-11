@@ -61,6 +61,12 @@ First public B2S Pro baseline.
 
 ### Documentation and release
 
+- Made `.B2SPro` the permanent save format. The complete editable project and runtime backglass data now remain together in one file.
+- Kept `.directB2S` as a read-only legacy import format. Editing and saving a legacy backglass creates a `.B2SPro` file without renaming or overwriting the original.
+- Updated B2S Pro Server to prefer a matching `.B2SPro` file and fall back to the matching legacy `.directB2S` file when no Pro file exists.
+- Added seamless Windows associations for both formats: Explorer displays the exact distinct type labels `.B2SPro` and `.directB2S`, and double-clicking either opens that file in B2S Pro.
+- Consolidated the File menu into one **Import backglass file** command that shows both supported formats.
+- Made normal Save place the `.B2SPro` file in the matching project folder while Save As continues to honor the path selected by the user.
 - Added an illustrated B2S Pro help section while retaining all original help topics.
 - Embedded the compiled help into B2S Pro.
 - Added separate complete B2S Pro and server-only setup programs, each with a verified GitHub-release mode and a three-file offline mode.

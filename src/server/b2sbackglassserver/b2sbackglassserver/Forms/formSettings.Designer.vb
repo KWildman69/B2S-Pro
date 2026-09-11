@@ -286,7 +286,7 @@ Partial Class formSettings
         Me.chkDisableFuzzyMatching.Name = "chkDisableFuzzyMatching"
         Me.chkDisableFuzzyMatching.Size = New System.Drawing.Size(134, 17)
         Me.chkDisableFuzzyMatching.TabIndex = 40
-        Me.chkDisableFuzzyMatching.Text = "Exact .directb2s match"
+        Me.chkDisableFuzzyMatching.Text = "Exact backglass filename match"
         Me.chkDisableFuzzyMatching.UseVisualStyleBackColor = True
         '
         'lblDefaultStartMode

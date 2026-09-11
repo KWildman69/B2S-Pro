@@ -12,13 +12,19 @@ Public Class Coding
     Private Shared lastExportedChangeVersion As Long = -1
     Private Shared lastExportedFile As String = String.Empty
 
-    Public Shared Function HasCurrentDirectB2SExport() As Boolean
+    Public Shared Function HasCurrentB2SProFile() As Boolean
         If Backglass.currentData Is Nothing OrElse
            Not Object.ReferenceEquals(lastExportedData, Backglass.currentData) OrElse
            lastExportedChangeVersion <> Backglass.currentData.ChangeVersion OrElse
            String.IsNullOrEmpty(lastExportedFile) Then Return False
         Return IO.File.Exists(lastExportedFile)
     End Function
+
+    Public Shared ReadOnly Property CurrentB2SProFilePath As String
+        Get
+            Return If(HasCurrentB2SProFile(), lastExportedFile, String.Empty)
+        End Get
+    End Property
 
     Private Const DirectB2SVersion As String = "1.27"
     Private Const DirectB2SVersionMaybeWithDataLost As String = "1.3"
@@ -49,7 +55,7 @@ Public Class Coding
 
     ' main method(s)
 
-    Public Function CreateDirectB2SFile(Optional ByVal outputFilename As String = "") As Boolean
+    Public Function CreateB2SProFile(Optional ByVal outputFilename As String = "") As Boolean
 
         If Not CheckData() Then Return False
 
@@ -61,11 +67,13 @@ Public Class Coding
 
         Dim projectname As String = Backglass.currentData.Name
         Dim assemblyname As String = Backglass.currentData.VSName
-        Dim exportedFile As String = If(String.IsNullOrWhiteSpace(outputFilename),
-                                        IO.Path.Combine(ProjectPath, assemblyname & ".directb2s"),
-                                        IO.Path.GetFullPath(outputFilename))
+        Dim defaultFile As String = IO.Path.Combine(ProjectPath, assemblyname & B2SProFileExtension)
+        Dim requestedFile As String = If(String.IsNullOrWhiteSpace(outputFilename),
+                                         defaultFile,
+                                         IO.Path.GetFullPath(outputFilename))
+        Dim exportedFile As String = B2SProFileName(requestedFile)
 
-        ' Create only the requested directB2S destination. The editor's normal
+        ' Create only the requested B2S Pro destination. The editor's normal
         ' save paths always pass an explicit filename, so no separate project
         ' folder or project-format file is needed.
         Dim exportDirectory As String = IO.Path.GetDirectoryName(exportedFile)
@@ -863,7 +871,7 @@ Public Class Coding
 
         End With
 
-        ' Keep the complete editable project inside the one .directb2s file.
+        ' Keep the complete editable project inside the one .B2SPro file.
         ' B2S Server ignores this private node; P2B2S Pro uses it to restore
         ' editor-only values that are not part of the runtime schema.
         Dim designerXML As Xml.XmlDocument = Nothing
@@ -878,7 +886,7 @@ Public Class Coding
         nodeHeader.AppendChild(nodeDesignerData)
 
         ' Save beside the destination and replace it atomically. If serialization
-        ' fails, the last known-good directB2S remains untouched.
+        ' fails, the last known-good B2S Pro file remains untouched.
         Dim temporaryExport As String = IO.Path.Combine(workingDirectory,
                                                         "." & IO.Path.GetFileName(exportedFile) & "." & Guid.NewGuid().ToString("N") & ".tmp")
         Try
@@ -905,7 +913,7 @@ Public Class Coding
 
     End Function
 
-    Public Function ImportDirectB2SFile(ByRef _backglassData As Backglass.Data, ByVal filename As String) As Boolean
+    Public Function ImportBackglassFile(ByRef _backglassData As Backglass.Data, ByVal filename As String) As Boolean
 
         Dim ret As Boolean = True
 

@@ -293,14 +293,14 @@ Public Class formVPM
             ' Reuse Step 1's successful export while the design revision still
             ' matches. If anything changed (or no file exists), rebuild so the
             ' preview can never launch stale artwork.
-            Dim exportSucceeded As Boolean = Coding.HasCurrentDirectB2SExport()
+            Dim exportSucceeded As Boolean = Coding.HasCurrentB2SProFile()
             If Not exportSucceeded Then
                 Cursor = Cursors.WaitCursor
                 Try
                     Dim previewCoding As New Coding()
-                    exportSucceeded = previewCoding.CreateDirectB2SFile()
+                    exportSucceeded = previewCoding.CreateB2SProFile()
                 Catch ex As Exception
-                    B2SMessageBox.Show("The current DirectB2S file could not be rebuilt: " & ex.Message,
+                    B2SMessageBox.Show("The current B2S Pro file could not be rebuilt: " & ex.Message,
                                        AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Finally
                     Cursor = Cursors.Default
@@ -310,8 +310,14 @@ Public Class formVPM
 
             If chkCopyBackglassFileToVPTablesFolder.Checked Then
                 Try
-                    Dim filename As String = IO.Path.Combine(ProjectPath, Backglass.currentData.VSName & ".directB2S")
-                    IO.File.Copy(filename, IO.Path.Combine(txtVPTablesFolder.Text, Backglass.currentData.VSName & ".directB2S"), True)
+                    Dim filename As String = Coding.CurrentB2SProFilePath
+                    If String.IsNullOrWhiteSpace(filename) Then Throw New IO.FileNotFoundException("The current B2S Pro file was not found.")
+                    Dim destination As String = IO.Path.Combine(txtVPTablesFolder.Text, Backglass.currentData.VSName & B2SProFileExtension)
+                    Dim sourcePath As String = IO.Path.GetFullPath(filename)
+                    Dim destinationPath As String = IO.Path.GetFullPath(destination)
+                    If Not sourcePath.Equals(destinationPath, StringComparison.OrdinalIgnoreCase) Then
+                        IO.File.Copy(sourcePath, destinationPath, True)
+                    End If
                 Catch ex As Exception
                     B2SMessageBox.Show(String.Format(My.Resources.MSG_CopyError, ex.Message), AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
                 End Try
@@ -358,7 +364,7 @@ Public Class formVPM
                 ' stretched to the full screen. That moves every Dream7 score
                 ' display downward even though the exported LocY is correct.
                 Dim serverExe As String = B2SServerExecutablePath()
-                Dim previewFile As String = IO.Path.Combine(ProjectPath, Backglass.currentData.VSName & ".directb2s")
+                Dim previewFile As String = Coding.CurrentB2SProFilePath
                 If Not String.IsNullOrEmpty(serverExe) AndAlso IO.File.Exists(previewFile) Then
                     b2sPreviewExistingProcessIds.Clear()
                     For Each existingProcess As Process In Process.GetProcessesByName("B2SBackglassServerEXE")

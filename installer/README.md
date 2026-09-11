@@ -16,6 +16,9 @@ The same tested installation engine produces two separate setup programs:
   selected Visual Pinball folder and installs the complete server payload there.
 - The complete B2S Pro setup installs the Designer to its own user-selected
   folder. The server-only setup never creates or changes a Designer folder.
+- The complete setup associates `.B2SPro` and legacy `.directB2S` files with
+  the installed `B2SPro.exe`. Each extension keeps its own exact Explorer type
+  label, and double-clicking either format opens that file in the Designer.
 - The B2S Server is installed or updated in its own user-selected folder.
 - An existing original Designer is never removed or overwritten.
 - Existing B2S Pro or B2S Server program files are listed and require an
@@ -63,7 +66,9 @@ accepted, requested, or stored by the installer.
 Run `build-installer.ps1`. It uses the .NET Framework 4.8 C# compiler already
 included with Windows on the development machine and produces:
 
-`dist/B2SProSetup.exe`
+By default, generated installers are written outside the Git repository to
+`..\B2S-Local-Work\Installer-Dist`. The full release script supplies its own
+external staging path.
 
 `dist/B2SServerSetup.exe`
 

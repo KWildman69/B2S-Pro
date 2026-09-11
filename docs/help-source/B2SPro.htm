@@ -26,12 +26,12 @@
     <section class="topic" id="workflow">
       <span class="tag">NEW WORKSPACE</span><span class="tag">SAVED LAYOUTS</span>
       <h2>The modern B2S Pro workspace</h2>
-      <p>The main toolbar groups the most-used jobs: project commands, image tools, reels and LEDs, lights and flashers, snippets, animation, and final DirectB2S creation/testing. The redesigned dark interface makes active objects and editing modes easier to see.</p>
+      <p>The main toolbar groups the most-used jobs: project commands, image tools, reels and LEDs, lights and flashers, snippets, animation, and final B2S Pro creation/testing. The redesigned dark interface makes active objects and editing modes easier to see.</p>
       <ol class="steps">
         <li>Import the backglass artwork with <strong>Import Backglass Image</strong>.</li>
         <li>Use <strong>Backglass Brightness</strong> when the base image needs global adjustment.</li>
         <li>Add and arrange reels, LEDs, lights, flashers, snippets, and animations.</li>
-        <li>Use <strong>Step 1 — Create DirectB2S File</strong>, then <strong>Step 2 — Backglass Preview &amp; Test</strong>.</li>
+        <li>Use <strong>Step 1 — Create B2S Pro Backglass File</strong>, then <strong>Step 2 — Backglass Preview &amp; Test</strong>.</li>
       </ol>
       <p>Resizable editor windows remember their last size, position, monitor, DPI-adjusted bounds, and maximized state. Set a window once; B2S Pro restores it the next time it opens.</p>
       <figure>
@@ -271,7 +271,7 @@
         <li>Set <strong>Backlight brightness</strong> from 0–400% for the lamp strength and <strong>Color temperature</strong> for warm incandescent through cool LED-style light. Drag a slider or type an exact value in its number box.</li>
         <li>Raise <strong>3D depth</strong> to exaggerate drum curvature and the recessed window shadow.</li>
         <li>Raise <strong>Glass reflection</strong> to add the highlight that runs continuously across the whole score window.</li>
-        <li>Close the window when the reel looks right. Every setting is retained automatically and remains attached to that score frame in the project and exported DirectB2S file.</li>
+        <li>Close the window when the reel looks right. Every setting is retained automatically and remains attached to that score frame in the saved <code>.B2SPro</code> file.</li>
         <li>Click <strong>Add Reel or LED Frame</strong> again to create the next reel with the original Designer behavior. Only the five optional 3D controls—enabled, brightness, color temperature, depth, and glass reflection—carry forward from the selected or latest reel. Set player, start-digit, illumination, placement, and other standard attributes exactly as before.</li>
       </ol>
       <table>
@@ -298,7 +298,7 @@
       <ul>
         <li>Select a score frame and drag its rotation handle to angle the complete score display.</li>
         <li>Use Layers &gt; Canvas Placement to place a reel or LED display behind the backglass canvas. Transparent canvas openings reveal the live digits while opaque artwork remains in front.</li>
-        <li>Custom LED colors survive project save, DirectB2S export, and DirectB2S reopening.</li>
+        <li>Custom LED colors survive <code>.B2SPro</code> save and reopening.</li>
         <li>Live EM reels keep their rolling intermediates, reel sounds, lighting, and score updates when placed behind the canvas.</li>
       </ul>
       <figure>
@@ -312,15 +312,15 @@
     </section>
 
     <section class="topic" id="compatibility">
-      <span class="tag">LEGACY SAFE</span><span class="tag">DIRECTB2S</span><span class="tag">SERVER 3.0.0</span>
+      <span class="tag">B2SPRO</span><span class="tag">LEGACY DIRECTB2S</span><span class="tag">SERVER 3.0.0</span>
       <h2>Save, export, and compatibility</h2>
-      <p>Save the editable B2S project first, then create the DirectB2S file and test it with Backglass Preview &amp; Test. Long save/export operations show their progress beside the Step 2 command on the main toolbar.</p>
-      <div class="compat"><strong>Legacy rule:</strong> new behavior is enabled only when its matching metadata is present. Older DirectB2S files continue through the established illumination, animation, reel, and rotating-image paths.</div>
+      <p><strong>Save</strong> writes one complete, editable, runtime-ready <code>.B2SPro</code> file in the matching project folder. <strong>Save As</strong> writes the same format to the path you choose. Test the saved file with Backglass Preview &amp; Test; long save operations show their progress beside the Step 2 command on the main toolbar.</p>
+      <div class="compat"><strong>Legacy rule:</strong> Import backglass file shows both <code>.B2SPro</code> and <code>.directB2S</code>. A legacy <code>.directB2S</code> file is read without being renamed or overwritten; saving the edited backglass creates a new <code>.B2SPro</code> file. Older files continue through the established illumination, animation, reel, and rotating-image paths.</div>
       <p>Runtime-only features such as native one-image rotation, rolling balls, motion paths, trough sequences, pivots, physics, switches, and launchers require the matching B2S Pro Server build. Picture/GIF animations use the established animation format.</p>
-      <p>Backglass and DMD objects keep separate numeric ID scopes. DMD snippets, illumination, rotation settings, and matching IDs survive project and DirectB2S round trips.</p>
+      <p>Backglass and DMD objects keep separate numeric ID scopes. DMD snippets, illumination, rotation settings, and matching IDs survive <code>.B2SPro</code> save and reopen round trips.</p>
       <figure>
-        <img src="pro-images/current-ui/save-export-test.png" alt="Save project, create DirectB2S, and preview workflow">
-        <figcaption>Keep the editable project, build the DirectB2S file, and verify it in the preview. Older files stay on their established legacy path.</figcaption>
+        <img src="pro-images/current-ui/save-export-test.png" alt="Save a B2S Pro backglass and preview it">
+        <figcaption>Save the complete editable <code>.B2SPro</code> file and verify it in the preview. Older <code>.directB2S</code> files stay on their established legacy path.</figcaption>
       </figure>
     </section>
 

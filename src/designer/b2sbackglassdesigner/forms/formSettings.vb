@@ -90,7 +90,9 @@ Public Class formSettings
     End Sub
     Private Sub Name_Validated(sender As Object, e As System.EventArgs) Handles txtName.Validated
         txtName.Text = txtName.Text.Replace("\", "")
-        If (Backglass.currentData Is Nothing OrElse Not Backglass.currentData.Name.Equals(txtName.Text)) AndAlso IO.File.Exists(IO.Path.Combine(BackglassProjectsPath, txtName.Text & ".b2s")) Then
+        Dim projectFileName As String = If(String.IsNullOrWhiteSpace(txtFileName.Text), txtName.Text, txtFileName.Text)
+        Dim proposedFile As String = IO.Path.Combine(BackglassProjectsPath, txtName.Text, projectFileName & B2SProFileExtension)
+        If (Backglass.currentData Is Nothing OrElse Not Backglass.currentData.Name.Equals(txtName.Text)) AndAlso IO.File.Exists(proposedFile) Then
             btnOk.Enabled = False
             B2SMessageBox.Show(My.Resources.MSG_ProjectNameIsAlreadyUsed, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
             txtName.Focus()

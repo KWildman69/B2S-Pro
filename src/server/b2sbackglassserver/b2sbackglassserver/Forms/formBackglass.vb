@@ -114,7 +114,9 @@ Public Class formBackglass
         If My.Application.CommandLineArgs.Count > 0 Then
             B2SData.TableFileName = My.Application.CommandLineArgs(0).ToString
 
-            If B2SData.TableFileName.EndsWith(".directb2s") Then
+            Dim suppliedExtension As String = Path.GetExtension(B2SData.TableFileName)
+            If suppliedExtension.Equals(B2SSettings.B2SProFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+               suppliedExtension.Equals(B2SSettings.LegacyDirectB2SFileExtension, StringComparison.OrdinalIgnoreCase) Then
                 B2SData.TableFileName = Path.GetFileNameWithoutExtension(B2SData.TableFileName)
                 B2SSettings.PureEXE = True
                 B2SSettings.GameName = String.Empty
@@ -2411,85 +2413,30 @@ Public Class formBackglass
 
     Private Sub LoadB2SData()
 
-        Dim filename As String = B2SData.TableFileName & ".directb2s"
-        Dim shortFilename As String = B2SData.ShortFileName(filename) & ".directb2s"
-        Dim hyperpinFilename As String = filename
-        Dim shorthyperpinFilename As String = filename
-
-        B2SSettings.MatchingFileNames = Array.Empty(Of String)()
-
-        ' check whether the table name can be found
-        If Not String.IsNullOrEmpty(B2SSettings.GameName) And Not IO.File.Exists(filename) AndAlso Not IO.File.Exists(shortFilename) Then
-            'Westworld, check for gamename
-            If IO.File.Exists(B2SSettings.GameName & ".directb2s") Then
-                filename = B2SSettings.GameName & ".directb2s"
-            End If
+        B2SData.BackglassFileName = FindBackglassFile(B2SSettings.B2SProFileExtension)
+        If String.IsNullOrEmpty(B2SData.BackglassFileName) Then
+            B2SData.BackglassFileName = FindBackglassFile(B2SSettings.LegacyDirectB2SFileExtension)
         End If
 
-        If Not B2SSettings.DisableFuzzyMatching Then
-            B2SScreen.debugLog.WriteLogEntry("FuzzyMatching")
-            If Not IO.File.Exists(filename) AndAlso Not IO.File.Exists(shortFilename) Then
-                If B2SSettings.LocateHyperpinXMLFile() Then
-                    hyperpinFilename = B2SSettings.HyperpinName & ".directb2s"
-                    shorthyperpinFilename = B2SData.ShortFileName(hyperpinFilename) & ".directb2s"
-                End If
-                ' check whether the hyperpin description can be found
-                If Not IO.File.Exists(hyperpinFilename) AndAlso Not IO.File.Exists(shorthyperpinFilename) Then
-                    If filename.Length >= 10 Then
-                        ' look for short name
-                        B2SScreen.debugLog.WriteLogEntry("FuzzyMatching Search for FileName:" & Directory.GetCurrentDirectory() & "\" & Path.GetFileNameWithoutExtension(shortFilename) & "*.directb2s")
-                        B2SSettings.MatchingFileNames = IO.Directory.GetFiles(Directory.GetCurrentDirectory(), Path.GetFileNameWithoutExtension(shortFilename) & "*.directb2s") _
-                            .Select(Function(f) IO.Path.GetFileName(f)).ToArray()
-                        Dim candidateFilenames As New List(Of String)(B2SSettings.MatchingFileNames)
-                        Dim bestMatch As String = B2SData.FuzzyFileName.FindBestMatch(filename, candidateFilenames)
-
-                        If Not String.IsNullOrEmpty(bestMatch) Then
-                            shortFilename = bestMatch
-                            B2SScreen.debugLog.WriteLogEntry("FuzzyMatching Selected FileName:" & shortFilename)
-                        End If
-                    End If
-                End If
-                B2SScreen.debugLog.WriteLogEntry("FuzzyMatching END")
-            Else
-                B2SScreen.debugLog.WriteLogEntry("FuzzyMatching END - Found matching filename")
-            End If
-        End If
-
-        If Not IO.File.Exists(filename) AndAlso Not IO.File.Exists(shortFilename) AndAlso Not IO.File.Exists(hyperpinFilename) AndAlso Not IO.File.Exists(shorthyperpinFilename) Then
-            Dim text As String = "File '" & IO.Path.Combine(IO.Directory.GetCurrentDirectory(), filename)
-            If Not String.IsNullOrEmpty(hyperpinFilename) AndAlso Not filename.Equals(hyperpinFilename, StringComparison.CurrentCultureIgnoreCase) Then
-                text &= " and file '" & IO.Path.Combine(IO.Directory.GetCurrentDirectory(), hyperpinFilename) & "'"
-            End If
-            text &= " not found. Please rename or download the matching directb2s backglass file."
-            Throw New Exception(text)
+        If String.IsNullOrEmpty(B2SData.BackglassFileName) Then
+            Dim expectedB2SPro As String = IO.Path.Combine(IO.Directory.GetCurrentDirectory(), B2SData.TableFileName & B2SSettings.B2SProFileExtension)
+            Dim expectedLegacy As String = IO.Path.Combine(IO.Directory.GetCurrentDirectory(), B2SData.TableFileName & B2SSettings.LegacyDirectB2SFileExtension)
+            Throw New Exception("File '" & expectedB2SPro & "' and legacy file '" & expectedLegacy & "' not found. Please rename or download a matching backglass file.")
         End If
 
         Dim XML As Xml.XmlDocument = New Xml.XmlDocument
-        If IO.File.Exists(filename) Then
-            B2SData.BackglassFileName = filename
-        ElseIf Not B2SSettings.DisableFuzzyMatching Then
-            If IO.File.Exists(shortFilename) Then
-                B2SData.BackglassFileName = shortFilename
-            ElseIf IO.File.Exists(hyperpinFilename) Then
-                B2SData.BackglassFileName = hyperpinFilename
-            ElseIf IO.File.Exists(shorthyperpinFilename) Then
-                B2SData.BackglassFileName = shorthyperpinFilename
-            End If
-        End If
 
         ' maybe load XML file
-        If Not String.IsNullOrEmpty(B2SData.BackglassFileName) Then
-            Try
-                XML.Load(B2SData.BackglassFileName)
-            Catch ex As Exception
-                MessageBox.Show("The following error occurred opening the file '" & Path.GetFileName(B2SData.BackglassFileName) & "':" & vbCrLf & vbCrLf & ex.Message, My.Resources.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
-            End Try
-        End If
+        Try
+            XML.Load(B2SData.BackglassFileName)
+        Catch ex As Exception
+            MessageBox.Show("The following error occurred opening the file '" & Path.GetFileName(B2SData.BackglassFileName) & "':" & vbCrLf & vbCrLf & ex.Message, My.Resources.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
+        End Try
 
         ' try to get into the file and read some XML
         If XML Is Nothing OrElse XML.SelectSingleNode("DirectB2SData") Is Nothing Then
 
-            Throw New Exception("File '" & B2SData.BackglassFileName & "' is not a valid directb2s backglass file.")
+            Throw New Exception("File '" & B2SData.BackglassFileName & "' is not a valid B2S backglass file.")
 
         Else
 
@@ -2503,13 +2450,13 @@ Public Class formBackglass
             ' current backglass version is not allowed to be larger than server version and to be smaller minimum B2S version
             If B2SSettings.BackglassFileVersion > B2SVersionInfo.B2S_VERSION_STRING Then
 
-                Throw New Exception("B2S.Server version (" & B2SVersionInfo.B2S_VERSION_STRING & ") doesn't match 'directb2s' file version (" & B2SSettings.BackglassFileVersion & "). " & vbCrLf & vbCrLf &
+                Throw New Exception("B2S.Server version (" & B2SVersionInfo.B2S_VERSION_STRING & ") doesn't match backglass file version (" & B2SSettings.BackglassFileVersion & "). " & vbCrLf & vbCrLf &
                                     "Please update the B2S.Server.")
 
             ElseIf B2SSettings.BackglassFileVersion < B2SSettings.MinimumDirectB2SVersion Then
 
-                Throw New Exception("'directB2S' file version (" & B2SSettings.BackglassFileVersion & ") doesn't match minimum 'directb2s' version. " & vbCrLf & vbCrLf &
-                                    "Please update the 'directB2S' backglass file.")
+                Throw New Exception("Backglass file version (" & B2SSettings.BackglassFileVersion & ") doesn't match the minimum supported version. " & vbCrLf & vbCrLf &
+                                    "Please update the backglass file.")
 
             Else
 
@@ -3848,6 +3795,59 @@ Public Class formBackglass
         End If
 
     End Sub
+
+    Private Function FindBackglassFile(ByVal fileExtension As String) As String
+        Dim filename As String = B2SData.TableFileName & fileExtension
+        Dim shortFilename As String = B2SData.ShortFileName(filename) & fileExtension
+        Dim hyperpinFilename As String = filename
+        Dim shorthyperpinFilename As String = filename
+
+        B2SSettings.MatchingFileNames = Array.Empty(Of String)()
+
+        ' Preserve the established table, game-name, HyperPin, and fuzzy-match
+        ' sequence for each extension. The caller runs the complete sequence for
+        ' .B2SPro first and only tries legacy .directb2s when no Pro file exists.
+        If Not String.IsNullOrEmpty(B2SSettings.GameName) And Not IO.File.Exists(filename) AndAlso Not IO.File.Exists(shortFilename) Then
+            If IO.File.Exists(B2SSettings.GameName & fileExtension) Then
+                filename = B2SSettings.GameName & fileExtension
+            End If
+        End If
+
+        If Not B2SSettings.DisableFuzzyMatching Then
+            B2SScreen.debugLog.WriteLogEntry("FuzzyMatching " & fileExtension)
+            If Not IO.File.Exists(filename) AndAlso Not IO.File.Exists(shortFilename) Then
+                If B2SSettings.LocateHyperpinXMLFile() Then
+                    hyperpinFilename = B2SSettings.HyperpinName & fileExtension
+                    shorthyperpinFilename = B2SData.ShortFileName(hyperpinFilename) & fileExtension
+                End If
+                If Not IO.File.Exists(hyperpinFilename) AndAlso Not IO.File.Exists(shorthyperpinFilename) Then
+                    If filename.Length >= 10 Then
+                        B2SScreen.debugLog.WriteLogEntry("FuzzyMatching Search for FileName:" & Directory.GetCurrentDirectory() & "\" & Path.GetFileNameWithoutExtension(shortFilename) & "*" & fileExtension)
+                        B2SSettings.MatchingFileNames = IO.Directory.GetFiles(Directory.GetCurrentDirectory(), Path.GetFileNameWithoutExtension(shortFilename) & "*" & fileExtension) _
+                            .Select(Function(f) IO.Path.GetFileName(f)).ToArray()
+                        Dim candidateFilenames As New List(Of String)(B2SSettings.MatchingFileNames)
+                        Dim bestMatch As String = B2SData.FuzzyFileName.FindBestMatch(filename, candidateFilenames)
+
+                        If Not String.IsNullOrEmpty(bestMatch) Then
+                            shortFilename = bestMatch
+                            B2SScreen.debugLog.WriteLogEntry("FuzzyMatching Selected FileName:" & shortFilename)
+                        End If
+                    End If
+                End If
+                B2SScreen.debugLog.WriteLogEntry("FuzzyMatching END")
+            Else
+                B2SScreen.debugLog.WriteLogEntry("FuzzyMatching END - Found matching filename")
+            End If
+        End If
+
+        If IO.File.Exists(filename) Then Return filename
+        If Not B2SSettings.DisableFuzzyMatching Then
+            If IO.File.Exists(shortFilename) Then Return shortFilename
+            If IO.File.Exists(hyperpinFilename) Then Return hyperpinFilename
+            If IO.File.Exists(shorthyperpinFilename) Then Return shorthyperpinFilename
+        End If
+        Return String.Empty
+    End Function
 
     Private Sub InitB2SScreen()
 

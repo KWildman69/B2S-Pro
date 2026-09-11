@@ -592,7 +592,7 @@ Public Class Save
                         Optional ByVal writeProjectFile As Boolean = True)
 
         If writeProjectFile Then
-            Throw New NotSupportedException("P2B2S Pro saves editable projects inside .directb2s files only. Writing .b2s or .b2b is disabled.")
+            Throw New NotSupportedException("B2S Pro saves editable projects inside .B2SPro files only. Writing .b2s or .b2b is disabled.")
         End If
 
         'Dim path As String = IO.Path.Combine(EXEDir, ProjectDir)

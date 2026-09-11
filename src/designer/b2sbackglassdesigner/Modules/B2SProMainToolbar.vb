@@ -173,7 +173,7 @@ Public Module B2SProMainToolbar
         If key.Contains("snippet") Then Return "ADD" & vbLf & "SNIPPET"
         If key.Contains("animation") Then Return "ANIMATION"
         If key.Contains("autosave") Then Return "AUTO" & vbLf & "SAVE"
-        If key.Contains("createdirectb2s") Then Return "STEP 1" & vbLf & "CREATE" & vbLf & "DIRECTB2S FILE"
+        If key.Contains("createdirectb2s") Then Return "STEP 1" & vbLf & "CREATE" & vbLf & "B2SPRO FILE"
         If key.Contains("backglasspreview") Then Return "STEP 2" & vbLf & "BACKGLASS" & vbLf & "PREVIEW & TEST"
         If key.Contains("undo") Then Return "UNDO"
         If key.Contains("redo") Then Return "REDO"

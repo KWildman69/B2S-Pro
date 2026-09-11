@@ -225,7 +225,7 @@
     <value>253, 22</value>
   </data>
   <data name="tsmiImportBackglassFile.Text" xml:space="preserve">
-    <value>&amp;Import 'directB2S' backglass file ...</value>
+    <value>&amp;Import backglass file ...</value>
   </data>
   <data name="ToolStripSeparator21.Size" type="System.Drawing.Size, System.Drawing">
     <value>250, 6</value>
@@ -625,7 +625,7 @@
     <value>388, 22</value>
   </data>
   <data name="tsmiCreateDirectAccessBackglassCodeFile.Text" xml:space="preserve">
-    <value>Create '&amp;directB2S' backglass file</value>
+    <value>Create '&amp;B2S Pro' backglass file</value>
   </data>
   <data name="tsmiCreateMSBackglassCode.ShortcutKeys" type="System.Windows.Forms.Keys, System.Windows.Forms">
     <value>Ctrl+Shift+V</value>
