@@ -375,8 +375,6 @@ namespace B2SPro.Setup
             var message = new StringBuilder();
             message.AppendLine("An existing B2S installation was found.");
             message.AppendLine();
-            foreach (string file in plan.ExistingProgramFiles) message.AppendLine("• " + file);
-            message.AppendLine();
             message.AppendLine(SetupEdition.ServerOnly
                 ? "Do you want to back up and overwrite these B2S Server program files?"
                 : "The B2S Server update is included. Do you want to back up and overwrite these program files?");
