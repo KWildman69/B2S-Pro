@@ -334,6 +334,7 @@ namespace B2SPro.Setup
                     SetBusy(false, SetupEdition.Product + " installation completed successfully.");
                     string message = result.BuildSummary();
                     MessageBox.Show(this, message, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Close();
                 }
             }
             catch (Exception ex)
@@ -415,7 +416,11 @@ namespace B2SPro.Setup
         {
             _installButton.Enabled = !busy;
             _status.Text = text;
-            if (!busy) _progress.Value = 0;
+            if (!busy)
+            {
+                _progress.Style = ProgressBarStyle.Continuous;
+                _progress.Value = 0;
+            }
             else if (_progress.Value == 0) _progress.Style = ProgressBarStyle.Marquee;
             UseWaitCursor = busy;
         }
