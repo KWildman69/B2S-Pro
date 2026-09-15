@@ -11,6 +11,7 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 - Preserved the exact authored Layers order across save, reload, recovery, and legacy fallback; removed the unused Layers search field and its saved hidden filter state.
 - Removed unreachable old project/backup menu paths and uncompiled duplicate source. B2S Pro continues to save only `.B2SPro` while retaining `.directB2S` import compatibility.
 - Completed successful ID Tester restores now remove their temporary tester and verified backup instead of accumulating completed test files.
+- Reduced every public release to the two setup programs plus the verified Designer and Server runtime ZIPs and their checksum files. Complete setup now installs atomically from those same two runtime packages, eliminating redundant complete-build, source-package, tester, and checksum-list assets.
 
 ## 1.0.1 / Server 3.0.0 update — 2026-09-14
 
@@ -24,7 +25,7 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 - Changed automatic recovery to write a clearly marked `_AutoRecovery_` `.B2SPro` copy in the project folder instead of overwriting the saved backglass. Normal Save or Don't Save removes the temporary copy; a newer matching copy can be restored after an interruption.
 - Added the toolbar ID Tester. It launches the exact-name VPX table, displays only active lamp, solenoid, GI, and switch IDs, shows the running backglass name, and restores the table's original backglass after testing.
 - Added switch-ID display support to B2S Pro Server while retaining legacy lamp, solenoid, and GI behavior.
-- Added an illustrated ID Tester help section and a separate legacy `.directb2s` tester for older server installations (lamp, solenoid, and GI IDs only).
+- Added an illustrated help section for the embedded B2S Pro ID Tester.
 - Corrected installer completion so progress stops and the window closes after acknowledgment; simplified the existing-installation confirmation while retaining the update and backup choice.
 
 ## 1.0.1 — 2026-09-06
@@ -94,7 +95,7 @@ First public B2S Pro baseline.
 - Made normal Save place the `.B2SPro` file in the matching project folder while Save As continues to honor the path selected by the user.
 - Added an illustrated B2S Pro help section while retaining all original help topics.
 - Embedded the compiled help into B2S Pro.
-- Added separate complete B2S Pro and server-only setup programs, each with a verified GitHub-release mode and a three-file offline mode.
+- Added separate complete B2S Pro and server-only setup programs, each with verified GitHub-release and offline modes.
 - Updated B2S Pro branding, About information, credits, and versioning.
 - Standardized Designer version 1.0.1 and Server version 3.0.0 release names.
 - Preserved established legacy backglass behavior and file compatibility.

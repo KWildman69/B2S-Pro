@@ -69,7 +69,6 @@ namespace B2SPro.Setup
 
     internal sealed class InstallerForm : Form
     {
-        private const string CompletePackageName = "B2S-Latest-Complete-Build.zip";
         private readonly TextBox _vpxFolder = new TextBox();
         private readonly TextBox _designerFolder = new TextBox();
         private readonly TextBox _serverFolder = new TextBox();
@@ -79,11 +78,11 @@ namespace B2SPro.Setup
         private readonly Button _installButton = new Button();
         private readonly ProgressBar _progress = new ProgressBar();
         private readonly Label _status = new Label();
-        private readonly string _localPackage;
+        private readonly PackagePaths _localPackages;
 
         public InstallerForm()
         {
-            _localPackage = FindLocalPackage();
+            _localPackages = FindLocalPackages();
             Text = SetupEdition.Title;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             StartPosition = FormStartPosition.CenterScreen;
@@ -232,13 +231,13 @@ namespace B2SPro.Setup
         {
             var group = new GroupBox { Text = "Build source", Dock = DockStyle.Fill, ForeColor = Color.White, Padding = new Padding(10, 7, 10, 5) };
             var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(4, 1, 0, 0) };
-            _localSource.Text = SetupEdition.ServerOnly ? "Install from the verified server package beside this updater" : "Install from the verified complete package beside this updater";
+            _localSource.Text = SetupEdition.ServerOnly ? "Install from the verified Server package beside this updater" : "Install from the verified Designer and Server packages beside this updater";
             _localSource.AutoSize = true;
             _localSource.Margin = new Padding(3, 0, 3, 0);
             _localSource.ForeColor = Color.White;
             _localSource.BackColor = Color.Transparent;
             _localSource.UseVisualStyleBackColor = false;
-            _localSource.Enabled = File.Exists(_localPackage);
+            _localSource.Enabled = _localPackages.AreAvailable(SetupEdition.ServerOnly);
             _githubSource.Text = "Download the latest verified " + SetupEdition.Product + " release from GitHub";
             _githubSource.AutoSize = true;
             _githubSource.Margin = new Padding(3, 0, 3, 0);
@@ -301,25 +300,26 @@ namespace B2SPro.Setup
                 return;
             }
 
-            string packagePath = null;
+            PackagePaths packagePaths = null;
             string downloadFolder = null;
             try
             {
-                SetBusy(true, "Preparing the verified package...");
+                SetBusy(true, "Preparing the verified release packages...");
                 if (_localSource.Checked)
                 {
-                    packagePath = _localPackage;
-                    VerifySidecarIfPresent(packagePath);
+                    packagePaths = _localPackages;
+                    if (!SetupEdition.ServerOnly) VerifySidecar(packagePaths.DesignerPath);
+                    VerifySidecar(packagePaths.ServerPath);
                 }
                 else
                 {
                     downloadFolder = Path.Combine(Path.GetTempPath(), (SetupEdition.ServerOnly ? "B2SServerSetup-" : "B2SProSetup-") + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(downloadFolder);
-                    packagePath = await GitHubRelease.DownloadLatestAsync(downloadFolder, SetupEdition.ServerOnly, ReportDownloadProgress);
+                    packagePaths = await GitHubRelease.DownloadLatestAsync(downloadFolder, SetupEdition.ServerOnly, ReportDownloadProgress);
                 }
 
                 string arch = SetupEdition.ServerOnly ? "x64" : (_architecture.SelectedIndex == 1 ? "x86" : "x64");
-                using (var package = new ReleasePackage(packagePath))
+                using (var package = new ReleaseBundle(packagePaths.DesignerPath, packagePaths.ServerPath))
                 {
                     package.Validate(arch, !SetupEdition.ServerOnly);
                     var plan = package.CreatePlan(SetupEdition.ServerOnly ? null : _designerFolder.Text.Trim(), _serverFolder.Text.Trim(), arch, !SetupEdition.ServerOnly);
@@ -365,7 +365,10 @@ namespace B2SPro.Setup
                 if (PathEquals(_designerFolder.Text, vpx) && File.Exists(Path.Combine(vpx, "B2SBackglassDesigner.exe")))
                     return "Choose a separate B2S Pro Designer folder so the original Designer remains untouched.";
             }
-            if (_localSource.Checked && !File.Exists(_localPackage)) return "The local verified ZIP is no longer beside the installer.";
+            if (_localSource.Checked && !_localPackages.AreAvailable(SetupEdition.ServerOnly))
+                return SetupEdition.ServerOnly
+                    ? "The required local Server ZIP and checksum are no longer beside the installer."
+                    : "The required local Designer and Server ZIPs and checksums are no longer beside the installer.";
             return null;
         }
 
@@ -383,19 +386,23 @@ namespace B2SPro.Setup
             return MessageBox.Show(this, message.ToString(), "Existing installation found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
         }
 
-        private static string FindLocalPackage()
+        private static PackagePaths FindLocalPackages()
         {
             string folder = AppDomain.CurrentDomain.BaseDirectory;
-            if (!SetupEdition.ServerOnly) return Path.Combine(folder, CompletePackageName);
-            string stable = Path.Combine(folder, "B2S-Latest-Server.zip");
-            if (File.Exists(stable)) return stable;
-            string[] matches = Directory.GetFiles(folder, "B2S-Pro-Server-*.zip", SearchOption.TopDirectoryOnly);
+            string designer = SetupEdition.ServerOnly ? null : FindLocalVersionedPackage(folder, "B2S-Pro-Backglass-*.zip", "^B2S-Pro-Backglass-[0-9][A-Za-z0-9._-]*\\.zip$");
+            string server = FindLocalVersionedPackage(folder, "B2S-Pro-Server-*.zip", "^B2S-Pro-Server-[0-9][A-Za-z0-9._-]*\\.zip$");
+            return new PackagePaths(designer, server);
+        }
+
+        private static string FindLocalVersionedPackage(string folder, string pattern, string validNamePattern)
+        {
+            string[] matches = Directory.GetFiles(folder, pattern, SearchOption.TopDirectoryOnly);
             Array.Sort(matches, StringComparer.OrdinalIgnoreCase);
             for (int index = matches.Length - 1; index >= 0; index--)
             {
-                if (matches[index].IndexOf("-Source-", StringComparison.OrdinalIgnoreCase) < 0) return matches[index];
+                if (Regex.IsMatch(Path.GetFileName(matches[index]), validNamePattern, RegexOptions.IgnoreCase)) return matches[index];
             }
-            return stable;
+            return null;
         }
 
         private void ReportDownloadProgress(int percent, string text)
@@ -423,8 +430,9 @@ namespace B2SPro.Setup
             UseWaitCursor = busy;
         }
 
-        private static void VerifySidecarIfPresent(string zipPath)
+        private static void VerifySidecar(string zipPath)
         {
+            if (String.IsNullOrWhiteSpace(zipPath) || !File.Exists(zipPath)) throw new InvalidDataException("A required local release package is missing. Nothing was installed.");
             string sidecar = zipPath + ".sha256";
             if (!File.Exists(sidecar)) throw new InvalidDataException("The SHA-256 verification file is missing. Nothing was installed.");
             string expected = Regex.Match(File.ReadAllText(sidecar), "[A-Fa-f0-9]{64}").Value;
@@ -458,12 +466,30 @@ namespace B2SPro.Setup
         }
     }
 
+    internal sealed class PackagePaths
+    {
+        public readonly string DesignerPath;
+        public readonly string ServerPath;
+
+        public PackagePaths(string designerPath, string serverPath)
+        {
+            DesignerPath = designerPath;
+            ServerPath = serverPath;
+        }
+
+        public bool AreAvailable(bool serverOnly)
+        {
+            bool serverAvailable = !String.IsNullOrWhiteSpace(ServerPath) && File.Exists(ServerPath) && File.Exists(ServerPath + ".sha256");
+            if (serverOnly) return serverAvailable;
+            return serverAvailable && !String.IsNullOrWhiteSpace(DesignerPath) && File.Exists(DesignerPath) && File.Exists(DesignerPath + ".sha256");
+        }
+    }
+
     internal static class GitHubRelease
     {
         private const string LatestApi = "https://api.github.com/repos/KWildman69/B2S-Pro/releases/latest";
-        private const string CompletePackageName = "B2S-Latest-Complete-Build.zip";
 
-        public static async Task<string> DownloadLatestAsync(string destination, bool serverOnly, Action<int, string> progress)
+        public static async Task<PackagePaths> DownloadLatestAsync(string destination, bool serverOnly, Action<int, string> progress)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             using (var client = new HttpClient())
@@ -476,33 +502,27 @@ namespace B2SPro.Setup
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new InvalidOperationException("The latest GitHub release could not be reached. While the repository is private or the cabinet is offline, use the verified local ZIP beside this setup program.\r\n\r\n" + ex.Message);
+                    throw new InvalidOperationException("The latest GitHub release could not be reached. If the cabinet is offline, keep the verified release ZIP files and checksums beside this setup program.\r\n\r\n" + ex.Message);
                 }
 
                 var serializer = new JavaScriptSerializer();
                 var release = serializer.DeserializeObject(json) as Dictionary<string, object>;
                 if (release == null) throw new InvalidDataException("GitHub returned an unreadable release response.");
                 string tag = release.ContainsKey("tag_name") ? Convert.ToString(release["tag_name"]) : "latest";
-                string packageName = serverOnly ? FindServerPackageName(release) : CompletePackageName;
-                string hashName = packageName == null ? null : packageName + ".sha256";
-                string packageUrl = packageName == null ? null : FindAsset(release, packageName);
-                string hashUrl = hashName == null ? null : FindAsset(release, hashName);
-                if (packageUrl == null || hashUrl == null) throw new InvalidDataException("The latest release does not contain the required " + (serverOnly ? "server" : "complete-build") + " ZIP and SHA-256 file.");
+                string serverName = FindPackageName(release, "^B2S-Pro-Server-[0-9][A-Za-z0-9._-]*\\.zip$");
+                string designerName = serverOnly ? null : FindPackageName(release, "^B2S-Pro-Backglass-[0-9][A-Za-z0-9._-]*\\.zip$");
+                if (serverName == null || (!serverOnly && designerName == null))
+                    throw new InvalidDataException("The latest release does not contain the required " + (serverOnly ? "Server" : "Designer and Server") + " ZIP package" + (serverOnly ? "" : "s") + ".");
 
-                string zipPath = Path.Combine(destination, packageName);
-                string hashPath = Path.Combine(destination, hashName);
-                await DownloadFile(client, packageUrl, zipPath, tag, serverOnly ? "B2S Server" : "B2S Pro", progress);
-                File.WriteAllBytes(hashPath, await client.GetByteArrayAsync(hashUrl));
-                string expected = Regex.Match(File.ReadAllText(hashPath), "[A-Fa-f0-9]{64}").Value;
-                string actual = Hashing.Sha256(zipPath);
-                if (expected.Length != 64 || !String.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("The GitHub package failed SHA-256 verification. Nothing was installed.");
+                string designerPath = null;
+                if (!serverOnly) designerPath = await DownloadVerifiedPackage(client, release, destination, designerName, tag, "B2S Pro Designer", 0, 70, progress);
+                string serverPath = await DownloadVerifiedPackage(client, release, destination, serverName, tag, "B2S Server", serverOnly ? 0 : 70, serverOnly ? 100 : 30, progress);
                 progress(100, "Downloaded and verified " + tag + ".");
-                return zipPath;
+                return new PackagePaths(designerPath, serverPath);
             }
         }
 
-        private static string FindServerPackageName(Dictionary<string, object> release)
+        private static string FindPackageName(Dictionary<string, object> release, string validNamePattern)
         {
             object rawAssets;
             if (!release.TryGetValue("assets", out rawAssets)) return null;
@@ -513,10 +533,28 @@ namespace B2SPro.Setup
                 var asset = raw as Dictionary<string, object>;
                 if (asset == null) continue;
                 string name = Convert.ToString(asset["name"]);
-                if (Regex.IsMatch(name, "^B2S-Pro-Server-[0-9][A-Za-z0-9._-]*\\.zip$", RegexOptions.IgnoreCase)
-                    && name.IndexOf("-Source-", StringComparison.OrdinalIgnoreCase) < 0) return name;
+                if (Regex.IsMatch(name, validNamePattern, RegexOptions.IgnoreCase)) return name;
             }
             return null;
+        }
+
+        private static async Task<string> DownloadVerifiedPackage(HttpClient client, Dictionary<string, object> release, string destination, string packageName, string tag, string product, int progressOffset, int progressSpan, Action<int, string> progress)
+        {
+            string hashName = packageName + ".sha256";
+            string packageUrl = FindAsset(release, packageName);
+            string hashUrl = FindAsset(release, hashName);
+            if (packageUrl == null || hashUrl == null) throw new InvalidDataException("The latest release does not contain " + packageName + " and its SHA-256 file.");
+
+            string zipPath = Path.Combine(destination, packageName);
+            string hashPath = Path.Combine(destination, hashName);
+            await DownloadFile(client, packageUrl, zipPath, tag, product, progressOffset, progressSpan, progress);
+            File.WriteAllBytes(hashPath, await client.GetByteArrayAsync(hashUrl));
+            string expected = Regex.Match(File.ReadAllText(hashPath), "[A-Fa-f0-9]{64}").Value;
+            string actual = Hashing.Sha256(zipPath);
+            if (expected.Length != 64 || !String.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(product + " failed SHA-256 verification. Nothing was installed.");
+            progress(progressOffset + progressSpan, "Downloaded and verified " + product + ".");
+            return zipPath;
         }
 
         private static string FindAsset(Dictionary<string, object> release, string name)
@@ -535,7 +573,7 @@ namespace B2SPro.Setup
             return null;
         }
 
-        private static async Task DownloadFile(HttpClient client, string url, string destination, string tag, string product, Action<int, string> progress)
+        private static async Task DownloadFile(HttpClient client, string url, string destination, string tag, string product, int progressOffset, int progressSpan, Action<int, string> progress)
         {
             using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
             {
@@ -552,55 +590,70 @@ namespace B2SPro.Setup
                         await output.WriteAsync(buffer, 0, read);
                         readTotal += read;
                         int percent = total > 0 ? (int)(readTotal * 100L / total) : 0;
-                        progress(percent, "Downloading " + product + " " + tag + "... " + percent + "%");
+                        progress(progressOffset + (percent * progressSpan / 100), "Downloading " + product + " " + tag + "... " + percent + "%");
                     }
                 }
             }
         }
     }
 
-    internal sealed class ReleasePackage : IDisposable
+    internal sealed class ReleaseBundle : IDisposable
     {
-        private readonly ZipArchive _archive;
-        public ReleasePackage(string path)
+        private readonly ZipArchive _designerArchive;
+        private readonly ZipArchive _serverArchive;
+
+        public ReleaseBundle(string designerPath, string serverPath)
         {
-            _archive = ZipFile.OpenRead(path);
+            if (String.IsNullOrWhiteSpace(serverPath)) throw new InvalidDataException("The Server package path is missing. Nothing was installed.");
+            if (!String.IsNullOrWhiteSpace(designerPath)) _designerArchive = ZipFile.OpenRead(designerPath);
+            try { _serverArchive = ZipFile.OpenRead(serverPath); }
+            catch
+            {
+                if (_designerArchive != null) _designerArchive.Dispose();
+                throw;
+            }
         }
 
         public void Validate(string arch, bool installDesigner)
         {
             if (installDesigner)
             {
-                Require("Runtime/" + arch + "/B2SPro.exe");
-                Require("Runtime/" + arch + "/B2SPro.exe.config");
-                Require("Runtime/" + arch + "/B2SVPinMAMEStarter.exe");
+                if (_designerArchive == null) throw new InvalidDataException("The Designer package is missing. Nothing was installed.");
+                Require(_designerArchive, arch + "/B2SPro.exe");
+                Require(_designerArchive, arch + "/B2SPro.exe.config");
+                Require(_designerArchive, arch + "/B2SVPinMAMEStarter.exe");
             }
             string serverPrefix = GetServerPrefix();
-            Require(serverPrefix + "B2SBackglassServer.dll");
-            Require(serverPrefix + "B2SBackglassServerRegisterApp.exe");
+            Require(_serverArchive, serverPrefix + "B2SBackglassServer.dll");
+            Require(_serverArchive, serverPrefix + "B2SBackglassServerRegisterApp.exe");
         }
 
         public InstallPlan CreatePlan(string designer, string server, string arch, bool installDesigner)
         {
-            return new InstallPlan(_archive, designer, server, arch, installDesigner, GetServerPrefix());
+            return new InstallPlan(_designerArchive, _serverArchive, designer, server, arch, installDesigner, GetServerPrefix());
         }
 
         private string GetServerPrefix()
         {
-            return _archive.GetEntry("Runtime/B2SServer/B2SBackglassServer.dll") != null ? "Runtime/B2SServer/" : String.Empty;
+            return _serverArchive.GetEntry("Runtime/B2SServer/B2SBackglassServer.dll") != null ? "Runtime/B2SServer/" : String.Empty;
         }
 
-        private void Require(string name)
+        private static void Require(ZipArchive archive, string name)
         {
-            if (_archive.GetEntry(name) == null) throw new InvalidDataException("The package is missing " + name + ". Nothing was installed.");
+            if (archive.GetEntry(name) == null) throw new InvalidDataException("The package is missing " + name + ". Nothing was installed.");
         }
 
-        public void Dispose() { _archive.Dispose(); }
+        public void Dispose()
+        {
+            if (_designerArchive != null) _designerArchive.Dispose();
+            _serverArchive.Dispose();
+        }
     }
 
     internal sealed class InstallPlan
     {
-        private readonly ZipArchive _archive;
+        private readonly ZipArchive _designerArchive;
+        private readonly ZipArchive _serverArchive;
         private readonly string _designer;
         private readonly string _server;
         private readonly string _arch;
@@ -610,9 +663,10 @@ namespace B2SPro.Setup
         private readonly List<CopyItem> _items = new List<CopyItem>();
         public readonly List<string> ExistingProgramFiles = new List<string>();
 
-        public InstallPlan(ZipArchive archive, string designer, string server, string arch, bool installDesigner, string serverPrefix)
+        public InstallPlan(ZipArchive designerArchive, ZipArchive serverArchive, string designer, string server, string arch, bool installDesigner, string serverPrefix)
         {
-            _archive = archive;
+            _designerArchive = designerArchive;
+            _serverArchive = serverArchive;
             _installDesigner = installDesigner;
             _designer = installDesigner ? Path.GetFullPath(designer) : null;
             _server = Path.GetFullPath(server);
@@ -624,21 +678,22 @@ namespace B2SPro.Setup
 
         private void BuildItems()
         {
-            string designerPrefix = "Runtime/" + _arch + "/";
-            foreach (ZipArchiveEntry entry in _archive.Entries)
+            if (_installDesigner)
             {
-                if (String.IsNullOrEmpty(entry.Name)) continue;
-                if (_installDesigner && entry.FullName.StartsWith(designerPrefix, StringComparison.OrdinalIgnoreCase))
+                string designerPrefix = _arch + "/";
+                foreach (ZipArchiveEntry entry in _designerArchive.Entries)
                 {
+                    if (String.IsNullOrEmpty(entry.Name) || !entry.FullName.StartsWith(designerPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                     string relative = entry.FullName.Substring(designerPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
                     Add(entry, Path.Combine(_designer, relative), false, true);
                 }
-                else if (entry.FullName.StartsWith(_serverPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    string relative = entry.FullName.Substring(_serverPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
-                    bool protect = IsProtectedServerPath(relative);
-                    Add(entry, Path.Combine(_server, relative), protect, false);
-                }
+            }
+            foreach (ZipArchiveEntry entry in _serverArchive.Entries)
+            {
+                if (String.IsNullOrEmpty(entry.Name) || !entry.FullName.StartsWith(_serverPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+                string relative = entry.FullName.Substring(_serverPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
+                bool protect = IsProtectedServerPath(relative);
+                Add(entry, Path.Combine(_server, relative), protect, false);
             }
         }
 
@@ -1080,7 +1135,7 @@ namespace B2SPro.Setup
         {
             try
             {
-                if (args.Length < 2 || !File.Exists(args[1])) throw new ArgumentException("Usage: B2SSetup.exe --self-test <complete-build.zip> [server-build.zip]");
+                if (args.Length < 3 || !File.Exists(args[1]) || !File.Exists(args[2])) throw new ArgumentException("Usage: B2SSetup.exe --self-test <designer-build.zip> <server-build.zip>");
                 string sandbox = Path.Combine(Path.GetTempPath(), "B2SProInstallerSelfTest-" + Guid.NewGuid().ToString("N"));
                 string originalDesigner = Path.Combine(sandbox, "OriginalDesigner");
                 Directory.CreateDirectory(originalDesigner);
@@ -1106,7 +1161,7 @@ namespace B2SPro.Setup
                     File.WriteAllText(Path.Combine(server, "B2SBackglassServer.dll"), "OLD-SERVER");
                     File.WriteAllText(Path.Combine(designer, "B2SPro.exe"), "OLD-DESIGNER");
 
-                    using (var package = new ReleasePackage(args[1]))
+                    using (var package = new ReleaseBundle(args[1], args[2]))
                     {
                         package.Validate(arch, true);
                         InstallPlan plan = package.CreatePlan(designer, server, arch, true);
@@ -1138,7 +1193,7 @@ namespace B2SPro.Setup
                 string expectedFreshServer = Path.Combine(freshVpx, "B2SServer");
                 if (!String.Equals(freshServer, expectedFreshServer, StringComparison.OrdinalIgnoreCase))
                     throw new Exception("The fresh server location was not suggested correctly.");
-                using (var package = new ReleasePackage(args[1]))
+                using (var package = new ReleaseBundle(args[1], args[2]))
                 {
                     package.Validate("x64", true);
                     package.CreatePlan(Path.Combine(freshVpx, "B2SPro"), freshServer, "x64", true).Execute(false, false, false);
@@ -1165,14 +1220,13 @@ namespace B2SPro.Setup
 
                 if (args.Length >= 3)
                 {
-                    if (!File.Exists(args[2])) throw new ArgumentException("The server-only package does not exist: " + args[2]);
                     string serverOnlyRoot = Path.Combine(sandbox, "ServerOnly");
                     Directory.CreateDirectory(serverOnlyRoot);
                     File.WriteAllText(Path.Combine(serverOnlyRoot, "ScreenRes.txt"), "SERVER-ONLY-SCREENRES");
                     Directory.CreateDirectory(Path.Combine(serverOnlyRoot, "Plugins"));
                     File.WriteAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt"), "SERVER-ONLY-PLUGIN");
                     File.WriteAllText(Path.Combine(serverOnlyRoot, "B2SBackglassServer.dll"), "OLD-SERVER");
-                    using (var package = new ReleasePackage(args[2]))
+                    using (var package = new ReleaseBundle(null, args[2]))
                     {
                         package.Validate("x64", false);
                         InstallPlan plan = package.CreatePlan(null, serverOnlyRoot, "x64", false);
@@ -1188,7 +1242,7 @@ namespace B2SPro.Setup
                 }
 
                 Directory.Delete(sandbox, true);
-                Console.WriteLine("SELF-TEST PASSED: full x64/x86 plus server-only install, online/offline package layouts, backups, protected files, Designer isolation, and shortcuts; live registration skipped");
+                Console.WriteLine("SELF-TEST PASSED: split Designer/Server packages, full x64/x86 plus server-only install, backups, protected files, Designer isolation, and shortcuts; live registration skipped");
                 return 0;
             }
             catch (Exception ex)

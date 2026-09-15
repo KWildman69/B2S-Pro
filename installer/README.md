@@ -42,21 +42,27 @@ The same tested installation engine produces two separate setup programs:
 
 ## Package sources
 
-For private development or offline installation, keep the applicable three
+For private development or offline installation, keep the applicable verified
 files together in one folder:
 
-- Complete setup: `B2SProSetup.exe`, `B2S-Latest-Complete-Build.zip`, and
-  `B2S-Latest-Complete-Build.zip.sha256`.
+- Complete setup: `B2SProSetup.exe`, `B2S-Pro-Backglass-1.0.1.zip`,
+  `B2S-Pro-Backglass-1.0.1.zip.sha256`, `B2S-Pro-Server-3.0.0.zip`, and
+  `B2S-Pro-Server-3.0.0.zip.sha256`.
 - Server-only setup: `B2SServerSetup.exe`, `B2S-Pro-Server-3.0.0.zip`, and
   `B2S-Pro-Server-3.0.0.zip.sha256`.
 
-The checksum sidecar is required. Setup verifies the package before changing
-any installed files.
+Each package's checksum sidecar is required. Setup verifies every required
+package before changing any installed files.
 
 When the GitHub repository is public, each setup can query the latest release
-of `KWildman69/B2S-Pro`. Complete setup downloads the latest complete package;
-server-only setup downloads the latest versioned server package. Each package
-must have a matching `.sha256` release asset and is verified before use.
+of `KWildman69/B2S-Pro`. Complete setup downloads the latest versioned Designer
+and Server packages; server-only setup downloads only the latest versioned
+Server package. Each package must have a matching `.sha256` release asset and
+is verified before use.
+
+Every GitHub release is restricted to exactly six custom assets: the two setup
+programs, the Designer and Server runtime ZIPs, and one `.sha256` sidecar for
+each ZIP. GitHub supplies its own automatic source-code links.
 
 Private GitHub releases cannot be downloaded anonymously. No GitHub token is
 accepted, requested, or stored by the installer.
@@ -72,7 +78,7 @@ external staging path.
 
 `dist/B2SServerSetup.exe`
 
-Use `dist/B2SSetup.SelfTest.exe --self-test <complete-build.zip>
+Use `dist/B2SSetup.SelfTest.exe --self-test <designer-build.zip>
 <server-build.zip>` to validate both package layouts, x86/x64 selection,
 protected-file rules, backup behavior, Designer isolation, and sandbox
 installation without elevation or contact with a real Visual Pinball

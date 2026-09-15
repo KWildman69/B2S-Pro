@@ -958,14 +958,14 @@ Build and compatibility notes
 - The updated B2S Server must be installed and registered for runtime-only features.
 
 
-Delivered files
----------------
+Public release assets
+---------------------
 
-- B2SBackglassServer.dll
-- B2SBackglassServerEXE.exe
-- B2S-Pro-Server-3.0.0.zip
-- B2S-Pro-Server-Source-3.0.0.zip
+- B2SProSetup.exe
+- B2SServerSetup.exe
 - B2S-Pro-Backglass-1.0.1.zip
-- B2S-Pro-Backglass-Source-1.0.1.zip
-- B2SPro.exe
-- B2S-native-rotation-changelog.txt
+- B2S-Pro-Backglass-1.0.1.zip.sha256
+- B2S-Pro-Server-3.0.0.zip
+- B2S-Pro-Server-3.0.0.zip.sha256
+
+GitHub supplies the source-code ZIP and TAR.GZ links automatically.

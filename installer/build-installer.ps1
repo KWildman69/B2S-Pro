@@ -109,7 +109,7 @@ Write-Output "Test runner: $testOutput"
 
 if ($IncludeLocalPackage) {
     $packages = @(
-        (Join-Path $AssetRoot 'B2S-Latest-Complete-Build.zip'),
+        (Join-Path $AssetRoot 'B2S-Pro-Backglass-1.0.1.zip'),
         (Join-Path $AssetRoot 'B2S-Pro-Server-3.0.0.zip')
     )
     foreach ($package in $packages) {
@@ -120,5 +120,5 @@ if ($IncludeLocalPackage) {
         Copy-Item -LiteralPath $package -Destination $OutputRoot -Force
         Copy-Item -LiteralPath $sidecar -Destination $OutputRoot -Force
     }
-    Write-Output 'Included the verified complete and server-only packages for private/offline testing.'
+    Write-Output 'Included the verified Designer and Server packages for private/offline testing.'
 }
