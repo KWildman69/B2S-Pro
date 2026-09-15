@@ -166,6 +166,19 @@ foreach ($path in @($x64Designer, $x86Designer, $serverDll, $serverExe, $registe
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Build output is missing: $path" }
 }
 
+# Compile both setup programs and the shared non-admin update checker before
+# packaging so the exact checker binary can be embedded in both runtime ZIPs.
+& (Join-Path $installerRoot 'build-installer.ps1') -OutputRoot $distRoot
+$updateChecker = Join-Path $distRoot 'B2SUpdateChecker.exe'
+foreach ($path in @(
+    (Join-Path $distRoot 'B2SProSetup.exe'),
+    (Join-Path $distRoot 'B2SServerSetup.exe'),
+    (Join-Path $distRoot 'B2SSetup.SelfTest.exe'),
+    $updateChecker
+)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Installer build output is missing: $path" }
+}
+
 # Build the portable Designer runtime distribution used by both manual
 # downloads and B2SProSetup.exe.
 $designerRuntimeStage = Join-Path $buildRoot 'designer-distribution'
@@ -178,6 +191,7 @@ foreach ($platform in @('x64', 'x86')) {
     foreach ($name in @('B2SVPinMAMEStarter.exe', 'B2SVPinMAMEStarter.exe.config')) {
         Copy-Item -LiteralPath (Join-Path $designerRoot "B2SVPinMAMEStarter\bin\$platform\Release\$name") -Destination $platformStage -Force
     }
+    Copy-Item -LiteralPath $updateChecker -Destination $platformStage -Force
 }
 foreach ($name in @('README.md', 'CHANGELOG.md', 'CREDITS.md', 'LICENSE.txt')) {
     Copy-Item -LiteralPath (Join-Path $sourceCopyRoot $name) -Destination $designerRuntimeStage -Force
@@ -191,24 +205,37 @@ Write-ShaSidecar $designerZip $designerSidecar
 # rebuilt Server binaries, including the registration utility.
 $serverRuntimeStage = Join-Path $buildRoot 'server-runtime'
 [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $baselineRoot 'B2S-Pro-Server-3.0.0.zip'), $serverRuntimeStage)
+$retiredServerPackageFiles = @(
+    'ScreenRes.txt',
+    'Changelog.txt',
+    'B2S-native-rotation-changelog.txt',
+    'B2SNativeRotationDiagnostic.log',
+    'B2SNativeRotationDiagnostic.txt'
+)
+foreach ($name in $retiredServerPackageFiles) {
+    $path = Join-Path $serverRuntimeStage $name
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        Remove-Item -LiteralPath $path -Force
+    }
+}
 Copy-Item -LiteralPath $serverDll -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServer.dll') -Force
 Copy-Item -LiteralPath $serverExe -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerEXE.exe') -Force
 Copy-Item -LiteralPath $registerApp -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerRegisterApp.exe') -Force
+Copy-Item -LiteralPath $updateChecker -Destination (Join-Path $serverRuntimeStage 'B2SUpdateChecker.exe') -Force
 Copy-Item -LiteralPath (Join-Path $sourceCopyRoot 'CHANGELOG.md') -Destination (Join-Path $serverRuntimeStage 'B2S-Pro-Changelog.md') -Force
-Copy-Item -LiteralPath (Join-Path $serverRoot 'Changelog.txt') -Destination (Join-Path $serverRuntimeStage 'Changelog.txt') -Force
-Copy-Item -LiteralPath (Join-Path $serverRoot 'B2S-native-rotation-changelog.txt') -Destination (Join-Path $serverRuntimeStage 'B2S-native-rotation-changelog.txt') -Force
+Copy-Item -LiteralPath (Join-Path $serverRoot 'ScreenResTemplate.txt') -Destination (Join-Path $serverRuntimeStage 'ScreenResTemplate.txt') -Force
 
 $serverZip = Join-Path $buildRoot 'B2S-Pro-Server-3.0.0.zip'
 $serverSidecar = $serverZip + '.sha256'
 New-Zip $serverRuntimeStage $serverZip
 Write-ShaSidecar $serverZip $serverSidecar
 
-# Stage public release assets, build both setup applications externally, and
-# run the installer sandbox self-test against the exact packages being shipped.
+# Stage public release assets and run the already-built installer sandbox
+# self-test against the exact packages being shipped.
 foreach ($path in @($designerZip, $designerSidecar, $serverZip, $serverSidecar)) {
     Copy-Item -LiteralPath $path -Destination $publicReleaseRoot -Force
+    Copy-Item -LiteralPath $path -Destination $distRoot -Force
 }
-& (Join-Path $installerRoot 'build-installer.ps1') -IncludeLocalPackage -OutputRoot $distRoot -AssetRoot $publicReleaseRoot
 $selfTest = Join-Path $distRoot 'B2SSetup.SelfTest.exe'
 & $selfTest --self-test (Join-Path $distRoot 'B2S-Pro-Backglass-1.0.1.zip') (Join-Path $distRoot 'B2S-Pro-Server-3.0.0.zip')
 if ($LASTEXITCODE -ne 0) { throw "Installer self-test failed with exit code $LASTEXITCODE" }
@@ -251,6 +278,7 @@ New-Zip $offlineServerStage (Join-Path $privateReleaseRoot 'B2S-Server-Offline-S
 Copy-Item -LiteralPath $x64Designer -Destination $handoffRoot -Force
 Copy-Item -LiteralPath $serverDll -Destination $handoffRoot -Force
 Copy-Item -LiteralPath $serverExe -Destination $handoffRoot -Force
+Copy-Item -LiteralPath $updateChecker -Destination $handoffRoot -Force
 
 # Audit archive content and prove all runtime files came from this build.
 $forbiddenPattern = '(^|/)(bin|obj|\.vs|tests|dist|B2SPro-Backups|Package-Backups|Install-Backups|recovery|diagnostics?)(/|$)|(^|/)[^/]+\.(log|tmp|bak|b2b|directb2s|b2spro)$|(^|/)[^/]*(audit|real-build-baseline)[^/]*$'
@@ -272,6 +300,8 @@ try {
     $designerRuntimeComparisons = @{
         'x64/B2SPro.exe' = $x64Designer
         'x86/B2SPro.exe' = $x86Designer
+        'x64/B2SUpdateChecker.exe' = $updateChecker
+        'x86/B2SUpdateChecker.exe' = $updateChecker
         'x64/B2SVPinMAMEStarter.exe' = (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x64\Release\B2SVPinMAMEStarter.exe')
         'x86/B2SVPinMAMEStarter.exe' = (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x86\Release\B2SVPinMAMEStarter.exe')
     }
@@ -290,10 +320,57 @@ try {
 finally { $designerArchive.Dispose() }
 $serverArchive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $publicReleaseRoot 'B2S-Pro-Server-3.0.0.zip'))
 try {
+    $expectedServerEntries = @(
+        'B2S-Pro-Changelog.md',
+        'B2SBackglassServer.dll',
+        'B2SBackglassServerEXE.exe',
+        'B2SBackglassServerEXE.exe.config',
+        'B2SBackglassServerRegisterApp.exe',
+        'B2SInit.cmd',
+        'B2SServerPluginInterface.dll',
+        'B2SUpdateChecker.exe',
+        'B2SWindowPunch.exe',
+        'B2S_ScreenResIdentifier.exe',
+        'B2S_ScreenResIdentifier.exe.config',
+        'B2S_SetUp.exe',
+        'B2S_SetUp.exe.config',
+        'license.txt',
+        'README.txt',
+        'ScreenResTemplate.txt',
+        'ScreenResTemplates.cmd',
+        'B2STools/B2SRandom.cmd',
+        'B2STools/B2STools.txt',
+        'B2STools/directb2sReelSoundsONOFF.cmd',
+        'B2STools/directb2sReelSoundsONOFF.xsl',
+        'B2STools/DmdDeviceIniScale.cmd',
+        'Plugins/Plugins.txt',
+        'Plugins64/Plugins.txt',
+        'ScreenResTemplates/ScreenResTemplates.txt'
+    )
+    $actualServerEntries = @($serverArchive.Entries | Where-Object {
+        -not [String]::IsNullOrEmpty($_.Name)
+    } | ForEach-Object { $_.FullName })
+    $serverManifestDifference = @(Compare-Object -ReferenceObject $expectedServerEntries -DifferenceObject $actualServerEntries)
+    if ($serverManifestDifference.Count -ne 0) {
+        $firstDifference = $serverManifestDifference[0]
+        throw "Server package manifest mismatch ($($firstDifference.SideIndicator)): $($firstDifference.InputObject)"
+    }
+    foreach ($entryName in $retiredServerPackageFiles) {
+        if ($null -ne $serverArchive.GetEntry($entryName)) {
+            throw "Server package contains retired file: $entryName"
+        }
+    }
+    $serverChangelogs = @($serverArchive.Entries | Where-Object {
+        -not [String]::IsNullOrEmpty($_.Name) -and $_.Name -match '(?i)changelog'
+    })
+    if ($serverChangelogs.Count -ne 1 -or $serverChangelogs[0].FullName -cne 'B2S-Pro-Changelog.md') {
+        throw 'The Server package must contain only B2S-Pro-Changelog.md as its changelog.'
+    }
     $serverRuntimeComparisons = @{
         'B2SBackglassServer.dll' = $serverDll
         'B2SBackglassServerEXE.exe' = $serverExe
         'B2SBackglassServerRegisterApp.exe' = $registerApp
+        'B2SUpdateChecker.exe' = $updateChecker
     }
     foreach ($entryName in $serverRuntimeComparisons.Keys) {
         if ((Get-ZipEntryHash $serverArchive $entryName) -ne (Get-FileHash -LiteralPath $serverRuntimeComparisons[$entryName] -Algorithm SHA256).Hash) {

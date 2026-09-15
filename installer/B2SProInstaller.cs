@@ -48,7 +48,7 @@ namespace B2SPro.Setup
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new InstallerForm());
+            Application.Run(new InstallerForm(InstallerLaunchOptions.Parse(args)));
         }
     }
 
@@ -67,6 +67,59 @@ namespace B2SPro.Setup
 #endif
     }
 
+    internal sealed class InstallerLaunchOptions
+    {
+        public string InstalledDesignerFolder { get; private set; }
+        public string InstalledServerFolder { get; private set; }
+
+        public static InstallerLaunchOptions Parse(string[] args)
+        {
+            var options = new InstallerLaunchOptions();
+            for (int index = 0; index < args.Length; index++)
+            {
+                if (String.Equals(args[index], "--installed-designer", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+                {
+                    options.InstalledDesignerFolder = NormalizeFolder(args[++index]);
+                }
+                else if (String.Equals(args[index], "--installed-server", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+                {
+                    options.InstalledServerFolder = NormalizeFolder(args[++index]);
+                }
+            }
+            return options;
+        }
+
+        public bool HasInstalledFolder
+        {
+            get { return !String.IsNullOrWhiteSpace(InstalledDesignerFolder) || !String.IsNullOrWhiteSpace(InstalledServerFolder); }
+        }
+
+        public static string FindVpxRootNear(string installationFolder)
+        {
+            if (String.IsNullOrWhiteSpace(installationFolder)) return null;
+            DirectoryInfo candidate;
+            try { candidate = new DirectoryInfo(Path.GetFullPath(installationFolder)); }
+            catch { return null; }
+
+            for (int level = 0; level < 4 && candidate != null; level++, candidate = candidate.Parent)
+            {
+                try
+                {
+                    if (candidate.Exists && Directory.GetFiles(candidate.FullName, "VPinballX*.exe", SearchOption.TopDirectoryOnly).Length > 0)
+                        return candidate.FullName;
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        private static string NormalizeFolder(string value)
+        {
+            if (String.IsNullOrWhiteSpace(value)) return null;
+            return Path.GetFullPath(value.Trim().Trim('"'));
+        }
+    }
+
     internal sealed class InstallerForm : Form
     {
         private readonly TextBox _vpxFolder = new TextBox();
@@ -80,7 +133,7 @@ namespace B2SPro.Setup
         private readonly Label _status = new Label();
         private readonly PackagePaths _localPackages;
 
-        public InstallerForm()
+        public InstallerForm(InstallerLaunchOptions launchOptions)
         {
             _localPackages = FindLocalPackages();
             Text = SetupEdition.Title;
@@ -94,7 +147,37 @@ namespace B2SPro.Setup
             Font = new Font("Segoe UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BuildInterface();
+            ApplyLaunchOptions(launchOptions);
             _vpxFolder.Leave += delegate { if (Directory.Exists(_vpxFolder.Text.Trim())) SetSuggestedFolders(_vpxFolder.Text.Trim()); };
+        }
+
+        private void ApplyLaunchOptions(InstallerLaunchOptions options)
+        {
+            if (options == null || !options.HasInstalledFolder) return;
+
+            string installedFolder = SetupEdition.ServerOnly ? options.InstalledServerFolder : options.InstalledDesignerFolder;
+            if (String.IsNullOrWhiteSpace(installedFolder)) return;
+
+            if (!SetupEdition.ServerOnly) _designerFolder.Text = installedFolder;
+            string vpxRoot = InstallerLaunchOptions.FindVpxRootNear(installedFolder);
+            if (!String.IsNullOrWhiteSpace(vpxRoot))
+            {
+                _vpxFolder.Text = vpxRoot;
+                SetSuggestedFolders(vpxRoot);
+            }
+
+            if (SetupEdition.ServerOnly) _serverFolder.Text = installedFolder;
+            if (!SetupEdition.ServerOnly)
+            {
+                string installedDesigner = Path.Combine(installedFolder, "B2SPro.exe");
+                if (File.Exists(installedDesigner)) _architecture.SelectedIndex = PeArchitecture.Is32Bit(installedDesigner) ? 1 : 0;
+            }
+
+            _githubSource.Checked = true;
+            _localSource.Checked = false;
+            _status.Text = String.IsNullOrWhiteSpace(vpxRoot)
+                ? "Existing installation folder loaded. Choose the Visual Pinball folder to continue."
+                : "Existing installation locations loaded. The latest verified release will be downloaded from GitHub.";
         }
 
         private void BuildInterface()
@@ -364,12 +447,28 @@ namespace B2SPro.Setup
                 if (PathEquals(_designerFolder.Text, _serverFolder.Text)) return "The Designer and Server must use separate folders.";
                 if (PathEquals(_designerFolder.Text, vpx) && File.Exists(Path.Combine(vpx, "B2SBackglassDesigner.exe")))
                     return "Choose a separate B2S Pro Designer folder so the original Designer remains untouched.";
+                if (IsLockedForReplacement(Path.Combine(_designerFolder.Text.Trim(), "B2SPro.exe")))
+                    return "B2S Pro is still open. Save your work and close B2S Pro before installing the update.";
             }
+            if (IsLockedForReplacement(Path.Combine(_serverFolder.Text.Trim(), "B2SBackglassServer.dll")))
+                return "The B2S Server is still in use. Close Visual Pinball and any running backglass before installing the update.";
             if (_localSource.Checked && !_localPackages.AreAvailable(SetupEdition.ServerOnly))
                 return SetupEdition.ServerOnly
                     ? "The required local Server ZIP and checksum are no longer beside the installer."
                     : "The required local Designer and Server ZIPs and checksums are no longer beside the installer.";
             return null;
+        }
+
+        private static bool IsLockedForReplacement(string path)
+        {
+            if (!File.Exists(path)) return false;
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+                return false;
+            }
+            catch (IOException) { return true; }
+            catch (UnauthorizedAccessException) { return true; }
         }
 
         private bool ConfirmReplacement(InstallPlan plan)
@@ -622,10 +721,43 @@ namespace B2SPro.Setup
                 Require(_designerArchive, arch + "/B2SPro.exe");
                 Require(_designerArchive, arch + "/B2SPro.exe.config");
                 Require(_designerArchive, arch + "/B2SVPinMAMEStarter.exe");
+                Require(_designerArchive, arch + "/B2SUpdateChecker.exe");
             }
             string serverPrefix = GetServerPrefix();
-            Require(_serverArchive, serverPrefix + "B2SBackglassServer.dll");
-            Require(_serverArchive, serverPrefix + "B2SBackglassServerRegisterApp.exe");
+            string[] requiredServerFiles =
+            {
+                "B2S-Pro-Changelog.md",
+                "B2SBackglassServer.dll",
+                "B2SBackglassServerEXE.exe",
+                "B2SBackglassServerEXE.exe.config",
+                "B2SBackglassServerRegisterApp.exe",
+                "B2SInit.cmd",
+                "B2SServerPluginInterface.dll",
+                "B2SUpdateChecker.exe",
+                "B2SWindowPunch.exe",
+                "B2S_ScreenResIdentifier.exe",
+                "B2S_ScreenResIdentifier.exe.config",
+                "B2S_SetUp.exe",
+                "B2S_SetUp.exe.config",
+                "license.txt",
+                "README.txt",
+                "ScreenResTemplate.txt",
+                "ScreenResTemplates.cmd",
+                "B2STools/B2SRandom.cmd",
+                "B2STools/B2STools.txt",
+                "B2STools/directb2sReelSoundsONOFF.cmd",
+                "B2STools/directb2sReelSoundsONOFF.xsl",
+                "B2STools/DmdDeviceIniScale.cmd",
+                "Plugins/Plugins.txt",
+                "Plugins64/Plugins.txt",
+                "ScreenResTemplates/ScreenResTemplates.txt"
+            };
+            foreach (string name in requiredServerFiles) Require(_serverArchive, serverPrefix + name);
+            Forbid(_serverArchive, serverPrefix + "ScreenRes.txt");
+            Forbid(_serverArchive, serverPrefix + "Changelog.txt");
+            Forbid(_serverArchive, serverPrefix + "B2S-native-rotation-changelog.txt");
+            Forbid(_serverArchive, serverPrefix + "B2SNativeRotationDiagnostic.log");
+            Forbid(_serverArchive, serverPrefix + "B2SNativeRotationDiagnostic.txt");
         }
 
         public InstallPlan CreatePlan(string designer, string server, string arch, bool installDesigner)
@@ -641,6 +773,11 @@ namespace B2SPro.Setup
         private static void Require(ZipArchive archive, string name)
         {
             if (archive.GetEntry(name) == null) throw new InvalidDataException("The package is missing " + name + ". Nothing was installed.");
+        }
+
+        private static void Forbid(ZipArchive archive, string name)
+        {
+            if (archive.GetEntry(name) != null) throw new InvalidDataException("The package contains retired file " + name + ". Nothing was installed.");
         }
 
         public void Dispose()
@@ -661,6 +798,13 @@ namespace B2SPro.Setup
         private readonly string _serverPrefix;
         private readonly bool _freshServer;
         private readonly List<CopyItem> _items = new List<CopyItem>();
+        private static readonly string[] RetiredServerFiles =
+        {
+            "Changelog.txt",
+            "B2S-native-rotation-changelog.txt",
+            "B2SNativeRotationDiagnostic.log",
+            "B2SNativeRotationDiagnostic.txt"
+        };
         public readonly List<string> ExistingProgramFiles = new List<string>();
 
         public InstallPlan(ZipArchive designerArchive, ZipArchive serverArchive, string designer, string server, string arch, bool installDesigner, string serverPrefix)
@@ -725,8 +869,22 @@ namespace B2SPro.Setup
             var changed = new List<RollbackItem>();
             int installed = 0;
             int preserved = 0;
+            int retired = 0;
             try
             {
+                foreach (string name in RetiredServerFiles)
+                {
+                    string destination = Path.Combine(_server, name);
+                    if (!File.Exists(destination)) continue;
+                    string backup = Path.Combine(serverBackup, name);
+                    Directory.CreateDirectory(Path.GetDirectoryName(backup));
+                    File.Copy(destination, backup, true);
+                    changed.Add(new RollbackItem(destination, backup, true));
+                    File.SetAttributes(destination, FileAttributes.Normal);
+                    File.Delete(destination);
+                    retired++;
+                }
+
                 foreach (CopyItem item in _items)
                 {
                     if (item.Protected && File.Exists(item.Destination))
@@ -780,12 +938,12 @@ namespace B2SPro.Setup
                 }
 
                 string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
-                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
+                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; retired " + retired + " obsolete files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
                 MarkProtected(log);
                 if (_installDesigner) MarkProtected(Path.Combine(_designer, "B2SPro-Backups"));
                 MarkProtected(Path.Combine(_server, "B2SPro-Backups"));
                 bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
-                return new InstallResult(_designer, _server, installed, preserved, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
+                return new InstallResult(_designer, _server, installed, preserved, retired, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
             }
             catch
             {
@@ -834,6 +992,7 @@ namespace B2SPro.Setup
                 hidden = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
                     || name.EndsWith(".config", StringComparison.OrdinalIgnoreCase)
                     || String.Equals(name, "B2SBackglassServerEXE.exe", StringComparison.OrdinalIgnoreCase)
+                    || String.Equals(name, "B2SUpdateChecker.exe", StringComparison.OrdinalIgnoreCase)
                     || String.Equals(name, "B2SInit.cmd", StringComparison.OrdinalIgnoreCase)
                     || String.Equals(name, "B2SWindowPunch.exe", StringComparison.OrdinalIgnoreCase);
             }
@@ -885,6 +1044,7 @@ namespace B2SPro.Setup
         private readonly string _server;
         private readonly int _installed;
         private readonly int _preserved;
+        private readonly int _retired;
         private readonly string _backupStamp;
         private readonly bool _freshServer;
         private readonly bool _registrationAttempted;
@@ -894,12 +1054,13 @@ namespace B2SPro.Setup
         private readonly bool _shortcutsAttempted;
         private readonly string _shortcutError;
         private readonly bool _installedDesigner;
-        public InstallResult(string designer, string server, int installed, int preserved, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool fileAssociationsAttempted, string fileAssociationError, bool shortcutsAttempted, string shortcutError, bool installedDesigner)
+        public InstallResult(string designer, string server, int installed, int preserved, int retired, string backupStamp, bool freshServer, bool registrationAttempted, string registrationError, bool fileAssociationsAttempted, string fileAssociationError, bool shortcutsAttempted, string shortcutError, bool installedDesigner)
         {
             _designer = designer;
             _server = server;
             _installed = installed;
             _preserved = preserved;
+            _retired = retired;
             _backupStamp = backupStamp;
             _freshServer = freshServer;
             _registrationAttempted = registrationAttempted;
@@ -921,6 +1082,7 @@ namespace B2SPro.Setup
             text.AppendLine("Server installation: " + (_freshServer ? "Fresh installation" : "Existing installation updated"));
             text.AppendLine("Files installed: " + _installed);
             text.AppendLine("Protected existing files preserved: " + _preserved);
+            if (_retired > 0) text.AppendLine("Obsolete B2S text/diagnostic files removed: " + _retired);
             if (_backupStamp != null) text.AppendLine("Backup: B2SPro-Backups\\" + _backupStamp);
             text.AppendLine();
             text.AppendLine(_installedDesigner ? "The original Backglass Designer was not changed." : "No B2S Designer files were installed or changed.");
@@ -1141,6 +1303,13 @@ namespace B2SPro.Setup
                 Directory.CreateDirectory(originalDesigner);
                 string originalDesignerExe = Path.Combine(originalDesigner, "B2SBackglassDesigner.exe");
                 File.WriteAllText(originalDesignerExe, "ORIGINAL-DESIGNER-MUST-STAY");
+                string[] retiredServerFiles =
+                {
+                    "Changelog.txt",
+                    "B2S-native-rotation-changelog.txt",
+                    "B2SNativeRotationDiagnostic.log",
+                    "B2SNativeRotationDiagnostic.txt"
+                };
 
                 string vpxLayout = Path.Combine(sandbox, "VisualPinball");
                 string detectedServer = Path.Combine(vpxLayout, "B2SServer");
@@ -1160,6 +1329,7 @@ namespace B2SPro.Setup
                     File.WriteAllText(Path.Combine(server, "Plugins", "Plugins.txt"), "SELF-TEST-PLUGIN");
                     File.WriteAllText(Path.Combine(server, "B2SBackglassServer.dll"), "OLD-SERVER");
                     File.WriteAllText(Path.Combine(designer, "B2SPro.exe"), "OLD-DESIGNER");
+                    foreach (string name in retiredServerFiles) File.WriteAllText(Path.Combine(server, name), "OBSOLETE-SERVER-FILE");
 
                     using (var package = new ReleaseBundle(args[1], args[2]))
                     {
@@ -1171,13 +1341,22 @@ namespace B2SPro.Setup
                         if (File.ReadAllText(Path.Combine(server, "Plugins", "Plugins.txt")) != "SELF-TEST-PLUGIN") throw new Exception(arch + " plugin settings were overwritten.");
                         if (new FileInfo(Path.Combine(designer, "B2SPro.exe")).Length < 1000000) throw new Exception(arch + " Designer payload was not installed.");
                         if (new FileInfo(Path.Combine(server, "B2SBackglassServer.dll")).Length < 100000) throw new Exception(arch + " Server payload was not installed.");
+                        if (new FileInfo(Path.Combine(designer, "B2SUpdateChecker.exe")).Length < 10000) throw new Exception(arch + " Designer update checker was not installed.");
+                        if (new FileInfo(Path.Combine(server, "B2SUpdateChecker.exe")).Length < 10000) throw new Exception(arch + " Server update checker was not installed.");
                         if (Directory.GetFiles(Path.Combine(designer, "B2SPro-Backups"), "B2SPro.exe", SearchOption.AllDirectories).Length != 1) throw new Exception(arch + " Designer backup was not created.");
                         if (Directory.GetFiles(Path.Combine(server, "B2SPro-Backups"), "B2SBackglassServer.dll", SearchOption.AllDirectories).Length != 1) throw new Exception(arch + " Server backup was not created.");
+                        foreach (string name in retiredServerFiles)
+                        {
+                            if (File.Exists(Path.Combine(server, name))) throw new Exception(arch + " obsolete Server file was not removed: " + name);
+                            if (Directory.GetFiles(Path.Combine(server, "B2SPro-Backups"), name, SearchOption.AllDirectories).Length != 1) throw new Exception(arch + " obsolete Server file was not backed up: " + name);
+                        }
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " main Designer executable was hidden.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.Hidden) == 0) throw new Exception(arch + " Designer config was not hidden.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.System) == 0) throw new Exception(arch + " Designer config was not marked as a protected system file.");
                         if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.Hidden) == 0) throw new Exception(arch + " Server DLL was not hidden.");
                         if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.System) == 0) throw new Exception(arch + " Server DLL was not marked as a protected system file.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Designer update checker was not protected.");
+                        if ((File.GetAttributes(Path.Combine(server, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Server update checker was not protected.");
                         if ((File.GetAttributes(Path.Combine(server, "ScreenRes.txt")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " ScreenRes.txt was hidden.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Install.log")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " install log was not protected.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Backups")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Designer backup folder was not protected.");
@@ -1200,6 +1379,21 @@ namespace B2SPro.Setup
                 }
                 if (!File.Exists(Path.Combine(freshVpx, "B2SPro", "B2SPro.exe"))) throw new Exception("The fresh Designer was not installed in its separate folder.");
                 if (!File.Exists(Path.Combine(freshServer, "B2SBackglassServer.dll"))) throw new Exception("The fresh Server was not installed in the suggested B2SServer folder.");
+                if (!File.Exists(Path.Combine(freshVpx, "B2SPro", "B2SUpdateChecker.exe"))) throw new Exception("The fresh Designer update checker was not installed.");
+                if (!File.Exists(Path.Combine(freshServer, "B2SUpdateChecker.exe"))) throw new Exception("The fresh Server update checker was not installed.");
+                if (!File.Exists(Path.Combine(freshServer, "ScreenResTemplate.txt"))) throw new Exception("The fresh Server ScreenRes template was not installed.");
+                if (!File.Exists(Path.Combine(freshServer, "B2S-Pro-Changelog.md"))) throw new Exception("The fresh B2S Pro changelog was not installed.");
+                if (File.Exists(Path.Combine(freshServer, "ScreenRes.txt"))) throw new Exception("The fresh Server package installed an active ScreenRes.txt.");
+                foreach (string name in retiredServerFiles)
+                    if (File.Exists(Path.Combine(freshServer, name))) throw new Exception("The fresh Server installed obsolete file: " + name);
+                InstallerLaunchOptions designerUpdate = InstallerLaunchOptions.Parse(new[] { "--installed-designer", Path.Combine(freshVpx, "B2SPro") });
+                if (!String.Equals(designerUpdate.InstalledDesignerFolder, Path.Combine(freshVpx, "B2SPro"), StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("The Designer update location was not parsed correctly.");
+                if (!String.Equals(InstallerLaunchOptions.FindVpxRootNear(designerUpdate.InstalledDesignerFolder), freshVpx, StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("The Visual Pinball folder was not inferred from the installed Designer location.");
+                InstallerLaunchOptions serverUpdate = InstallerLaunchOptions.Parse(new[] { "--installed-server", freshServer });
+                if (!String.Equals(serverUpdate.InstalledServerFolder, freshServer, StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("The Server update location was not parsed correctly.");
                 string expectedEditor = Path.Combine(freshVpx, "B2SPro", "B2SPro.exe");
                 string expectedOpenCommand = "\"" + expectedEditor + "\" \"%1\"";
                 if (!String.Equals(FileAssociationManager.GetEditorPath(Path.Combine(freshVpx, "B2SPro")), expectedEditor, StringComparison.OrdinalIgnoreCase))
@@ -1226,6 +1420,7 @@ namespace B2SPro.Setup
                     Directory.CreateDirectory(Path.Combine(serverOnlyRoot, "Plugins"));
                     File.WriteAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt"), "SERVER-ONLY-PLUGIN");
                     File.WriteAllText(Path.Combine(serverOnlyRoot, "B2SBackglassServer.dll"), "OLD-SERVER");
+                    foreach (string name in retiredServerFiles) File.WriteAllText(Path.Combine(serverOnlyRoot, name), "OBSOLETE-SERVER-FILE");
                     using (var package = new ReleaseBundle(null, args[2]))
                     {
                         package.Validate("x64", false);
@@ -1236,13 +1431,20 @@ namespace B2SPro.Setup
                     if (File.ReadAllText(Path.Combine(serverOnlyRoot, "ScreenRes.txt")) != "SERVER-ONLY-SCREENRES") throw new Exception("Server-only setup overwrote ScreenRes.txt.");
                     if (File.ReadAllText(Path.Combine(serverOnlyRoot, "Plugins", "Plugins.txt")) != "SERVER-ONLY-PLUGIN") throw new Exception("Server-only setup overwrote plugin settings.");
                     if (new FileInfo(Path.Combine(serverOnlyRoot, "B2SBackglassServer.dll")).Length < 100000) throw new Exception("Server-only payload was not installed.");
+                    if (new FileInfo(Path.Combine(serverOnlyRoot, "B2SUpdateChecker.exe")).Length < 10000) throw new Exception("Server-only update checker was not installed.");
+                    if (!File.Exists(Path.Combine(serverOnlyRoot, "ScreenResTemplate.txt"))) throw new Exception("Server-only ScreenRes template was not installed.");
+                    foreach (string name in retiredServerFiles)
+                    {
+                        if (File.Exists(Path.Combine(serverOnlyRoot, name))) throw new Exception("Server-only obsolete file was not removed: " + name);
+                        if (Directory.GetFiles(Path.Combine(serverOnlyRoot, "B2SPro-Backups"), name, SearchOption.AllDirectories).Length != 1) throw new Exception("Server-only obsolete file was not backed up: " + name);
+                    }
                     if (Directory.GetFiles(Path.Combine(serverOnlyRoot, "B2SPro-Backups"), "B2SBackglassServer.dll", SearchOption.AllDirectories).Length != 1) throw new Exception("Server-only backup was not created.");
                     if (!File.Exists(Path.Combine(serverOnlyRoot, "B2SServer-Install.log"))) throw new Exception("Server-only install log was not created.");
                     if (Directory.GetFiles(serverOnlyRoot, "B2SPro.exe", SearchOption.AllDirectories).Length != 0) throw new Exception("Server-only setup installed Designer files.");
                 }
 
                 Directory.Delete(sandbox, true);
-                Console.WriteLine("SELF-TEST PASSED: split Designer/Server packages, full x64/x86 plus server-only install, backups, protected files, Designer isolation, and shortcuts; live registration skipped");
+                Console.WriteLine("SELF-TEST PASSED: split Designer/Server packages, update checker payloads and setup handoff, full x64/x86 plus server-only install, backups, protected files, Designer isolation, and shortcuts; live registration skipped");
                 return 0;
             }
             catch (Exception ex)

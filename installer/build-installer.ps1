@@ -19,10 +19,13 @@ if ([string]::IsNullOrWhiteSpace($AssetRoot)) {
 $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $installerRoot 'B2SProInstaller.cs'
 $manifest = Join-Path $installerRoot 'B2SProInstaller.manifest'
+$updateCheckerSource = Join-Path $installerRoot 'B2SUpdateChecker.cs'
+$updateCheckerManifest = Join-Path $installerRoot 'B2SUpdateChecker.manifest'
 $icon = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\B2SPro.ico'
 $logo = Join-Path $repositoryRoot 'src\designer\b2sbackglassdesigner\Resources\B2SProHeader.png'
 $proOutput = Join-Path $OutputRoot 'B2SProSetup.exe'
 $serverOutput = Join-Path $OutputRoot 'B2SServerSetup.exe'
+$updateCheckerOutput = Join-Path $OutputRoot 'B2SUpdateChecker.exe'
 $testOutput = Join-Path $OutputRoot 'B2SSetup.SelfTest.exe'
 
 if (-not (Test-Path -LiteralPath $compiler)) {
@@ -72,7 +75,33 @@ if ($LASTEXITCODE -ne 0) {
     throw "B2S Server installer compilation failed with exit code $LASTEXITCODE"
 }
 
-foreach ($builtPath in @($proOutput, $serverOutput)) {
+$updateCheckerArguments = @(
+    '/nologo'
+    '/target:winexe'
+    '/platform:anycpu'
+    '/optimize+'
+    '/debug-'
+    "/win32manifest:$updateCheckerManifest"
+    "/win32icon:$icon"
+    '/reference:System.dll'
+    '/reference:System.Core.dll'
+    '/reference:System.Windows.Forms.dll'
+    '/reference:System.Net.Http.dll'
+    '/reference:System.Web.Extensions.dll'
+    "/out:$updateCheckerOutput"
+    $updateCheckerSource
+)
+
+& $compiler $updateCheckerArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "B2S update checker compilation failed with exit code $LASTEXITCODE"
+}
+& $updateCheckerOutput --self-test
+if ($LASTEXITCODE -ne 0) {
+    throw "B2S update checker self-test failed with exit code $LASTEXITCODE"
+}
+
+foreach ($builtPath in @($proOutput, $serverOutput, $updateCheckerOutput)) {
     $built = Get-Item -LiteralPath $builtPath
     $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $builtPath
     Write-Output "Built: $($built.FullName)"

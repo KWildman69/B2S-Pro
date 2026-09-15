@@ -22,6 +22,8 @@ Public Class Server
     Private timer As Windows.Forms.Timer = Nothing
 
     Private process As Process = Nothing
+    Private hasRunTable As Boolean = False
+    Private Shared automaticUpdateCheckStarted As Boolean = False
     Private switchPulsePipeName As String = String.Empty
     Private ReadOnly testerSwitchKnown(100) As Boolean
     Private ReadOnly testerSwitchState(100) As Boolean
@@ -431,6 +433,7 @@ Public Class Server
         ' startup
         tableHandle = CInt(handle)
         Startup()
+        hasRunTable = True
 
         ' maybe initialize plugin stuff
         If B2SSettings.ArePluginsOn Then
@@ -487,6 +490,34 @@ Public Class Server
             End Try
         End If
 
+        If hasRunTable Then StartAutomaticUpdateCheck()
+
+    End Sub
+
+    Private Shared Sub StartAutomaticUpdateCheck()
+        Try
+            Dim serverFolder As String = IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+            Dim checkerPath As String = IO.Path.Combine(serverFolder, "B2SUpdateChecker.exe")
+            If Not IO.File.Exists(checkerPath) Then Return
+
+            SyncLock GetType(Server)
+                If automaticUpdateCheckStarted Then Return
+                automaticUpdateCheckStarted = True
+            End SyncLock
+
+            Dim start As New ProcessStartInfo() With {
+                .FileName = checkerPath,
+                .Arguments = "--automatic server",
+                .WorkingDirectory = serverFolder,
+                .UseShellExecute = False,
+                .CreateNoWindow = True,
+                .WindowStyle = ProcessWindowStyle.Hidden
+            }
+            Using checker As Process = Process.Start(start)
+            End Using
+        Catch
+            ' Update availability must never interrupt table shutdown.
+        End Try
     End Sub
 
     Public Property LaunchBackglass() As Boolean

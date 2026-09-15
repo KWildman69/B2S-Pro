@@ -1250,6 +1250,27 @@ Public Class formDesigner
         Me.BringToFront()
         B2STab.Focus()
         tscmbZoomInPercent.ComboBox.SelectionLength = 0
+        StartAutomaticUpdateCheck()
+    End Sub
+
+    Private Sub StartAutomaticUpdateCheck()
+        Try
+            Dim checkerPath As String = IO.Path.Combine(Application.StartupPath, "B2SUpdateChecker.exe")
+            If Not IO.File.Exists(checkerPath) Then Return
+
+            Dim start As New ProcessStartInfo() With {
+                .FileName = checkerPath,
+                .Arguments = "--automatic designer",
+                .WorkingDirectory = Application.StartupPath,
+                .UseShellExecute = False,
+                .CreateNoWindow = True,
+                .WindowStyle = ProcessWindowStyle.Hidden
+            }
+            Using checker As Process = Process.Start(start)
+            End Using
+        Catch
+            ' Update availability must never interrupt Designer startup.
+        End Try
     End Sub
 
     Private Function StartupFileArgument() As String

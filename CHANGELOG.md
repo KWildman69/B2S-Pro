@@ -4,6 +4,8 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.1 / Server 3.0.0 update — 2026-09-15
 
+- Added independent, once-daily update checks for B2S Pro Designer and B2S Server. Checks stay silent when current or offline, run without elevation, and offer the correct verified setup only when a newer GitHub release exists.
+- Cleaned the public Server package to ship `ScreenResTemplate.txt` instead of an active `ScreenRes.txt` and to use `B2S-Pro-Changelog.md` as its only changelog. Internal Server runtime files remain installed but hidden.
 - Simplified Pivot Animation to direct marker dragging with zoom and pan; removed redundant point-setting and fit commands. Hinges can be authored outside the snippet box, and pivots can also start automatically with the backglass.
 - Consolidated bumpers and rotatable switch zones into Boundaries. Switch zones retain their authored angle and trigger when crossed from any direction.
 - Simplified launcher placement to the draggable origin and direction marker while preserving exact saved coordinates and pivot-following ball behavior.
