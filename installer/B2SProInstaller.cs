@@ -139,13 +139,14 @@ namespace B2SPro.Setup
             Text = SetupEdition.Title;
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = SetupEdition.ServerOnly ? new Size(700, 450) : new Size(700, 550);
-            Size = SetupEdition.ServerOnly ? new Size(720, 460) : new Size(720, 565);
             MaximizeBox = false;
             BackColor = Color.FromArgb(9, 13, 20);
             ForeColor = Color.White;
             Font = new Font("Segoe UI", 9F);
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
+            ClientSize = SetupEdition.ServerOnly ? new Size(704, 422) : new Size(704, 532);
+            MinimumSize = Size;
             BuildInterface();
             ApplyLaunchOptions(launchOptions);
             _vpxFolder.Leave += delegate { if (Directory.Exists(_vpxFolder.Text.Trim())) SetSuggestedFolders(_vpxFolder.Text.Trim()); };
