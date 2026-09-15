@@ -158,12 +158,6 @@
   <data name="tsmiOpenRecent.Text" xml:space="preserve">
     <value>Open &amp;recent</value>
   </data>
-  <data name="tsmiOpenBackup.Size" type="System.Drawing.Size, System.Drawing">
-    <value>253, 22</value>
-  </data>
-  <data name="tsmiOpenBackup.Text" xml:space="preserve">
-    <value>O&amp;pen backup ...</value>
-  </data>
   <data name="ToolStripSeparator24.Size" type="System.Drawing.Size, System.Drawing">
     <value>250, 6</value>
   </data>
@@ -187,12 +181,6 @@
   </data>
   <data name="tsmiSave.Text" xml:space="preserve">
     <value>&amp;Save</value>
-  </data>
-  <data name="tsmiSaveBackupAs.Size" type="System.Drawing.Size, System.Drawing">
-    <value>253, 22</value>
-  </data>
-  <data name="tsmiSaveBackupAs.Text" xml:space="preserve">
-    <value>Save &amp;backup as ...</value>
   </data>
   <data name="tsmiSaveAs.ShortcutKeys" type="System.Windows.Forms.Keys, System.Windows.Forms">
     <value>Ctrl+Shift+S</value>
@@ -1714,12 +1702,6 @@
   <data name="&gt;&gt;tsmiClearThisList.Type" xml:space="preserve">
     <value>System.Windows.Forms.ToolStripMenuItem, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
-  <data name="&gt;&gt;tsmiOpenBackup.Name" xml:space="preserve">
-    <value>tsmiOpenBackup</value>
-  </data>
-  <data name="&gt;&gt;tsmiOpenBackup.Type" xml:space="preserve">
-    <value>System.Windows.Forms.ToolStripMenuItem, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </data>
   <data name="&gt;&gt;ToolStripSeparator24.Name" xml:space="preserve">
     <value>ToolStripSeparator24</value>
   </data>
@@ -1742,12 +1724,6 @@
     <value>tsmiSave</value>
   </data>
   <data name="&gt;&gt;tsmiSave.Type" xml:space="preserve">
-    <value>System.Windows.Forms.ToolStripMenuItem, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
-  </data>
-  <data name="&gt;&gt;tsmiSaveBackupAs.Name" xml:space="preserve">
-    <value>tsmiSaveBackupAs</value>
-  </data>
-  <data name="&gt;&gt;tsmiSaveBackupAs.Type" xml:space="preserve">
     <value>System.Windows.Forms.ToolStripMenuItem, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="&gt;&gt;tsmiSaveAs.Name" xml:space="preserve">

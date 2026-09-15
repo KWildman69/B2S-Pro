@@ -1465,7 +1465,7 @@ Public Class B2SPictureBox
                                                   bulb.GlowIntensity,
                                                   bulb.SelectionMaskData,
                                                   bulb.SelectionFeather,
-                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.LightPurpose = Illumination.eLightPurpose.Flasher, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, bulb.LightBehindCanvas)
+                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, bulb.LightBehindCanvas)
             If overlay IsNot Nothing AndAlso bulb.LightBehindCanvas AndAlso Me.Image IsNot Nothing Then
                 Dim clipped As Bitmap = Illumination.Lights.CreateCanvasClippedSnippet(overlay, Me.Image, rectX)
                 If clipped IsNot Nothing Then

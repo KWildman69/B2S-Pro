@@ -11,7 +11,6 @@ Public Class formPhysicsEditor
     Private ReadOnly saveButton As New Button()
     Private ReadOnly closeButton As New Button()
     Private ReadOnly clearButton As New Button()
-    Private ReadOnly deleteButton As New Button()
     Private ReadOnly newBoundaryButton As New Button()
     Private ReadOnly deleteBoundaryButton As New Button()
     Private ReadOnly renameBoundaryButton As New Button()
@@ -23,6 +22,7 @@ Public Class formPhysicsEditor
     Private ReadOnly deleteSwitchButton As New Button()
     Private ReadOnly switchIDBox As New NumericUpDown()
     Private ReadOnly launcherEnabledCheck As New CheckBox()
+    Private ReadOnly launcherFollowPivotCheck As New CheckBox()
     Private ReadOnly launcherTypeBox As New ComboBox()
     Private ReadOnly launcherIDBox As New NumericUpDown()
     Private ReadOnly launcherXBox As New NumericUpDown()
@@ -41,9 +41,6 @@ Public Class formPhysicsEditor
     Private ReadOnly bounceBox As New NumericUpDown()
     Private ReadOnly segmentUseDefaultCheck As New CheckBox()
     Private ReadOnly segmentBounceBox As New NumericUpDown()
-    Private ReadOnly xBox As New NumericUpDown()
-    Private ReadOnly yBox As New NumericUpDown()
-    Private updatingCoordinates As Boolean
     Private updatingSegmentBounce As Boolean
 
     Public Sub New(ByVal ball As Illumination.BulbInfo,
@@ -62,13 +59,11 @@ Public Class formPhysicsEditor
         Dim tabs As New TabControl With {.Dock = DockStyle.Fill}
         Dim ballPage As TabPage = CreateEditorPage("Ball")
         Dim boundaryPage As TabPage = CreateEditorPage("Boundaries")
-        Dim objectsPage As TabPage = CreateEditorPage("Bumpers && Switches")
         Dim launcherPage As TabPage = CreateEditorPage("Launcher")
-        tabs.TabPages.AddRange(New TabPage() {ballPage, boundaryPage, objectsPage, launcherPage})
+        tabs.TabPages.AddRange(New TabPage() {ballPage, boundaryPage, launcherPage})
         ConfigureButton(saveButton, "Save Boundaries", AddressOf SaveBoundaries)
         ConfigureButton(closeButton, "Cancel", AddressOf CancelEditor)
         ConfigureButton(clearButton, "Clear Points", AddressOf ClearBoundaries)
-        ConfigureButton(deleteButton, "Delete Point", AddressOf DeletePoint)
         ConfigureButton(newBoundaryButton, "New Boundary", AddressOf NewBoundary)
         ConfigureButton(deleteBoundaryButton, "Delete Boundary", AddressOf DeleteBoundary)
         ConfigureButton(renameBoundaryButton, "Rename", AddressOf RenameBoundary)
@@ -92,6 +87,11 @@ Public Class formPhysicsEditor
         launcherEnabledCheck.ForeColor = Color.White
         launcherEnabledCheck.AutoSize = True
         launcherEnabledCheck.Margin = New Padding(8, 8, 5, 0)
+        launcherFollowPivotCheck.Text = "Attach launcher to selected pivot snippet"
+        launcherFollowPivotCheck.Checked = ball.SnippitInfo.PhysicsLauncherFollowPivot
+        launcherFollowPivotCheck.ForeColor = Color.White
+        launcherFollowPivotCheck.AutoSize = True
+        launcherFollowPivotCheck.Margin = New Padding(8, 8, 5, 0)
         launcherTypeBox.DropDownStyle = ComboBoxStyle.DropDownList
         launcherTypeBox.Items.AddRange(New Object() {"Solenoid", "B2S ID"})
         launcherTypeBox.SelectedIndex = If(ball.SnippitInfo.PhysicsLauncherTriggerType = 3, 1, 0)
@@ -108,6 +108,7 @@ Public Class formPhysicsEditor
         ConfigureLauncherBox(launcherRandomStrengthBox, 0D, 100D, ball.SnippitInfo.PhysicsLauncherRandomStrength, 1)
         ConfigureLauncherBox(launcherCaptureRadiusBox, 5D, 500D, ball.SnippitInfo.PhysicsLauncherCaptureRadius, 1)
         AddHandler launcherEnabledCheck.CheckedChanged, AddressOf LauncherPreviewChanged
+        AddHandler launcherFollowPivotCheck.CheckedChanged, AddressOf LauncherPreviewChanged
         AddHandler launcherXBox.ValueChanged, AddressOf LauncherPreviewChanged
         AddHandler launcherYBox.ValueChanged, AddressOf LauncherPreviewChanged
         AddHandler launcherAngleBox.ValueChanged, AddressOf LauncherPreviewChanged
@@ -126,7 +127,7 @@ Public Class formPhysicsEditor
         rollBallCheckBox.AutoSize = True
         rollBallCheckBox.Margin = New Padding(8, 8, 5, 0)
 
-        Dim flipperLabel As Label = ToolbarLabel("Flipper:")
+        Dim flipperLabel As Label = ToolbarLabel("Pivot snippet:")
         flipperBox.DropDownStyle = ComboBoxStyle.DropDownList
         flipperBox.Width = 145
         flipperBox.Margin = New Padding(0, 3, 5, 0)
@@ -147,7 +148,7 @@ Public Class formPhysicsEditor
         gravityBox.Width = 72
         gravityBox.Margin = New Padding(0, 3, 8, 0)
 
-        Dim strengthLabel As Label = ToolbarLabel("Flipper strength:")
+        Dim strengthLabel As Label = ToolbarLabel("Contact strength:")
         strengthBox.Minimum = 0D
         strengthBox.Maximum = 5D
         strengthBox.DecimalPlaces = 2
@@ -186,25 +187,17 @@ Public Class formPhysicsEditor
         boundaryBox.Margin = New Padding(0, 3, 3, 0)
         AddHandler boundaryBox.SelectedIndexChanged, AddressOf ActiveBoundaryChanged
 
-        Dim xLabel As Label = ToolbarLabel("Selected X:")
-        ConfigureCoordinateBox(xBox)
-        Dim yLabel As Label = ToolbarLabel("Y:")
-        ConfigureCoordinateBox(yBox)
-        AddHandler xBox.ValueChanged, AddressOf CoordinateChanged
-        AddHandler yBox.ValueChanged, AddressOf CoordinateChanged
-
         AddPageControls(ballPage, New Control() {enabledCheck, rollBallCheckBox, flipperLabel, flipperBox, gravityLabel, gravityBox,
                                                  strengthLabel, strengthBox, bounceLabel, bounceBox})
         AddPageControls(boundaryPage, New Control() {boundaryLabel, boundaryBox, segmentBounceLabel, segmentUseDefaultCheck,
                                                      segmentBounceBox, lockBoundaryButton, newBoundaryButton,
                                                      renameBoundaryButton, spliceBoundaryButton, deleteBoundaryButton,
-                                                     clearButton, deleteButton, xLabel, xBox, yLabel, yBox})
-        AddPageControls(objectsPage, New Control() {SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
+                                                     clearButton,
+                                                     SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
                                                     SidebarHeader("SWITCH ZONES"), addSwitchButton, deleteSwitchButton,
                                                     switchIDLabel, switchIDBox})
-        AddPageControls(launcherPage, New Control() {launcherEnabledCheck, ToolbarLabel("Trigger type:"), launcherTypeBox,
+        AddPageControls(launcherPage, New Control() {launcherEnabledCheck, launcherFollowPivotCheck, ToolbarLabel("Trigger type:"), launcherTypeBox,
                                                      ToolbarLabel("Trigger ID:"), launcherIDBox,
-                                                     ToolbarLabel("Launch X:"), launcherXBox, ToolbarLabel("Launch Y:"), launcherYBox,
                                                      ToolbarLabel("Launch angle:"), launcherAngleBox, ToolbarLabel("Strength:"), launcherStrengthBox,
                                                      ToolbarLabel("Random angle:"), launcherRandomAngleBox,
                                                      ToolbarLabel("Random strength %:"), launcherRandomStrengthBox,
@@ -258,12 +251,21 @@ Public Class formPhysicsEditor
         canvas.Obstacles.AddRange(ball.SnippitInfo.PhysicsObstacles)
         canvas.SwitchZones.AddRange(ball.SnippitInfo.PhysicsSwitchZones)
         canvas.SwitchIDs.AddRange(ball.SnippitInfo.PhysicsSwitchIDs)
+        canvas.SwitchAngles.AddRange(ball.SnippitInfo.PhysicsSwitchAngles)
         While canvas.SwitchIDs.Count < canvas.SwitchZones.Count
             canvas.SwitchIDs.Add(1)
+        End While
+        While canvas.SwitchAngles.Count < canvas.SwitchZones.Count
+            canvas.SwitchAngles.Add(0.0F)
+        End While
+        While canvas.SwitchAngles.Count > canvas.SwitchZones.Count
+            canvas.SwitchAngles.RemoveAt(canvas.SwitchAngles.Count - 1)
         End While
         RefreshBoundaryList(0)
         AddHandler canvas.SelectionChanged, AddressOf CanvasSelectionChanged
         AddHandler canvas.BoundaryStructureChanged, AddressOf CanvasBoundaryStructureChanged
+        AddHandler canvas.LauncherOriginChanged, AddressOf LauncherOriginDragged
+        AddHandler canvas.LauncherAngleChanged, AddressOf LauncherAngleDragged
 
         Controls.Add(canvas)
         Controls.Add(help)
@@ -430,6 +432,17 @@ Public Class formPhysicsEditor
             Return launcherEnabledCheck.Checked
         End Get
     End Property
+
+    Public ReadOnly Property ResultSwitchAngles As List(Of Single)
+        Get
+            Return New List(Of Single)(canvas.SwitchAngles)
+        End Get
+    End Property
+    Public ReadOnly Property ResultLauncherFollowPivot As Boolean
+        Get
+            Return launcherFollowPivotCheck.Checked
+        End Get
+    End Property
     Public ReadOnly Property ResultLauncherTriggerType As Integer
         Get
             Return If(launcherTypeBox.SelectedIndex = 1, 3, 1)
@@ -489,16 +502,6 @@ Public Class formPhysicsEditor
                                .Margin = New Padding(8, 8, 3, 0)}
     End Function
 
-    Private Sub ConfigureCoordinateBox(ByVal box As NumericUpDown)
-        box.Minimum = -100000D
-        box.Maximum = 100000D
-        box.DecimalPlaces = 1
-        box.Increment = 1D
-        box.Width = 72
-        box.Enabled = False
-        box.Margin = New Padding(0, 3, 4, 0)
-    End Sub
-
     Private Sub ConfigureLauncherBox(ByVal box As NumericUpDown, ByVal minimum As Decimal, ByVal maximum As Decimal, ByVal value As Single, ByVal decimals As Integer)
         box.Minimum = minimum
         box.Maximum = maximum
@@ -515,21 +518,28 @@ Public Class formPhysicsEditor
         canvas.LauncherAngle = CSng(launcherAngleBox.Value)
         canvas.LauncherStrength = CSng(launcherStrengthBox.Value)
         canvas.LauncherCaptureRadius = CSng(launcherCaptureRadiusBox.Value)
+        canvas.SetBallPreviewLocation(launcherEnabledCheck.Checked AndAlso launcherFollowPivotCheck.Checked,
+                                      canvas.LauncherOrigin)
+        strengthBox.Enabled = Not (launcherEnabledCheck.Checked AndAlso launcherFollowPivotCheck.Checked)
         canvas.Invalidate()
     End Sub
 
+    Private Sub LauncherAngleDragged(ByVal sender As Object, ByVal e As EventArgs)
+        launcherAngleBox.Value = Math.Max(launcherAngleBox.Minimum,
+                                          Math.Min(launcherAngleBox.Maximum, CDec(Math.Round(canvas.LauncherAngle, 1))))
+    End Sub
+
+    Private Sub LauncherOriginDragged(ByVal sender As Object, ByVal e As EventArgs)
+        ' Updating X raises LauncherPreviewChanged, which writes the backing
+        ' controls back into the canvas. Capture both mouse coordinates first
+        ' so that event cannot replace the newly dragged Y value with the old one.
+        Dim draggedOrigin As PointF = canvas.LauncherOrigin
+        launcherXBox.Value = Math.Max(launcherXBox.Minimum, Math.Min(launcherXBox.Maximum, CDec(Math.Round(draggedOrigin.X, 1))))
+        launcherYBox.Value = Math.Max(launcherYBox.Minimum, Math.Min(launcherYBox.Maximum, CDec(Math.Round(draggedOrigin.Y, 1))))
+    End Sub
+
     Private Sub CanvasSelectionChanged(ByVal sender As Object, ByVal e As EventArgs)
-        updatingCoordinates = True
-        Dim point As Nullable(Of PointF) = canvas.SelectedPoint
         Dim boundaryEditable As Boolean = Not canvas.IsActiveBoundaryLocked
-        xBox.Enabled = point.HasValue AndAlso boundaryEditable
-        yBox.Enabled = point.HasValue AndAlso boundaryEditable
-        deleteButton.Enabled = point.HasValue AndAlso boundaryEditable
-        If point.HasValue Then
-            xBox.Value = Math.Max(xBox.Minimum, Math.Min(xBox.Maximum, CDec(point.Value.X)))
-            yBox.Value = Math.Max(yBox.Minimum, Math.Min(yBox.Maximum, CDec(point.Value.Y)))
-        End If
-        updatingCoordinates = False
         Dim switchID As Nullable(Of Integer) = canvas.SelectedSwitchID
         switchIDBox.Enabled = switchID.HasValue
         deleteSwitchButton.Enabled = switchID.HasValue
@@ -548,11 +558,6 @@ Public Class formPhysicsEditor
         updatingSegmentBounce = False
     End Sub
 
-    Private Sub CoordinateChanged(ByVal sender As Object, ByVal e As EventArgs)
-        If updatingCoordinates OrElse Not canvas.SelectedPoint.HasValue Then Return
-        canvas.SetSelectedPoint(New PointF(CSng(xBox.Value), CSng(yBox.Value)))
-    End Sub
-
     Private Sub SegmentBounceChanged(ByVal sender As Object, ByVal e As EventArgs)
         If updatingSegmentBounce OrElse canvas.SelectedSegmentIndex < 0 Then Return
         Dim useDefault As Boolean = segmentUseDefaultCheck.Checked
@@ -562,10 +567,6 @@ Public Class formPhysicsEditor
 
     Private Sub ClearBoundaries(ByVal sender As Object, ByVal e As EventArgs)
         canvas.ClearPoints()
-    End Sub
-
-    Private Sub DeletePoint(ByVal sender As Object, ByVal e As EventArgs)
-        canvas.DeleteSelectedPoint()
     End Sub
 
     Private Sub NewBoundary(ByVal sender As Object, ByVal e As EventArgs)
@@ -675,6 +676,11 @@ Public Class formPhysicsEditor
     End Sub
 
     Private Sub SaveBoundaries(ByVal sender As Object, ByVal e As EventArgs)
+        If launcherEnabledCheck.Checked AndAlso launcherFollowPivotCheck.Checked AndAlso flipperBox.SelectedIndex <= 0 Then
+            MessageBox.Show(Me, "Select a pivot-enabled snippet on the Ball tab before attaching the launcher.", "Physics Boundary Editor",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
         If enabledCheck.Checked AndAlso Not canvas.Paths.Any(Function(path) path IsNot Nothing AndAlso path.Count >= 2) Then
             MessageBox.Show(Me, "Enabled ball physics needs at least two boundary points.", "Physics Boundary Editor",
                             MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -697,13 +703,15 @@ Public Class formPhysicsEditor
     Private Class SceneItem
         Public ReadOnly Name As String
         Public ReadOnly Image As Image
-        Public ReadOnly Bounds As RectangleF
+        Public Bounds As RectangleF
+        Public ReadOnly InitialBounds As RectangleF
         Public ReadOnly IsBall As Boolean
 
         Public Sub New(ByVal name As String, ByVal image As Image, ByVal bounds As RectangleF, ByVal isBall As Boolean)
             Me.Name = name
             Me.Image = image
             Me.Bounds = bounds
+            Me.InitialBounds = bounds
             Me.IsBall = isBall
         End Sub
     End Class
@@ -721,6 +729,7 @@ Public Class formPhysicsEditor
         Public ReadOnly Obstacles As New List(Of RectangleF)()
         Public ReadOnly SwitchZones As New List(Of RectangleF)()
         Public ReadOnly SwitchIDs As New List(Of Integer)()
+        Public ReadOnly SwitchAngles As New List(Of Single)()
         Public LauncherEnabled As Boolean
         Public LauncherOrigin As PointF
         Public LauncherAngle As Single
@@ -734,9 +743,27 @@ Public Class formPhysicsEditor
         Private resizingObstacle As Boolean
         Private selectedSwitch As Integer = -1
         Private resizingSwitch As Boolean
+        Private rotatingSwitch As Boolean
+        Private switchRotationDragOffset As Single
+        Private draggingLauncherAngle As Boolean
+        Private draggingLauncherOrigin As Boolean
+        Private launcherOriginDragOffset As PointF
 
         Public Event SelectionChanged As EventHandler
         Public Event BoundaryStructureChanged As EventHandler
+        Public Event LauncherOriginChanged As EventHandler
+        Public Event LauncherAngleChanged As EventHandler
+
+        Public Sub SetBallPreviewLocation(ByVal attached As Boolean, ByVal point As PointF)
+            For Each item As SceneItem In Scene
+                If Not item.IsBall Then Continue For
+                Dim original As RectangleF = item.InitialBounds
+                item.Bounds = If(attached,
+                                 New RectangleF(point.X - original.Width / 2.0F, point.Y - original.Height / 2.0F,
+                                                original.Width, original.Height),
+                                 original)
+            Next
+        End Sub
 
         Public Sub New()
             DoubleBuffered = True
@@ -840,6 +867,7 @@ Public Class formPhysicsEditor
             Dim height As Single = Math.Max(40.0F, AuthoredSize.Height * 0.1F)
             SwitchZones.Add(New RectangleF((AuthoredSize.Width - width) / 2.0F, (AuthoredSize.Height - height) / 2.0F, width, height))
             SwitchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
+            SwitchAngles.Add(0.0F)
             selectedSwitch = SwitchZones.Count - 1
             selectedObstacle = -1
             selectedIndex = -1
@@ -852,6 +880,7 @@ Public Class formPhysicsEditor
             If selectedSwitch < 0 OrElse selectedSwitch >= SwitchZones.Count Then Return
             SwitchZones.RemoveAt(selectedSwitch)
             SwitchIDs.RemoveAt(selectedSwitch)
+            If selectedSwitch < SwitchAngles.Count Then SwitchAngles.RemoveAt(selectedSwitch)
             selectedSwitch = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -870,14 +899,6 @@ Public Class formPhysicsEditor
             If merged Then RaiseEvent BoundaryStructureChanged(Me, EventArgs.Empty)
             Return merged
         End Function
-
-        Public Sub SetSelectedPoint(ByVal point As PointF)
-            If IsActiveBoundaryLocked Then Return
-            Dim points As List(Of PointF) = ActivePoints()
-            If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return
-            points(selectedIndex) = ClampPoint(point)
-            Invalidate()
-        End Sub
 
         Public Sub DeleteSelectedPoint()
             If IsActiveBoundaryLocked Then Return
@@ -979,6 +1000,12 @@ Public Class formPhysicsEditor
             Next
             For switchIndex As Integer = 0 To SwitchZones.Count - 1
                 Dim zone As RectangleF = SwitchZones(switchIndex)
+                Dim angle As Single = SwitchAngle(switchIndex)
+                Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
+                Dim switchState As GraphicsState = e.Graphics.Save()
+                e.Graphics.TranslateTransform(center.X, center.Y)
+                e.Graphics.RotateTransform(angle)
+                e.Graphics.TranslateTransform(-center.X, -center.Y)
                 Using fill As New SolidBrush(Color.FromArgb(45, 0, 255, 90)),
                       outline As New Pen(If(switchIndex = selectedSwitch, Color.Yellow, Color.Lime), 3.0F / scale),
                       labelFont As New Font(Font.FontFamily, Math.Max(8.0F, 12.0F / scale), FontStyle.Bold)
@@ -986,22 +1013,41 @@ Public Class formPhysicsEditor
                     e.Graphics.DrawRectangle(outline, zone.X, zone.Y, zone.Width, zone.Height)
                     e.Graphics.DrawString("SW " & SwitchIDs(switchIndex).ToString(), labelFont, Brushes.White, zone.X + 3.0F / scale, zone.Y + 3.0F / scale)
                 End Using
+                e.Graphics.Restore(switchState)
                 If switchIndex = selectedSwitch Then
                     Dim handleSize As Single = 12.0F / scale
-                    Dim handle As New RectangleF(zone.Right - handleSize, zone.Bottom - handleSize, handleSize, handleSize)
+                    Dim resizePoint As PointF = RotateAround(New PointF(zone.Right, zone.Bottom), center, angle)
+                    Dim handle As New RectangleF(resizePoint.X - handleSize / 2.0F, resizePoint.Y - handleSize / 2.0F, handleSize, handleSize)
                     e.Graphics.FillRectangle(Brushes.Yellow, handle)
                     e.Graphics.DrawRectangle(Pens.Black, Rectangle.Round(handle))
+                    Dim topCenter As PointF = RotateAround(New PointF(center.X, zone.Top), center, angle)
+                    Dim rotationPoint As PointF = SwitchRotationHandlePoint(zone, angle, scale)
+                    Using handleLine As New Pen(Color.DeepSkyBlue, 2.0F / scale)
+                        e.Graphics.DrawLine(handleLine, topCenter, rotationPoint)
+                    End Using
+                    Dim rotationRadius As Single = 7.0F / scale
+                    e.Graphics.FillEllipse(Brushes.DeepSkyBlue, rotationPoint.X - rotationRadius, rotationPoint.Y - rotationRadius,
+                                           rotationRadius * 2.0F, rotationRadius * 2.0F)
+                    Using handleOutline As New Pen(Color.White, 1.5F / scale)
+                        e.Graphics.DrawEllipse(handleOutline, rotationPoint.X - rotationRadius, rotationPoint.Y - rotationRadius,
+                                               rotationRadius * 2.0F, rotationRadius * 2.0F)
+                    End Using
                 End If
             Next
             If LauncherEnabled Then
                 Dim radians As Double = LauncherAngle * Math.PI / 180.0R
-                Dim length As Single = Math.Max(35.0F, Math.Min(220.0F, LauncherStrength * 0.16F))
-                Dim tip As New PointF(LauncherOrigin.X + CSng(Math.Cos(radians)) * length, LauncherOrigin.Y + CSng(Math.Sin(radians)) * length)
-                Using launchPen As New Pen(Color.DeepSkyBlue, 4.0F / scale)
-                    launchPen.CustomEndCap = New AdjustableArrowCap(7.0F / scale, 8.0F / scale)
-                    e.Graphics.DrawLine(launchPen, LauncherOrigin, tip)
+                Dim directionX As Single = CSng(Math.Cos(radians)), directionY As Single = CSng(Math.Sin(radians))
+                Dim tip As PointF = LauncherArrowTip(scale)
+                Dim headBase As New PointF(tip.X - directionX * 9.0F / scale, tip.Y - directionY * 9.0F / scale)
+                Using launchPen As New Pen(Color.DeepSkyBlue, 2.0F / scale),
+                      headBrush As New SolidBrush(Color.DeepSkyBlue)
+                    e.Graphics.DrawLine(launchPen, LauncherOrigin, headBase)
+                    e.Graphics.FillPolygon(headBrush, New PointF() {
+                        tip,
+                        New PointF(headBase.X - directionY * 4.0F / scale, headBase.Y + directionX * 4.0F / scale),
+                        New PointF(headBase.X + directionY * 4.0F / scale, headBase.Y - directionX * 4.0F / scale)})
                 End Using
-                Dim launchRadius As Single = 8.0F / scale
+                Dim launchRadius As Single = 4.0F / scale
                 e.Graphics.FillEllipse(Brushes.DeepSkyBlue, LauncherOrigin.X - launchRadius, LauncherOrigin.Y - launchRadius, launchRadius * 2.0F, launchRadius * 2.0F)
                 e.Graphics.DrawString("LAUNCH", Font, Brushes.White, LauncherOrigin.X + 10.0F / scale, LauncherOrigin.Y + 4.0F / scale)
                 Using capturePen As New Pen(Color.FromArgb(210, 80, 255, 160), 2.0F / scale)
@@ -1028,14 +1074,52 @@ Public Class formPhysicsEditor
             MyBase.OnMouseDown(e)
             Focus()
             Dim authored As PointF = ClientToAuthored(e.Location)
+            If e.Button = MouseButtons.Left AndAlso LauncherEnabled AndAlso HitLauncherOrigin(authored) Then
+                draggingLauncherOrigin = True
+                launcherOriginDragOffset = New PointF(LauncherOrigin.X - authored.X, LauncherOrigin.Y - authored.Y)
+                Capture = True
+                Cursor = Cursors.SizeAll
+                Return
+            End If
+            If e.Button = MouseButtons.Left AndAlso LauncherEnabled AndAlso HitLauncherArrow(authored) Then
+                draggingLauncherAngle = True
+                Capture = True
+                Cursor = Cursors.Hand
+                Return
+            End If
+            If e.Button = MouseButtons.Left AndAlso selectedSwitch >= 0 AndAlso selectedSwitch < SwitchZones.Count Then
+                Dim selectedZone As RectangleF = SwitchZones(selectedSwitch)
+                Dim selectedAngle As Single = SwitchAngle(selectedSwitch)
+                If HitSwitchRotationHandle(authored, selectedZone, selectedAngle) Then
+                    Dim center As New PointF(selectedZone.Left + selectedZone.Width / 2.0F,
+                                             selectedZone.Top + selectedZone.Height / 2.0F)
+                    rotatingSwitch = True
+                    resizingSwitch = False
+                    dragging = True
+                    switchRotationDragOffset = NormalizeSwitchAngle(selectedAngle - PointerSwitchAngle(authored, center))
+                    Capture = True
+                    Cursor = Cursors.Hand
+                    Return
+                End If
+                If HitSwitchHandle(authored, selectedZone, selectedAngle) Then
+                    rotatingSwitch = False
+                    resizingSwitch = True
+                    dragging = True
+                    Capture = True
+                    Cursor = Cursors.SizeNWSE
+                    Return
+                End If
+            End If
             Dim switchHit As Integer = HitSwitchZone(authored)
             If e.Button = MouseButtons.Left AndAlso switchHit >= 0 Then
                 selectedSwitch = switchHit
                 selectedObstacle = -1
                 selectedIndex = -1
                 selectedSegment = -1
-                resizingSwitch = HitSwitchHandle(authored, SwitchZones(switchHit))
+                rotatingSwitch = False
+                resizingSwitch = HitSwitchHandle(authored, SwitchZones(switchHit), SwitchAngle(switchHit))
                 dragging = True
+                Capture = True
                 Invalidate()
                 RaiseEvent SelectionChanged(Me, EventArgs.Empty)
                 Return
@@ -1101,16 +1185,53 @@ Public Class formPhysicsEditor
 
         Protected Overrides Sub OnMouseMove(ByVal e As MouseEventArgs)
             MyBase.OnMouseMove(e)
+            If draggingLauncherOrigin Then
+                Dim point As PointF = ClientToAuthored(e.Location)
+                LauncherOrigin = ClampPoint(New PointF(point.X + launcherOriginDragOffset.X,
+                                                        point.Y + launcherOriginDragOffset.Y))
+                RaiseEvent LauncherOriginChanged(Me, EventArgs.Empty)
+                Invalidate()
+                Return
+            End If
+            If draggingLauncherAngle Then
+                Dim point As PointF = ClientToAuthored(e.Location)
+                If Math.Abs(point.X - LauncherOrigin.X) + Math.Abs(point.Y - LauncherOrigin.Y) > 0.001F Then
+                    LauncherAngle = CSng(Math.Atan2(point.Y - LauncherOrigin.Y, point.X - LauncherOrigin.X) * 180.0R / Math.PI)
+                    RaiseEvent LauncherAngleChanged(Me, EventArgs.Empty)
+                    Invalidate()
+                End If
+                Return
+            End If
             Dim points As List(Of PointF) = ActivePoints()
             If dragging AndAlso selectedSwitch >= 0 AndAlso selectedSwitch < SwitchZones.Count Then
                 Dim zone As RectangleF = SwitchZones(selectedSwitch)
-                Dim authored As PointF = ClampPoint(ClientToAuthored(e.Location))
-                If resizingSwitch Then
-                    SwitchZones(selectedSwitch) = New RectangleF(zone.X, zone.Y, Math.Max(12.0F, authored.X - zone.X), Math.Max(12.0F, authored.Y - zone.Y))
+                Dim authored As PointF = ClientToAuthored(e.Location)
+                Dim angle As Single = SwitchAngle(selectedSwitch)
+                Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
+                If rotatingSwitch Then
+                    SwitchAngles(selectedSwitch) = NormalizeSwitchAngle(PointerSwitchAngle(authored, center) + switchRotationDragOffset)
+                ElseIf resizingSwitch Then
+                    authored = ClampPoint(authored)
+                    Dim radians As Double = angle * Math.PI / 180.0R
+                    Dim axisX As New PointF(CSng(Math.Cos(radians)), CSng(Math.Sin(radians)))
+                    Dim axisY As New PointF(-axisX.Y, axisX.X)
+                    Dim fixedCorner As PointF = RotateAround(New PointF(zone.Left, zone.Top), center, angle)
+                    Dim deltaX As Single = authored.X - fixedCorner.X
+                    Dim deltaY As Single = authored.Y - fixedCorner.Y
+                    Dim width As Single = Math.Max(12.0F, deltaX * axisX.X + deltaY * axisX.Y)
+                    Dim height As Single = Math.Max(12.0F, deltaX * axisY.X + deltaY * axisY.Y)
+                    Dim resizedCenter As New PointF(fixedCorner.X + axisX.X * width / 2.0F + axisY.X * height / 2.0F,
+                                                    fixedCorner.Y + axisX.Y * width / 2.0F + axisY.Y * height / 2.0F)
+                    SwitchZones(selectedSwitch) = New RectangleF(resizedCenter.X - width / 2.0F, resizedCenter.Y - height / 2.0F,
+                                                                  width, height)
                 Else
-                    Dim x As Single = Math.Max(0.0F, Math.Min(AuthoredSize.Width - zone.Width, authored.X - zone.Width / 2.0F))
-                    Dim y As Single = Math.Max(0.0F, Math.Min(AuthoredSize.Height - zone.Height, authored.Y - zone.Height / 2.0F))
-                    SwitchZones(selectedSwitch) = New RectangleF(x, y, zone.Width, zone.Height)
+                    Dim radians As Double = angle * Math.PI / 180.0R
+                    Dim halfWidth As Single = zone.Width / 2.0F, halfHeight As Single = zone.Height / 2.0F
+                    Dim extentX As Single = CSng(Math.Abs(Math.Cos(radians)) * halfWidth + Math.Abs(Math.Sin(radians)) * halfHeight)
+                    Dim extentY As Single = CSng(Math.Abs(Math.Sin(radians)) * halfWidth + Math.Abs(Math.Cos(radians)) * halfHeight)
+                    Dim centerX As Single = Math.Max(extentX, Math.Min(AuthoredSize.Width - extentX, authored.X))
+                    Dim centerY As Single = Math.Max(extentY, Math.Min(AuthoredSize.Height - extentY, authored.Y))
+                    SwitchZones(selectedSwitch) = New RectangleF(centerX - halfWidth, centerY - halfHeight, zone.Width, zone.Height)
                 End If
                 Invalidate()
                 Return
@@ -1138,9 +1259,18 @@ Public Class formPhysicsEditor
         End Sub
 
         Protected Overrides Sub OnMouseUp(ByVal e As MouseEventArgs)
+            If draggingLauncherAngle OrElse draggingLauncherOrigin Then
+                draggingLauncherAngle = False
+                draggingLauncherOrigin = False
+                Capture = False
+                Cursor = Cursors.Default
+            End If
             dragging = False
             resizingObstacle = False
             resizingSwitch = False
+            rotatingSwitch = False
+            Capture = False
+            Cursor = Cursors.Default
             MyBase.OnMouseUp(e)
         End Sub
 
@@ -1157,13 +1287,61 @@ Public Class formPhysicsEditor
 
         Private Function HitSwitchZone(ByVal point As PointF) As Integer
             For index As Integer = SwitchZones.Count - 1 To 0 Step -1
-                If SwitchZones(index).Contains(point) Then Return index
+                If PointInRotatedSwitch(point, SwitchZones(index), SwitchAngle(index)) Then Return index
             Next
             Return -1
         End Function
 
-        Private Function HitSwitchHandle(ByVal point As PointF, ByVal zone As RectangleF) As Boolean
-            Return Math.Abs(point.X - zone.Right) <= 15.0F AndAlso Math.Abs(point.Y - zone.Bottom) <= 15.0F
+        Private Function HitSwitchHandle(ByVal point As PointF, ByVal zone As RectangleF, ByVal angle As Single) As Boolean
+            Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
+            Dim handle As PointF = RotateAround(New PointF(zone.Right, zone.Bottom), center, angle)
+            Dim scale As Single = Math.Max(0.01F, ImageView().Width / AuthoredSize.Width)
+            Dim tolerance As Single = 15.0F / scale
+            Return Math.Abs(point.X - handle.X) <= tolerance AndAlso Math.Abs(point.Y - handle.Y) <= tolerance
+        End Function
+
+        Private Function HitSwitchRotationHandle(ByVal point As PointF, ByVal zone As RectangleF, ByVal angle As Single) As Boolean
+            Dim scale As Single = Math.Max(0.01F, ImageView().Width / AuthoredSize.Width)
+            Dim handle As PointF = SwitchRotationHandlePoint(zone, angle, scale)
+            Dim radius As Single = 12.0F / scale
+            Dim dx As Single = point.X - handle.X, dy As Single = point.Y - handle.Y
+            Return dx * dx + dy * dy <= radius * radius
+        End Function
+
+        Private Function SwitchRotationHandlePoint(ByVal zone As RectangleF, ByVal angle As Single, ByVal scale As Single) As PointF
+            Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
+            Return RotateAround(New PointF(center.X, zone.Top - 28.0F / Math.Max(0.01F, scale)), center, angle)
+        End Function
+
+        Private Function SwitchAngle(ByVal index As Integer) As Single
+            Return If(index >= 0 AndAlso index < SwitchAngles.Count, SwitchAngles(index), 0.0F)
+        End Function
+
+        Private Shared Function PointInRotatedSwitch(ByVal point As PointF, ByVal zone As RectangleF, ByVal angle As Single) As Boolean
+            If Math.Abs(angle) < 0.001F Then Return zone.Contains(point.X, point.Y)
+            Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
+            Dim local As PointF = RotateAround(point, center, -angle)
+            Return zone.Contains(local.X, local.Y)
+        End Function
+
+        Private Shared Function RotateAround(ByVal point As PointF, ByVal center As PointF, ByVal angle As Single) As PointF
+            If Math.Abs(angle) < 0.001F Then Return point
+            Dim radians As Double = angle * Math.PI / 180.0R
+            Dim cosine As Double = Math.Cos(radians), sine As Double = Math.Sin(radians)
+            Dim x As Double = point.X - center.X, y As Double = point.Y - center.Y
+            Return New PointF(CSng(center.X + x * cosine - y * sine),
+                              CSng(center.Y + x * sine + y * cosine))
+        End Function
+
+        Private Shared Function PointerSwitchAngle(ByVal point As PointF, ByVal center As PointF) As Single
+            Return CSng(Math.Atan2(point.Y - center.Y, point.X - center.X) * 180.0R / Math.PI + 90.0R)
+        End Function
+
+        Private Shared Function NormalizeSwitchAngle(ByVal angle As Single) As Single
+            Dim normalized As Single = angle Mod 360.0F
+            If normalized > 180.0F Then normalized -= 360.0F
+            If normalized <= -180.0F Then normalized += 360.0F
+            Return normalized
         End Function
 
         Private Function HitObstacleHandle(ByVal point As PointF, ByVal obstacle As RectangleF) As Boolean
@@ -1185,6 +1363,36 @@ Public Class formPhysicsEditor
             Dim width As Single = AuthoredSize.Width * scale
             Dim height As Single = AuthoredSize.Height * scale
             Return New RectangleF((ClientSize.Width - width) / 2.0F, (ClientSize.Height - height) / 2.0F, width, height)
+        End Function
+
+        Private Function LauncherArrowTip(ByVal scale As Single) As PointF
+            Dim radians As Double = LauncherAngle * Math.PI / 180.0R
+            Dim length As Single = 40.0F / Math.Max(0.01F, scale)
+            Return New PointF(LauncherOrigin.X + CSng(Math.Cos(radians)) * length,
+                              LauncherOrigin.Y + CSng(Math.Sin(radians)) * length)
+        End Function
+
+        Private Function HitLauncherArrow(ByVal point As PointF) As Boolean
+            If AuthoredSize.Width <= 0 Then Return False
+            Dim scale As Single = ImageView().Width / AuthoredSize.Width
+            Dim tip As PointF = LauncherArrowTip(scale)
+            Dim dx As Single = tip.X - LauncherOrigin.X, dy As Single = tip.Y - LauncherOrigin.Y
+            Dim lengthSquared As Single = dx * dx + dy * dy
+            If lengthSquared <= 0.001F Then Return False
+            Dim fraction As Single = Math.Max(0.0F, Math.Min(1.0F,
+                ((point.X - LauncherOrigin.X) * dx + (point.Y - LauncherOrigin.Y) * dy) / lengthSquared))
+            Dim differenceX As Single = point.X - (LauncherOrigin.X + fraction * dx)
+            Dim differenceY As Single = point.Y - (LauncherOrigin.Y + fraction * dy)
+            Dim tolerance As Single = 10.0F / Math.Max(0.01F, scale)
+            Return differenceX * differenceX + differenceY * differenceY <= tolerance * tolerance
+        End Function
+
+        Private Function HitLauncherOrigin(ByVal point As PointF) As Boolean
+            If AuthoredSize.Width <= 0 Then Return False
+            Dim scale As Single = ImageView().Width / AuthoredSize.Width
+            Dim radius As Single = 8.0F / Math.Max(0.01F, scale)
+            Dim dx As Single = point.X - LauncherOrigin.X, dy As Single = point.Y - LauncherOrigin.Y
+            Return dx * dx + dy * dy <= radius * radius
         End Function
 
         Private Function ClientToAuthored(ByVal point As Point) As PointF

@@ -23,6 +23,8 @@ Public Class Server
 
     Private process As Process = Nothing
     Private switchPulsePipeName As String = String.Empty
+    Private ReadOnly testerSwitchKnown(100) As Boolean
+    Private ReadOnly testerSwitchState(100) As Boolean
 
     Private tableHandle As Integer = 0
     Private tableCount As Integer = 0
@@ -224,6 +226,16 @@ Public Class Server
                     End If
                 End If
 
+                If B2SSettings.IsROMControlled AndAlso VPinMAME IsNot Nothing AndAlso
+                   (B2SData.TesterSwitchesEnabled OrElse B2SData.UsedRomSwitchIDs.Count > 0) Then
+                    For switchID As Integer = 1 To 100
+                        UpdateTesterSwitchState(switchID, CBool(VPinMAME.Switch(switchID)))
+                    Next
+                End If
+                If formBackglass IsNot Nothing AndAlso Not B2SData.IsBackglassStartedAsEXE Then
+                    formBackglass.FlushTesterSwitchOffs()
+                End If
+
                 ' maybe the table is reseted so reset some stuff
                 If tableReset Then
                     tableCount = 0
@@ -247,6 +259,23 @@ Public Class Server
             Throw ex
         End Try
 
+    End Sub
+
+    Private Sub UpdateTesterSwitchState(ByVal switchID As Integer, ByVal state As Boolean)
+        If switchID < 1 OrElse switchID > 100 Then Return
+        If Not B2SData.TesterSwitchesEnabled AndAlso B2SData.UsedRomSwitchIDs.Count = 0 Then Return
+        If Not testerSwitchKnown(switchID) AndAlso Not state Then
+            testerSwitchKnown(switchID) = True
+            Return
+        End If
+        If testerSwitchKnown(switchID) AndAlso testerSwitchState(switchID) = state Then Return
+        testerSwitchKnown(switchID) = True
+        testerSwitchState(switchID) = state
+        If B2SData.IsBackglassStartedAsEXE Then
+            B2SData.SendTesterSwitchState(switchID, state)
+        ElseIf formBackglass IsNot Nothing Then
+            formBackglass.SetTesterSwitchState(switchID, state)
+        End If
     End Sub
 
 #End Region
@@ -1527,6 +1556,7 @@ Public Class Server
         End Get
         Set(ByVal value As Boolean)
             VPinMAME.Switch(number) = value
+            If IsNumeric(number) Then UpdateTesterSwitchState(Convert.ToInt32(number), value)
             If B2SSettings.ArePluginsOn AndAlso B2SSettings.PluginHost.Plugins.Count > 0 Then
                 If IsNumeric(number) Then
                     B2SSettings.PluginHost.DataReceive(Convert.ToChar("W"), Convert.ToInt32(number), If(value, 1, 0))
@@ -3032,6 +3062,9 @@ Public Class Server
         If Not isBackglassKilled Then
 
             isBackglassKilled = True
+
+            Array.Clear(testerSwitchKnown, 0, testerSwitchKnown.Length)
+            Array.Clear(testerSwitchState, 0, testerSwitchState.Length)
 
             B2SData.IsBackglassVisible = False
 

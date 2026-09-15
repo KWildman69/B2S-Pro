@@ -80,6 +80,20 @@ Public Class B2SPictureBox
     Public Property ZOrder() As Integer = 0
 
     Public Property IsImageSnippit() As Boolean = False
+    Public Property PreservePhysicsArtworkAspect() As Boolean = False
+    Public ReadOnly Property VisualArtworkBounds As RectangleF
+        Get
+            Dim bounds As RectangleF = Me.RectangleF
+            If Not PreservePhysicsArtworkAspect OrElse bounds.IsEmpty OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return bounds
+            Dim scale As Single = Math.Min(bounds.Width / Me.Width, bounds.Height / Me.Height)
+            Dim width As Single = Me.Width * scale, height As Single = Me.Height * scale
+            Dim anchorX As Single = If(PivotRotation, RotationPivotX, 0.5F)
+            Dim anchorY As Single = If(PivotRotation, RotationPivotY, 0.5F)
+            Return New RectangleF(bounds.Left + bounds.Width * anchorX - width * anchorX,
+                                  bounds.Top + bounds.Height * anchorY - height * anchorY,
+                                  width, height)
+        End Get
+    End Property
     Public Property SnippitRotationStopBehaviour() As eSnippitRotationStopBehaviour = eSnippitRotationStopBehaviour.SpinOff
     Public Property RotationAngle() As Single = 0.0F
     Public Property RotationDirection() As eSnippitRotationDirection = eSnippitRotationDirection.Clockwise
@@ -93,8 +107,22 @@ Public Class B2SPictureBox
     Public Property PivotDownAngle() As Single = 0.0F
     Public Property PivotUpAngle() As Single = -30.0F
     Public Property PivotMoveDuration() As Integer = 80
+    Public Property PivotAutomaticOscillation() As Boolean = False
+    Private pivotAutomaticActive As Boolean = False
 
     Public Sub SetPivotTriggerState(ByVal enabled As Boolean)
+        If Me.Parent IsNot Nothing AndAlso Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
+            Me.Parent.BeginInvoke(New MethodInvoker(Sub() SetPivotTriggerState(enabled)))
+            Return
+        End If
+        If PivotAutomaticOscillation Then
+            If enabled = pivotAutomaticActive Then Return
+            pivotAutomaticActive = enabled
+            ' Automatic pivots swing between the configured limits, but rest in
+            ' the unrotated pose shown on the designer's main canvas.
+            SetPivotRotationTarget(If(enabled, PivotUpAngle, 0.0F), PivotMoveDuration)
+            Return
+        End If
         SetPivotRotationTarget(If(enabled, PivotUpAngle, PivotDownAngle), PivotMoveDuration)
     End Sub
     Public Property RotationPivotX() As Single = 0.5F
@@ -246,7 +274,11 @@ Public Class B2SPictureBox
     End Property
 
     Public Sub PrepareNativeRotationFrames()
-        If Not NativeRotation OrElse PictureBoxType = ePictureBoxType.MechRotatingImage OrElse nativeRotationSource Is Nothing Then Return
+        ' Automatic pivots rotate the original image continuously around a saved
+        ' hinge; the discrete native frame cache would replace it with a
+        ' pre-scaled frame and reset its live rotation angle.
+        If Not NativeRotation OrElse PivotAutomaticOscillation OrElse
+           PictureBoxType = ePictureBoxType.MechRotatingImage OrElse nativeRotationSource Is Nothing Then Return
         Dim targetWidth As Integer = Math.Max(1, CInt(Math.Round(Me.RectangleF.Width)))
         Dim targetHeight As Integer = Math.Max(1, CInt(Math.Round(Me.RectangleF.Height)))
         If targetWidth <= 1 AndAlso Me.Width > 1 Then targetWidth = Me.Width
@@ -516,6 +548,15 @@ Public Class B2SPictureBox
             Dim topDistance As Single = Me.RectangleF.Height * RotationPivotY
             Dim bottomDistance As Single = Me.RectangleF.Height * (1.0F - RotationPivotY)
             Dim radius As Single = CSng(Math.Sqrt(Math.Max(leftDistance, rightDistance) ^ 2 + Math.Max(topDistance, bottomDistance) ^ 2)) + 8.0F
+            If PivotAutomaticOscillation AndAlso Me.Width > 0 AndAlso Me.Height > 0 Then
+                ' This pivot rotates in authored coordinates before the unequal
+                ' screen scales. Its repaint radius must contain that larger arc.
+                Dim authoredX As Single = Me.Width * Math.Max(RotationPivotX, 1.0F - RotationPivotX)
+                Dim authoredY As Single = Me.Height * Math.Max(RotationPivotY, 1.0F - RotationPivotY)
+                Dim largestScale As Single = Math.Max(Me.RectangleF.Width / Me.Width,
+                                                      Me.RectangleF.Height / Me.Height)
+                radius = CSng(Math.Sqrt(authoredX * authoredX + authoredY * authoredY)) * largestScale + 8.0F
+            End If
             Dim redrawBounds As Rectangle = Rectangle.Ceiling(New RectangleF(pivotX - radius, pivotY - radius, radius * 2.0F, radius * 2.0F))
             Me.Parent.Invalidate(redrawBounds)
             ' Pivot strokes are brief and expose transparent pixels outside the
@@ -638,7 +679,7 @@ Public Class B2SPictureBox
         pivotRotationClock.Reset()
         pivotRotationStartAngle = RotationAngle
         pivotRotationTargetAngle = targetAngle
-        pivotRotationDuration = Math.Max(10, Math.Min(1000, duration))
+        pivotRotationDuration = Math.Max(10, Math.Min(If(PivotAutomaticOscillation, 5000, 1000), duration))
         PivotRotation = True
         NativeRotation = True
         Me.Visible = True
@@ -656,6 +697,10 @@ Public Class B2SPictureBox
             pivotRotationTimer.Stop()
             pivotRotationClock.Reset()
             RotationAngle = pivotRotationTargetAngle
+            If PivotAutomaticOscillation AndAlso pivotAutomaticActive Then
+                SetPivotRotationTarget(If(Math.Abs(pivotRotationTargetAngle - PivotUpAngle) < 0.01F,
+                                          PivotDownAngle, PivotUpAngle), PivotMoveDuration)
+            End If
         End If
     End Sub
 

@@ -2,6 +2,31 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## 1.0.1 / Server 3.0.0 update — 2026-09-15
+
+- Simplified Pivot Animation to direct marker dragging with zoom and pan; removed redundant point-setting and fit commands. Hinges can be authored outside the snippet box, and pivots can also start automatically with the backglass.
+- Consolidated bumpers and rotatable switch zones into Boundaries. Switch zones retain their authored angle and trigger when crossed from any direction.
+- Simplified launcher placement to the draggable origin and direction marker while preserving exact saved coordinates and pivot-following ball behavior.
+- Restored per-light blinker controls to the modern Light editor without restoring Global Mask controls. Lights and flashers retain the shared artwork-pixel renderer and multi-object mask workflow.
+- Preserved the exact authored Layers order across save, reload, recovery, and legacy fallback; removed the unused Layers search field and its saved hidden filter state.
+- Removed unreachable old project/backup menu paths and uncompiled duplicate source. B2S Pro continues to save only `.B2SPro` while retaining `.directB2S` import compatibility.
+- Completed successful ID Tester restores now remove their temporary tester and verified backup instead of accumulating completed test files.
+
+## 1.0.1 / Server 3.0.0 update — 2026-09-14
+
+- Added opt-in automatic pivot animation. A held solenoid, lamp, or B2S ID swings the snippet between its selected limits; release returns it to the unrotated editor pose.
+- Added an automatic swing preview and the option to attach a physics-ball launcher to a pivot snippet. The ball follows the pivot while held, launches at its current angle, and returns to the ball position authored in the editor.
+- Showed the full backglass in the pivot editor with the snippet at its authored position and size. Added zoom and pan; the artwork stays fixed while either point marker is placed or dragged for fine alignment.
+- Preserved the original trigger, pivot, and launcher paths for backglasses that do not enable these options.
+
+## 1.0.1 / Server 3.0.0 update — 2026-09-13
+
+- Changed automatic recovery to write a clearly marked `_AutoRecovery_` `.B2SPro` copy in the project folder instead of overwriting the saved backglass. Normal Save or Don't Save removes the temporary copy; a newer matching copy can be restored after an interruption.
+- Added the toolbar ID Tester. It launches the exact-name VPX table, displays only active lamp, solenoid, GI, and switch IDs, shows the running backglass name, and restores the table's original backglass after testing.
+- Added switch-ID display support to B2S Pro Server while retaining legacy lamp, solenoid, and GI behavior.
+- Added an illustrated ID Tester help section and a separate legacy `.directb2s` tester for older server installations (lamp, solenoid, and GI IDs only).
+- Corrected installer completion so progress stops and the window closes after acknowledgment; simplified the existing-installation confirmation while retaining the update and backup choice.
+
 ## 1.0.1 — 2026-09-06
 
 First public B2S Pro baseline.

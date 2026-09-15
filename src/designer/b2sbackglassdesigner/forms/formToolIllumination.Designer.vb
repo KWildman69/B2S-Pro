@@ -174,7 +174,7 @@ Partial Class formToolIllumination
         resources.ApplyResources(Me.cmbROMIDType, "cmbROMIDType")
         Me.cmbROMIDType.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
         Me.cmbROMIDType.FormattingEnabled = True
-        Me.cmbROMIDType.Items.AddRange(New Object() {Global.B2SBackglassDesigner.My.Resources.Resources.TXT_B2SIDType, resources.GetString("cmbROMIDType.Items"), resources.GetString("cmbROMIDType.Items1"), resources.GetString("cmbROMIDType.Items2")})
+        Me.cmbROMIDType.Items.AddRange(New Object() {Global.B2SBackglassDesigner.My.Resources.Resources.TXT_B2SIDType, resources.GetString("cmbROMIDType.Items"), resources.GetString("cmbROMIDType.Items1"), resources.GetString("cmbROMIDType.Items2"), "Mechanical (reserved)", "Switch"})
         Me.cmbROMIDType.Name = "cmbROMIDType"
         '
         'lblRomIDType

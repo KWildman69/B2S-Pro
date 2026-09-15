@@ -3,10 +3,38 @@ B2S Backglass Server - Complete Custom Change Record
 
 Base version: B2S Backglass Server 2.1.6
 Custom build version: 3.0.0
-Updated through: September 6, 2026
+Updated through: September 15, 2026
 
 This document records the custom SERVER-SIDE changes in this build. Major
 designer-only package changes are included in clearly labeled sections.
+
+
+September 15, 2026 - Final editor and runtime integration
+-----------------------------------------------------------
+
+- Added direct, draggable pivot, snippet-reference, launcher, and switch-zone
+  handles. Pivot hinges can sit outside the snippet bounds, and switch zones
+  retain their authored rotation while triggering from every crossing direction.
+- Added automatic pivot startup and completed pivot-following launcher scaling so
+  the launcher artwork and ball retain their editor placement on stretched screens.
+- Gave regular lights the same artwork-pixel renderer and mask workflow as
+  flashers, restored per-light blink timing, and retained multi-object masks.
+- Persisted exact Layers ordering across save, reload, recovery, and legacy
+  fallback. Simplified the Pivot, Boundaries, Launcher, Light, and Layers menus.
+- Removed unreachable old project/backup commands and uncompiled duplicate source.
+  B2S Pro writes only `.B2SPro`; legacy `.directB2S` import remains supported.
+
+
+September 13-14, 2026 - Recovery, ID Tester, and automatic pivots
+-----------------------------------------------------------------
+
+- Moved automatic recovery to a clearly marked `.B2SPro` copy in each project's
+  AutoRecovery folder instead of overwriting the saved backglass.
+- Added the embedded ID Tester, exact-name VPX launch, active lamp/solenoid/GI/
+  switch display, table-name display, protected table-backglass replacement, and
+  automatic restoration when the test closes.
+- Added held-trigger pivot oscillation, automatic preview, pivot-following ball
+  launchers, and the unrotated editor pose as the runtime rest position.
 
 
 September 6, 2026 - B2S Pro 1.0.1 release consolidation

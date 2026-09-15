@@ -25,6 +25,7 @@ Public Class B2SBaseBox
         Solenoid = 2
         GIString = 3
         Mech = 4
+        Switch = 5
     End Enum
     Public Property RomIDType() As eRomIDType = eType.NotDefined
     Public Property RomIDValue() As Integer = 0

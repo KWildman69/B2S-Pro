@@ -733,12 +733,9 @@ Namespace Illumination
 
             ' maybe create the scaled and illuminated image part
             If imageBackground IsNot Nothing Then
-                ' Normal lamps—including text lamps and Quick Selection lamps—must
-                ' keep the established synthetic lamp/text renderer.  Only an actual
-                ' flasher uses the artwork-pixel renderer.  Routing ordinary lamps
-                ' through the flasher renderer discards sharp text RGB and replaces a
-                ' masked lamp with illuminated artwork, which can disappear completely
-                ' over transparent canvas areas.
+                ' Imported legacy lamps keep the established synthetic renderer.
+                ' B2S Pro artwork lights and flashers share the artwork-pixel renderer
+                ' while retaining their independent lamp/flasher trigger identities.
                 Dim isFlasherLighting As Boolean = artworkPixelLighting OrElse
                                                        illumode = Illumination.eIlluMode.Flasher
                 Dim useArtworkPixels As Boolean = isFlasherLighting
@@ -748,9 +745,11 @@ Namespace Illumination
                 ' 2.8.8: reuse the expensive anti-aliased glow/text template while
                 ' dragging. The returned bitmap is a clone and remains safe to clip
                 ' and merge into the current background crop.
+                Dim templateMode As Illumination.eIlluMode =
+                    If(useArtworkPixels, Illumination.eIlluMode.Flasher, illumode)
                 Dim image As Bitmap =
                     GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment,
-                                    illumode, glowSoftness, glowFalloff,
+                                    templateMode, glowSoftness, glowFalloff,
                                     glowIntensity, lightDiffusion)
 
                 If Math.Abs(lightRotationAngle) >= 0.001F Then

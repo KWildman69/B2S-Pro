@@ -156,7 +156,7 @@ function New-PivotDemoBulb {
 
 if ($PivotOnly) {
     $pivotBulb = New-PivotDemoBulb
-    $pivot = New-AppTypeInstance -TypeName 'formPivotAnimation' -Arguments @($pivotBulb)
+    $pivot = New-AppTypeInstance -TypeName 'formPivotAnimation' -Arguments @($pivotBulb, $null)
     Prepare-Form $pivot
     Save-FormImage $pivot 'pivot-animation.png'
     Close-Form $pivot
@@ -211,7 +211,7 @@ try {
     Close-Form $trough
 
     $pivotBulb = New-PivotDemoBulb
-    $pivot = New-AppTypeInstance -TypeName 'formPivotAnimation' -Arguments @($pivotBulb)
+    $pivot = New-AppTypeInstance -TypeName 'formPivotAnimation' -Arguments @($pivotBulb, $background)
     Prepare-Form $pivot
     Save-FormImage $pivot 'pivot-animation.png'
     Close-Form $pivot
@@ -247,7 +247,7 @@ try {
     $tabs.SelectedIndex = 1
     [Windows.Forms.Application]::DoEvents()
     Save-FormImage $physics 'physics-boundaries.png'
-    $tabs.SelectedIndex = 3
+    $tabs.SelectedIndex = 2
     [Windows.Forms.Application]::DoEvents()
     Save-FormImage $physics 'physics-launcher.png'
     Close-Form $physics
@@ -421,7 +421,7 @@ try {
         $saveGraphics.DrawString('Save, create, and test', $titleFont, [Drawing.Brushes]::White, 30, 24)
 
         $boxes = @(
-            @{ X = 35;  Color = [Drawing.Color]::FromArgb(30, 83, 135); Title = '1. Save Project'; Detail = 'Keep the editable .b2s source' },
+            @{ X = 35;  Color = [Drawing.Color]::FromArgb(30, 83, 135); Title = '1. Save Project'; Detail = 'Keep the editable .B2SPro file' },
             @{ X = 385; Color = [Drawing.Color]::FromArgb(22, 111, 139); Title = '2. Create DirectB2S'; Detail = 'Build the finished backglass file' },
             @{ X = 735; Color = [Drawing.Color]::FromArgb(47, 119, 56); Title = '3. Preview & Test'; Detail = 'Verify the exported behavior' }
         )

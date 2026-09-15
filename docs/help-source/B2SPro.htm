@@ -19,7 +19,7 @@
         <a href="#picture-animation">Picture animation</a> · <a href="#rotation">Rotation</a> ·
         <a href="#motion">Motion paths</a> · <a href="#trough">Troughs</a> · <a href="#pivot">Pivots</a> ·
         <a href="#physics">Physics</a> · <a href="#lamps">Lamps</a> · <a href="#flashers">Flashers</a> ·
-        <a href="#reel-3d">3D EM reels</a> · <a href="#scores">Scores</a> · <a href="#compatibility">Saving</a>
+        <a href="#reel-3d">3D EM reels</a> · <a href="#scores">Scores</a> · <a href="#id-tester">ID Tester</a> · <a href="#compatibility">Saving</a>
       </div>
     </section>
 
@@ -40,12 +40,23 @@
       </figure>
     </section>
 
+    <section class="topic" id="id-tester">
+      <span class="tag">LIVE VPX TEST</span><span class="tag">FIND IDs</span>
+      <h2>Find backglass IDs with ID Tester</h2>
+      <p>Open a backglass in the Designer and click <strong>ID Tester</strong> on the main toolbar. After a one-time choice of VPX executable and Tables folder, B2S Pro launches the VPX table whose filename exactly matches the open backglass. The display shows the running table name and lights only the IDs currently active: lamps, solenoids, GI, and switches.</p>
+      <p>The tester temporarily takes the matching <code>.B2SPro</code> slot in the Tables folder. B2S Pro backs up any existing backglass first and restores it when the test ends; the working project is not replaced. Closing the test backglass also closes the VPX run started by ID Tester.</p>
+      <figure>
+        <img src="pro-images/current-ui/id-tester.png" alt="B2S Pro ID Tester showing active lamp, solenoid, GI, and switch numbers">
+        <figcaption>Only triggered IDs appear in color. The table name below the flippers changes to match the backglass being tested.</figcaption>
+      </figure>
+    </section>
+
     <section class="topic" id="layers">
       <span class="tag">LAYERS</span><span class="tag">MULTI-SELECT</span>
       <h2>Control everything from Layers</h2>
       <p>Open <strong>Window &gt; Layers</strong>. The list runs from front to back and includes lamps, flashers, snippets, picture-animation groups, scores, and the canvas.</p>
       <div class="grid">
-        <div class="card"><h3>Find and select</h3><p>Filter by object type or name. Use <strong>Ctrl</strong> and <strong>Shift</strong> to select multiple objects.</p></div>
+        <div class="card"><h3>Find and select</h3><p>Filter by object type. Use <strong>Ctrl</strong> and <strong>Shift</strong> to select multiple objects.</p></div>
         <div class="card"><h3>Order</h3><p>Drag rows to reorder them, use <strong>To Front</strong>/<strong>To Back</strong>, or assign a specific Z layer.</p></div>
         <div class="card"><h3>Protect work</h3><p><strong>Show / Hide</strong> controls visibility. <strong>Lock / Unlock</strong> prevents accidental movement.</p></div>
         <div class="card"><h3>Edit in place</h3><p>Right-click and open <strong>Edit Selected Object</strong> for masks, paths, pivots, physics, or trough creation.</p></div>
@@ -175,30 +186,31 @@
       <ol class="steps">
         <li>Select the movable snippet and open <strong>Edit Pivot Animation</strong> from Layers.</li>
         <li>Enable pivot animation and set the down angle, up angle, and movement time.</li>
-        <li>Click <strong>Set Hinge Point</strong>, then click the stationary pivot on the artwork.</li>
-        <li>Click <strong>Set Flipper Tip</strong>, then click the moving end.</li>
-        <li>Preview both positions and choose Named Commands, ROM Solenoid, ROM Lamp, or B2S ID as the trigger.</li>
+        <li>Drag the cyan hinge marker and green snippet-reference marker directly to their exact positions. The hinge may be placed outside the snippet box.</li>
+        <li>The full backglass shows the snippet at its saved position and size. Zoom with the mouse wheel or the Zoom buttons, and right-drag to pan without moving the artwork.</li>
+        <li>Preview both positions and choose Named Commands, ROM Solenoid, ROM Lamp, B2S ID, or Automatic when backglass starts.</li>
         <li>Save the pivot animation.</li>
       </ol>
       <p>The artwork rotates around the authored hinge, not the center of its box. Its paint area expands only as needed, preventing clipping, distortion, stale pixels, or a bounding box that grows after repeated edits.</p>
+      <p>For a continuously swinging snippet, check <strong>Automatic Pivot Point</strong>, set two different angle limits and the swing time, then choose a ROM solenoid, ROM lamp, or B2S ID with an on/off state. <strong>Automatic Preview</strong> shows the repeating motion. In the running backglass, the snippet starts at the unrotated position shown on the main editor canvas, swings while the trigger is held, and returns there when released. Choose <strong>Automatic when backglass starts</strong> when the swing should begin as soon as the backglass opens.</p>
       <figure>
-        <img class="shot-medium" src="pro-images/current-ui/pivot-animation.png" alt="Pivot Animation editor with hinge and tip markers">
-        <figcaption>The cyan hinge and green tip define the rotating arm. Preview both positions before choosing the ROM or B2S trigger.</figcaption>
+        <img class="shot-medium" src="pro-images/current-ui/pivot-animation.png" alt="Pivot Animation editor with hinge and snippet-reference markers">
+        <figcaption>The cyan hinge and green snippet-reference marker define the rotating arm. Preview both positions before choosing the ROM or B2S trigger.</figcaption>
       </figure>
     </section>
 
     <section class="topic" id="physics">
       <span class="tag">BALL PHYSICS</span><span class="tag">BOUNDARIES</span><span class="tag">BUMPERS</span><span class="tag">SWITCHES</span><span class="tag">LAUNCHER</span>
       <h2>Add a playable ball to a backglass</h2>
-      <p>Use one transparent ball snippet as the physics ball. Open <strong>Edit Physics Boundaries</strong> from Layers; the editor is divided into Ball, Boundaries, Bumpers &amp; Switches, and Launcher tabs.</p>
+      <p>Use one transparent ball snippet as the physics ball. Open <strong>Edit Physics Boundaries</strong> from Layers; the editor is divided into Ball, Boundaries, and Launcher tabs.</p>
       <table>
         <tr><th>Tab</th><th>What to do</th></tr>
         <tr><td>Ball</td><td>Enable physics, optionally enable rolling, select a pivot-enabled flipper snippet, then set gravity, flipper strength, and boundary bounce.</td></tr>
-        <tr><td>Boundaries</td><td>Create named polylines by clicking points. Drag for exact placement, splice a point into a line, rename or delete a boundary, and lock completed boundaries against accidental edits.</td></tr>
-        <tr><td>Bumpers &amp; Switches</td><td>Add circular bumpers and rectangular switch zones. Give each switch zone the ROM switch ID to pulse when the ball enters it.</td></tr>
-        <tr><td>Launcher</td><td>Enable the launcher; choose Solenoid or B2S ID; set the ID, X/Y origin, direction angle, strength, random angle, random strength, and capture radius.</td></tr>
+        <tr><td>Boundaries</td><td>Create named polylines by clicking points. Drag for exact placement, splice a point into a line, rename or delete a boundary, and lock completed boundaries against accidental edits. The same tab contains circular bumpers and rotatable rectangular switch zones; each switch zone pulses its assigned ROM switch ID when the ball crosses it from any direction.</td></tr>
+        <tr><td>Launcher</td><td>Enable the launcher; choose Solenoid or B2S ID; set the ID, direction angle, strength, random angle, random strength, and capture radius. Drag the launcher marker directly on the backglass to set its exact origin, and optionally attach it to the selected pivot snippet.</td></tr>
       </table>
       <p>A launcher only fires a captured ball. Repeated pulses are ignored while the ball is in flight. When it returns to the capture area, the launcher holds and rearms it for the next cycle.</p>
+      <p>To make a ball travel with an automatic pivot, select the pivot snippet on the Ball tab, then check <strong>Attach launcher to selected pivot snippet</strong> on the Launcher tab. The ball position authored on the main editor canvas is its firing point. It starts there, follows the swinging snippet, and fires from its current position and angle. Existing launchers without this option keep their original fixed-point behavior.</p>
       <figure>
         <img src="pro-images/current-ui/physics-boundaries.png" alt="Physics Boundary Editor with a locked boundary">
         <figcaption>Create, name, splice, and lock independent boundaries directly over the artwork. A locked boundary cannot be changed accidentally.</figcaption>
@@ -315,6 +327,7 @@
       <span class="tag">B2SPRO</span><span class="tag">LEGACY DIRECTB2S</span><span class="tag">SERVER 3.0.0</span>
       <h2>Save, export, and compatibility</h2>
       <p><strong>Save</strong> writes one complete, editable, runtime-ready <code>.B2SPro</code> file in the matching project folder. <strong>Save As</strong> writes the same format to the path you choose. Test the saved file with Backglass Preview &amp; Test; long save operations show their progress beside the Step 2 command on the main toolbar.</p>
+      <p>While you edit, B2S Pro creates a separate recovery copy every two minutes. Its filename includes <code>_AutoRecovery_</code> and it stays in the project's <code>AutoRecovery</code> folder, so it cannot be mistaken for the finished backglass. Auto-recovery never overwrites the main <code>.B2SPro</code> file. Save keeps your edits; choosing <strong>Don't Save</strong> when closing discards the recovery copy. After an unexpected interruption, opening the backglass offers to restore a newer matching copy.</p>
       <div class="compat"><strong>Legacy rule:</strong> Import backglass file shows both <code>.B2SPro</code> and <code>.directB2S</code>. A legacy <code>.directB2S</code> file is read without being renamed or overwritten; saving the edited backglass creates a new <code>.B2SPro</code> file. Older files continue through the established illumination, animation, reel, and rotating-image paths.</div>
       <p>Runtime-only features such as native one-image rotation, rolling balls, motion paths, trough sequences, pivots, physics, switches, and launchers require the matching B2S Pro Server build. Picture/GIF animations use the established animation format.</p>
       <p>Backglass and DMD objects keep separate numeric ID scopes. DMD snippets, illumination, rotation settings, and matching IDs survive <code>.B2SPro</code> save and reopen round trips.</p>

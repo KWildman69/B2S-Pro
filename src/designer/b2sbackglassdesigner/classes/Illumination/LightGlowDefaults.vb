@@ -34,28 +34,29 @@ Namespace Illumination
 
                     key.SetValue("Saved", 1, RegistryValueKind.DWord)
                     key.SetValue("Spread", Clamp(spread, 0, 1000), RegistryValueKind.DWord)
-                    key.SetValue("Feather", Clamp(feather, 0, 200), RegistryValueKind.DWord)
-                    key.SetValue("Contrast", Clamp(contrast, 0, 100), RegistryValueKind.DWord)
-                    key.SetValue("Intensity", Clamp(intensity, 0, If(IsFlasherProfile(bulb), 1600, 800)), RegistryValueKind.DWord)
+                    key.SetValue("Feather", Clamp(feather, 0, 300), RegistryValueKind.DWord)
+                    key.SetValue("Contrast", Clamp(contrast, 0, 300), RegistryValueKind.DWord)
+                    key.SetValue("Intensity", Clamp(intensity, 0, 1600), RegistryValueKind.DWord)
                     key.SetValue("LightDiffusion", Clamp(lightDiffusion, 0, 300), RegistryValueKind.DWord)
                     key.SetValue("LightTemperature", Clamp(lightTemperature, 2000, 6500), RegistryValueKind.DWord)
 
-                    If IsFlasherProfile(bulb) Then
-                        key.SetValue("TransmissionContrast", Clamp(bulb.ArtworkContrast, 0, 300), RegistryValueKind.DWord)
-                        key.SetValue("FlasherStyle", Clamp(bulb.FlasherStyle, 0, 2), RegistryValueKind.DWord)
-                        key.SetValue("FlasherSaturation", Clamp(bulb.FlasherSaturation, 0, 200), RegistryValueKind.DWord)
-                        key.SetValue("FlasherHighlightProtection", Clamp(bulb.FlasherHighlightProtection, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("FlasherDarkAreaLift", Clamp(bulb.FlasherDarkAreaLift, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("FlasherHotspotX", Clamp(bulb.FlasherHotspotX, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("FlasherHotspotY", Clamp(bulb.FlasherHotspotY, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("MaskRadius", Clamp(bulb.MaskRadius, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("MaskSmartRadius", If(bulb.MaskSmartRadius, 1, 0), RegistryValueKind.DWord)
-                        key.SetValue("MaskSmooth", Clamp(bulb.MaskSmooth, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("MaskFeather", Clamp(bulb.MaskFeather, 0, 250), RegistryValueKind.DWord)
-                        key.SetValue("MaskContrast", Clamp(bulb.MaskContrast, 0, 100), RegistryValueKind.DWord)
-                        key.SetValue("MaskShiftEdge", Clamp(bulb.MaskShiftEdge, -100, 100), RegistryValueKind.DWord)
-                        key.SetValue("ArtworkAdjustmentPasses", Clamp(bulb.ArtworkAdjustmentPasses, 1, 12), RegistryValueKind.DWord)
-                    End If
+                    ' Light and Flasher keep separate profiles, but both profiles
+                    ' now contain the same artwork-rendering adjustments.
+                    key.SetValue("TransmissionContrast", Clamp(bulb.ArtworkContrast, 0, 300), RegistryValueKind.DWord)
+                    key.SetValue("FlasherStyle", Clamp(bulb.FlasherStyle, 0, 2), RegistryValueKind.DWord)
+                    key.SetValue("FlasherSaturation", Clamp(bulb.FlasherSaturation, 0, 200), RegistryValueKind.DWord)
+                    key.SetValue("FlasherHighlightProtection", Clamp(bulb.FlasherHighlightProtection, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("FlasherDarkAreaLift", Clamp(bulb.FlasherDarkAreaLift, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("FlasherHotspotX", Clamp(bulb.FlasherHotspotX, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("FlasherHotspotY", Clamp(bulb.FlasherHotspotY, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("MaskRadius", Clamp(bulb.MaskRadius, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("MaskSmartRadius", If(bulb.MaskSmartRadius, 1, 0), RegistryValueKind.DWord)
+                    key.SetValue("MaskSmooth", Clamp(bulb.MaskSmooth, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("MaskFeather", Clamp(bulb.MaskFeather, 0, 250), RegistryValueKind.DWord)
+                    key.SetValue("MaskContrast", Clamp(bulb.MaskContrast, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("MaskShiftEdge", Clamp(bulb.MaskShiftEdge, -100, 100), RegistryValueKind.DWord)
+                    key.SetValue("FlasherRadialSpikes", Clamp(bulb.FlasherRadialSpikes, 0, 100), RegistryValueKind.DWord)
+                    key.SetValue("ArtworkAdjustmentPasses", Clamp(bulb.ArtworkAdjustmentPasses, 1, 12), RegistryValueKind.DWord)
                 End Using
             Catch
                 ' Remembered profiles are optional and must never interrupt editing.
@@ -74,29 +75,27 @@ Namespace Illumination
             If ReadInteger(path, "Saved", 0) <> 1 Then Return
 
             bulb.GlowSpread = Clamp(ReadInteger(path, "Spread", bulb.GlowSpread), 0, 1000)
-            bulb.GlowSoftness = Clamp(ReadInteger(path, "Feather", bulb.GlowSoftness), 0, 200)
-            bulb.GlowFalloff = Clamp(ReadInteger(path, "Contrast", bulb.GlowFalloff), 0, 100)
-            bulb.GlowIntensity = Clamp(ReadInteger(path, "Intensity", bulb.GlowIntensity),
-                                       0, If(IsFlasherProfile(bulb), 1600, 800))
+            bulb.GlowSoftness = Clamp(ReadInteger(path, "Feather", bulb.GlowSoftness), 0, 300)
+            bulb.GlowFalloff = Clamp(ReadInteger(path, "Contrast", bulb.GlowFalloff), 0, 300)
+            bulb.GlowIntensity = Clamp(ReadInteger(path, "Intensity", bulb.GlowIntensity), 0, 1600)
             bulb.LightDiffusion = Clamp(ReadInteger(path, "LightDiffusion", bulb.LightDiffusion), 0, 300)
             bulb.LightTemperature = Clamp(ReadInteger(path, "LightTemperature", If(bulb.LightTemperature <= 0, 4000, bulb.LightTemperature)), 2000, 6500)
 
-            If IsFlasherProfile(bulb) Then
-                bulb.ArtworkContrast = Clamp(ReadInteger(path, "TransmissionContrast", If(bulb.ArtworkContrast <= 0, 140, bulb.ArtworkContrast)), 0, 300)
-                bulb.FlasherStyle = Clamp(ReadInteger(path, "FlasherStyle", bulb.FlasherStyle), 0, 2)
-                bulb.FlasherSaturation = Clamp(ReadInteger(path, "FlasherSaturation", bulb.FlasherSaturation), 0, 200)
-                bulb.FlasherHighlightProtection = Clamp(ReadInteger(path, "FlasherHighlightProtection", bulb.FlasherHighlightProtection), 0, 100)
-                bulb.FlasherDarkAreaLift = Clamp(ReadInteger(path, "FlasherDarkAreaLift", bulb.FlasherDarkAreaLift), 0, 100)
-                bulb.FlasherHotspotX = Clamp(ReadInteger(path, "FlasherHotspotX", bulb.FlasherHotspotX), 0, 100)
-                bulb.FlasherHotspotY = Clamp(ReadInteger(path, "FlasherHotspotY", bulb.FlasherHotspotY), 0, 100)
-                bulb.MaskRadius = Clamp(ReadInteger(path, "MaskRadius", bulb.MaskRadius), 0, 100)
-                bulb.MaskSmartRadius = (ReadInteger(path, "MaskSmartRadius", If(bulb.MaskSmartRadius, 1, 0)) = 1)
-                bulb.MaskSmooth = Clamp(ReadInteger(path, "MaskSmooth", bulb.MaskSmooth), 0, 100)
-                bulb.MaskFeather = Clamp(ReadInteger(path, "MaskFeather", bulb.MaskFeather), 0, 250)
-                bulb.MaskContrast = Clamp(ReadInteger(path, "MaskContrast", bulb.MaskContrast), 0, 100)
-                bulb.MaskShiftEdge = Clamp(ReadInteger(path, "MaskShiftEdge", bulb.MaskShiftEdge), -100, 100)
-                bulb.ArtworkAdjustmentPasses = Clamp(ReadInteger(path, "ArtworkAdjustmentPasses", Math.Max(1, bulb.ArtworkAdjustmentPasses)), 1, 12)
-            End If
+            bulb.ArtworkContrast = Clamp(ReadInteger(path, "TransmissionContrast", If(bulb.ArtworkContrast <= 0, 140, bulb.ArtworkContrast)), 0, 300)
+            bulb.FlasherStyle = Clamp(ReadInteger(path, "FlasherStyle", bulb.FlasherStyle), 0, 2)
+            bulb.FlasherSaturation = Clamp(ReadInteger(path, "FlasherSaturation", bulb.FlasherSaturation), 0, 200)
+            bulb.FlasherHighlightProtection = Clamp(ReadInteger(path, "FlasherHighlightProtection", bulb.FlasherHighlightProtection), 0, 100)
+            bulb.FlasherDarkAreaLift = Clamp(ReadInteger(path, "FlasherDarkAreaLift", bulb.FlasherDarkAreaLift), 0, 100)
+            bulb.FlasherHotspotX = Clamp(ReadInteger(path, "FlasherHotspotX", bulb.FlasherHotspotX), 0, 100)
+            bulb.FlasherHotspotY = Clamp(ReadInteger(path, "FlasherHotspotY", bulb.FlasherHotspotY), 0, 100)
+            bulb.MaskRadius = Clamp(ReadInteger(path, "MaskRadius", bulb.MaskRadius), 0, 100)
+            bulb.MaskSmartRadius = (ReadInteger(path, "MaskSmartRadius", If(bulb.MaskSmartRadius, 1, 0)) = 1)
+            bulb.MaskSmooth = Clamp(ReadInteger(path, "MaskSmooth", bulb.MaskSmooth), 0, 100)
+            bulb.MaskFeather = Clamp(ReadInteger(path, "MaskFeather", bulb.MaskFeather), 0, 250)
+            bulb.MaskContrast = Clamp(ReadInteger(path, "MaskContrast", bulb.MaskContrast), 0, 100)
+            bulb.MaskShiftEdge = Clamp(ReadInteger(path, "MaskShiftEdge", bulb.MaskShiftEdge), -100, 100)
+            bulb.FlasherRadialSpikes = Clamp(ReadInteger(path, "FlasherRadialSpikes", bulb.FlasherRadialSpikes), 0, 100)
+            bulb.ArtworkAdjustmentPasses = Clamp(ReadInteger(path, "ArtworkAdjustmentPasses", Math.Max(1, bulb.ArtworkAdjustmentPasses)), 1, 12)
 
             bulb.IsIlluminatedImageDirty = True
         End Sub

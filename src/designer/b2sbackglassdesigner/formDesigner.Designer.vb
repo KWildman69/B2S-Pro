@@ -31,12 +31,10 @@ Partial Class formDesigner
         Me.tsmiOpenRecent = New System.Windows.Forms.ToolStripMenuItem()
         Me.tssOpenRecent = New System.Windows.Forms.ToolStripSeparator()
         Me.tsmiClearThisList = New System.Windows.Forms.ToolStripMenuItem()
-        Me.tsmiOpenBackup = New System.Windows.Forms.ToolStripMenuItem()
         Me.ToolStripSeparator24 = New System.Windows.Forms.ToolStripSeparator()
         Me.tsmiClose = New System.Windows.Forms.ToolStripMenuItem()
         Me.ToolStripSeparator1 = New System.Windows.Forms.ToolStripSeparator()
         Me.tsmiSave = New System.Windows.Forms.ToolStripMenuItem()
-        Me.tsmiSaveBackupAs = New System.Windows.Forms.ToolStripMenuItem()
         Me.tsmiSaveAs = New System.Windows.Forms.ToolStripMenuItem()
         Me.tsmiSaveAll = New System.Windows.Forms.ToolStripMenuItem()
         Me.ToolStripSeparator25 = New System.Windows.Forms.ToolStripSeparator()
@@ -173,7 +171,7 @@ Partial Class formDesigner
         '
         'tsmiFile
         '
-        Me.tsmiFile.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.tsmiNew, Me.tsmiOpen, Me.tsmiOpenRecent, Me.tsmiOpenBackup, Me.ToolStripSeparator24, Me.tsmiClose, Me.ToolStripSeparator1, Me.tsmiSave, Me.tsmiSaveBackupAs, Me.tsmiSaveAs, Me.tsmiSaveAll, Me.ToolStripSeparator25, Me.tsmiSettings, Me.ToolStripSeparator2, Me.tsmiImportBackglassFile, Me.ToolStripSeparator21, Me.tsmiExit})
+        Me.tsmiFile.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.tsmiNew, Me.tsmiOpen, Me.tsmiOpenRecent, Me.ToolStripSeparator24, Me.tsmiClose, Me.ToolStripSeparator1, Me.tsmiSave, Me.tsmiSaveAs, Me.tsmiSaveAll, Me.ToolStripSeparator25, Me.tsmiSettings, Me.ToolStripSeparator2, Me.tsmiImportBackglassFile, Me.ToolStripSeparator21, Me.tsmiExit})
         Me.tsmiFile.Name = "tsmiFile"
         resources.ApplyResources(Me.tsmiFile, "tsmiFile")
         '
@@ -206,11 +204,6 @@ Partial Class formDesigner
         resources.ApplyResources(Me.tsmiClearThisList, "tsmiClearThisList")
         Me.tsmiClearThisList.Name = "tsmiClearThisList"
         '
-        'tsmiOpenBackup
-        '
-        Me.tsmiOpenBackup.Name = "tsmiOpenBackup"
-        resources.ApplyResources(Me.tsmiOpenBackup, "tsmiOpenBackup")
-        '
         'ToolStripSeparator24
         '
         Me.ToolStripSeparator24.Name = "ToolStripSeparator24"
@@ -232,11 +225,6 @@ Partial Class formDesigner
         Me.tsmiSave.Image = Global.B2SBackglassDesigner.My.Resources.Resources.save
         Me.tsmiSave.Name = "tsmiSave"
         resources.ApplyResources(Me.tsmiSave, "tsmiSave")
-        '
-        'tsmiSaveBackupAs
-        '
-        Me.tsmiSaveBackupAs.Name = "tsmiSaveBackupAs"
-        resources.ApplyResources(Me.tsmiSaveBackupAs, "tsmiSaveBackupAs")
         '
         'tsmiSaveAs
         '
@@ -1064,8 +1052,6 @@ Partial Class formDesigner
     Friend WithEvents tsmiManageAnimations As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents ToolStripSeparator23 As System.Windows.Forms.ToolStripSeparator
     Friend WithEvents ToolStripSeparator19 As System.Windows.Forms.ToolStripSeparator
-    Friend WithEvents tsmiSaveBackupAs As System.Windows.Forms.ToolStripMenuItem
-    Friend WithEvents tsmiOpenBackup As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents ToolStripSeparator24 As System.Windows.Forms.ToolStripSeparator
     Friend WithEvents tsbHelp As System.Windows.Forms.ToolStripButton
     Friend WithEvents tsmiBackglassPreviewAndTest As System.Windows.Forms.ToolStripMenuItem

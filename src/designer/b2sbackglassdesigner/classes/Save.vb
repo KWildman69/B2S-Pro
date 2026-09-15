@@ -9,23 +9,9 @@ Public Class Save
 
     Private Const SaveVersion As String = "1.27"
 
-    Public Function LoadData(ByRef _backglassData As Backglass.Data, ByVal filename As String) As Boolean
-
-        If Not IO.File.Exists(filename) Then
-            Return False
-        End If
-
-        Dim XML As Xml.XmlDocument = New Xml.XmlDocument
-        Try
-            XML.Load(filename)
-        Catch ex As Exception
-            B2SMessageBox.Show(String.Format(My.Resources.MSG_LoadError, ex.Message), AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-
-        Return LoadData(_backglassData, XML)
-    End Function
-
-    Public Function LoadData(ByRef _backglassData As Backglass.Data, ByVal XML As Xml.XmlDocument) As Boolean
+    Public Function LoadData(ByRef _backglassData As Backglass.Data,
+                             ByVal XML As Xml.XmlDocument,
+                             Optional ByVal defaultArtworkPixelLighting As Boolean = False) As Boolean
         If XML IsNot Nothing AndAlso XML.SelectSingleNode("B2SBackglassData") IsNot Nothing Then
             Dim version As String = XML.SelectSingleNode("B2SBackglassData").Attributes("Version").InnerText
             Dim topnode As Xml.XmlElement = XML.SelectNodes("B2SBackglassData")(0)
@@ -34,12 +20,16 @@ Public Class Save
             _backglassData.Animations = myanimations
             Dim myscores As ReelAndLED.ScoreCollection = New ReelAndLED.ScoreCollection()
             _backglassData.Scores = myscores
+            Dim myscorestackorders As New Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer)()
             Dim mydmdscores As ReelAndLED.ScoreCollection = New ReelAndLED.ScoreCollection()
             _backglassData.DMDScores = mydmdscores
+            Dim mydmdscorestackorders As New Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer)()
             Dim mybulbs As Illumination.BulbCollection = New Illumination.BulbCollection()
             _backglassData.Bulbs = mybulbs
+            Dim mybulbstackorders As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
             Dim mydmdbulbs As Illumination.BulbCollection = New Illumination.BulbCollection()
             _backglassData.DMDBulbs = mydmdbulbs
+            Dim mydmdbulbstackorders As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
             Dim myimages As Images.ImageCollection = New Images.ImageCollection()
             _backglassData.Images = myimages
             With _backglassData
@@ -263,11 +253,15 @@ Public Class Save
                         If innerNode.Attributes("Parent") IsNot Nothing AndAlso innerNode.Attributes("Parent").InnerText.Equals("DMD") Then
                             score.ParentForm = eParentForm.DMD
                             mydmdscores.Add(score.ID, score)
+                            AddSavedDesignerStackOrder(innerNode, score, mydmdscorestackorders)
                         Else
                             score.ParentForm = eParentForm.Backglass
                             myscores.Add(score.ID, score)
+                            AddSavedDesignerStackOrder(innerNode, score, myscorestackorders)
                         End If
                     Next
+                    RestoreDesignerStackOrder(myscores, myscorestackorders)
+                    RestoreDesignerStackOrder(mydmdscores, mydmdscorestackorders)
                 End If
 
                 ' get all illumination info
@@ -316,6 +310,10 @@ Public Class Save
                         End If
                         bulb.Intensity = CInt(innerNode.Attributes("Intensity").InnerText)
                         bulb.LightPurpose = CType(ReadIntAttribute(innerNode, "LightPurpose", CInt(Illumination.eLightPurpose.Lamp), 0, 1), Illumination.eLightPurpose)
+                        bulb.ArtworkPixelLighting = (ReadIntAttribute(innerNode,
+                                                                     "ArtworkPixelLighting",
+                                                                     If(defaultArtworkPixelLighting, 1, 0),
+                                                                     0, 1) = 1)
                         bulb.BlinkEnabled = (ReadIntAttribute(innerNode, "BlinkEnabled", 0, 0, 1) = 1)
                         bulb.BlinkInterval = ReadIntAttribute(innerNode, "BlinkInterval", 500, 1, 60000)
                         ' Read enhanced/flasher values defensively.  Older projects and interrupted
@@ -326,16 +324,13 @@ Public Class Save
                         If innerNode.Attributes("InFrontOfGlobalMask") IsNot Nothing Then bulb.InFrontOfGlobalMask = (innerNode.Attributes("InFrontOfGlobalMask").InnerText = "1")
                         If innerNode.Attributes("GlobalMaskLayerExplicit") IsNot Nothing Then bulb.GlobalMaskLayerExplicit = (innerNode.Attributes("GlobalMaskLayerExplicit").InnerText = "1")
                         bulb.LightBehindCanvas = (ReadIntAttribute(innerNode, "LightBehindCanvas", 0, 0, 1) = 1)
-                        bulb.GlowSoftness = ReadIntAttribute(innerNode, "GlowSoftness", bulb.GlowSoftness, 0, 100)
-                        bulb.GlowFalloff = ReadIntAttribute(innerNode, "GlowFalloff", bulb.GlowFalloff, 0, 100)
+                        bulb.GlowSoftness = ReadIntAttribute(innerNode, "GlowSoftness", bulb.GlowSoftness, 0, 300)
+                        bulb.GlowFalloff = ReadIntAttribute(innerNode, "GlowFalloff", bulb.GlowFalloff, 0, 300)
                         bulb.LightDiffusion = ReadIntAttribute(innerNode, "LightDiffusion", bulb.LightDiffusion, 0, 300)
                         bulb.LightTemperature = ReadIntAttribute(innerNode, "LightTemperature", 4000, 2000, 6500)
                         bulb.LightRotationAngle = ReadSingleAttribute(innerNode, "LightRotationAngle", 0.0F, -360.0F, 360.0F)
                         bulb.IlluMode = CType(ReadIntAttribute(innerNode, "IlluMode", CInt(bulb.IlluMode), 0, 1), Illumination.eIlluMode)
-                        Dim maximumGlowIntensity As Integer =
-                            If(bulb.IlluMode = Illumination.eIlluMode.Flasher OrElse
-                               bulb.LightPurpose = Illumination.eLightPurpose.Flasher,
-                               1600, 800)
+                        Dim maximumGlowIntensity As Integer = If(bulb.UsesArtworkPixelRenderer, 1600, 800)
                         bulb.GlowIntensity = ReadIntAttribute(innerNode, "GlowIntensity", bulb.GlowIntensity, 0, maximumGlowIntensity)
                         bulb.GlowBlendMode = ReadIntAttribute(innerNode, "GlowBlendMode", bulb.GlowBlendMode, 0, 2)
                         bulb.GlowPreviewQuality = ReadIntAttribute(innerNode, "GlowPreviewQuality", bulb.GlowPreviewQuality, 0, 1)
@@ -425,14 +420,15 @@ Public Class Save
                         bulb.SnippitInfo.MotionPathRemoveLampID = ReadIntAttribute(innerNode, "MotionPathRemoveLampID", 0, 0, 255)
                         bulb.SnippitInfo.MotionPathRemoveB2SID = ReadIntAttribute(innerNode, "MotionPathRemoveB2SID", 0, 0, 250)
                         bulb.SnippitInfo.PivotAnimationEnabled = (ReadIntAttribute(innerNode, "PivotAnimation", 0, 0, 1) = 1)
-                        bulb.SnippitInfo.PivotX = ReadSingleAttribute(innerNode, "PivotX", 0.5F, 0.0F, 1.0F)
-                        bulb.SnippitInfo.PivotY = ReadSingleAttribute(innerNode, "PivotY", 0.5F, 0.0F, 1.0F)
+                        bulb.SnippitInfo.PivotX = ReadSingleAttribute(innerNode, "PivotX", 0.5F, -100000.0F, 100000.0F)
+                        bulb.SnippitInfo.PivotY = ReadSingleAttribute(innerNode, "PivotY", 0.5F, -100000.0F, 100000.0F)
                         bulb.SnippitInfo.PivotTipX = ReadSingleAttribute(innerNode, "PivotTipX", 0.9F, 0.0F, 1.0F)
                         bulb.SnippitInfo.PivotTipY = ReadSingleAttribute(innerNode, "PivotTipY", 0.5F, 0.0F, 1.0F)
                         bulb.SnippitInfo.PivotDownAngle = ReadSingleAttribute(innerNode, "PivotDownAngle", 0.0F, -360.0F, 360.0F)
                         bulb.SnippitInfo.PivotUpAngle = ReadSingleAttribute(innerNode, "PivotUpAngle", -30.0F, -360.0F, 360.0F)
                         bulb.SnippitInfo.PivotDuration = ReadIntAttribute(innerNode, "PivotDuration", 80, 10, 5000)
-                        bulb.SnippitInfo.PivotTriggerType = ReadIntAttribute(innerNode, "PivotTriggerType", 1, 0, 3)
+                        bulb.SnippitInfo.PivotAutomaticOscillation = ReadIntAttribute(innerNode, "PivotAutomaticOscillation", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PivotTriggerType = ReadIntAttribute(innerNode, "PivotTriggerType", 1, 0, 4)
                         bulb.SnippitInfo.PivotTriggerID = ReadIntAttribute(innerNode, "PivotTriggerID", 0, 0, 255)
                         bulb.SnippitInfo.PivotDownTrigger = If(innerNode.Attributes("PivotDownTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotDownTrigger").InnerText.Trim())
                         bulb.SnippitInfo.PivotUpTrigger = If(innerNode.Attributes("PivotUpTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotUpTrigger").InnerText.Trim())
@@ -461,7 +457,15 @@ Public Class Save
                         End If
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
+                        If innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then ParsePhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, bulb.SnippitInfo.PhysicsSwitchAngles)
+                        While bulb.SnippitInfo.PhysicsSwitchAngles.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count
+                            bulb.SnippitInfo.PhysicsSwitchAngles.Add(0.0F)
+                        End While
+                        While bulb.SnippitInfo.PhysicsSwitchAngles.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count
+                            bulb.SnippitInfo.PhysicsSwitchAngles.RemoveAt(bulb.SnippitInfo.PhysicsSwitchAngles.Count - 1)
+                        End While
                         bulb.SnippitInfo.PhysicsLauncherEnabled = ReadIntegerAttribute(innerNode, "PhysicsLauncherEnabled", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PhysicsLauncherFollowPivot = ReadIntegerAttribute(innerNode, "PhysicsLauncherFollowPivot", 0, 0, 1) = 1
                         bulb.SnippitInfo.PhysicsLauncherTriggerType = ReadIntegerAttribute(innerNode, "PhysicsLauncherTriggerType", 1, 1, 3)
                         bulb.SnippitInfo.PhysicsLauncherTriggerID = ReadIntegerAttribute(innerNode, "PhysicsLauncherTriggerID", 0, 0, 255)
                         bulb.SnippitInfo.PhysicsLauncherX = ReadSingleAttribute(innerNode, "PhysicsLauncherX", CSng(bulb.Location.X + bulb.Size.Width / 2.0F), -100000.0F, 100000.0F)
@@ -508,11 +512,15 @@ Public Class Save
                         If innerNode.Attributes("Parent") IsNot Nothing AndAlso innerNode.Attributes("Parent").InnerText.Equals("DMD") Then
                             bulb.ParentForm = eParentForm.DMD
                             mydmdbulbs.Insert(mydmdbulbs.Count, bulb)
+                            AddSavedDesignerStackOrder(innerNode, bulb, mydmdbulbstackorders)
                         Else
                             bulb.ParentForm = eParentForm.Backglass
                             mybulbs.Insert(mybulbs.Count, bulb)
+                            AddSavedDesignerStackOrder(innerNode, bulb, mybulbstackorders)
                         End If
                     Next
+                    RestoreDesignerStackOrder(mybulbs, mybulbstackorders)
+                    RestoreDesignerStackOrder(mydmdbulbs, mydmdbulbstackorders)
                 End If
 
                 ' get standard thumbnail image
@@ -586,46 +594,9 @@ Public Class Save
 
     End Function
     Public Sub SaveData(ByRef _backglassData As Backglass.Data,
-                        Optional ByVal backupname As String = "",
-                        Optional ByRef recent As Recent = Nothing,
-                        Optional ByRef serializedXml As Xml.XmlDocument = Nothing,
-                        Optional ByVal writeProjectFile As Boolean = True)
+                        ByRef serializedXml As Xml.XmlDocument)
 
-        If writeProjectFile Then
-            Throw New NotSupportedException("B2S Pro saves editable projects inside .B2SPro files only. Writing .b2s or .b2b is disabled.")
-        End If
-
-        'Dim path As String = IO.Path.Combine(EXEDir, ProjectDir)
-        If Not writeProjectFile OrElse CheckSaveDir(BackglassProjectsPath) Then
-
-            Dim filename As String = Backglass.currentData.Name & If(Not String.IsNullOrEmpty(backupname), "_" & Secured(backupname) & ".b2b", ".b2s")
-
-            ' create or rename the project directory
-            If writeProjectFile Then
-                If Not String.IsNullOrEmpty(Backglass.currentData.Name) AndAlso Not String.IsNullOrEmpty(Backglass.currentData.LoadedName) AndAlso Not Backglass.currentData.Name.Equals(Backglass.currentData.LoadedName) Then
-                    If IO.Directory.Exists(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName)) Then
-                        FileIO.FileSystem.RenameDirectory(IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.LoadedName), Backglass.currentData.Name)
-                    End If
-                    Dim oldfilename As String = Backglass.currentData.LoadedName & If(Not String.IsNullOrEmpty(backupname), "_" & Secured(backupname) & ".b2b", ".b2s")
-                    If IO.File.Exists(IO.Path.Combine(BackglassProjectsPath, oldfilename)) Then
-                        FileIO.FileSystem.RenameFile(IO.Path.Combine(BackglassProjectsPath, oldfilename), filename)
-                    End If
-                    If recent IsNot Nothing Then
-                        recent.RenameRecentEntry(Backglass.currentData.LoadedName, Backglass.currentData.Name)
-                    End If
-                End If
-                If Not IO.Directory.Exists(ProjectPath) Then
-                    IO.Directory.CreateDirectory(ProjectPath)
-                End If
-                If Not IO.Directory.Exists(ProjectImagesPath) Then
-                    IO.Directory.CreateDirectory(ProjectImagesPath)
-                End If
-
-                ' the current name becomes the loaded name too
-                Backglass.currentData.LoadedName = Backglass.currentData.Name
-            End If
-
-            ' save data
+            ' Serialize the editable project for embedding inside the one .B2SPro file.
             Dim XML As Xml.XmlDocument = New Xml.XmlDocument
             Dim nodeHeader As Xml.XmlElement = XML.CreateElement("B2SBackglassData")
             Dim nodeScores As Xml.XmlElement = XML.CreateElement("Scores")
@@ -635,9 +606,6 @@ Public Class Save
             XML.AppendChild(nodeHeader)
             nodeHeader.SetAttribute("Version", SaveVersion)
             With _backglassData
-                If Not String.IsNullOrEmpty(backupname) Then
-                    AddXMLAttribute(XML, nodeHeader, "BackupName", "Value", backupname)
-                End If
                 AddXMLAttribute(XML, nodeHeader, "ProjectGUID", "Value", .ProjectGUID)
                 AddXMLAttribute(XML, nodeHeader, "ProjectGUID2", "Value", .ProjectGUID2)
                 If Not String.IsNullOrEmpty(.GlobalIlluminationMaskData) Then
@@ -732,6 +700,8 @@ Public Class Save
 
                 ' add score details
                 nodeHeader.AppendChild(nodeScores)
+                Dim scorestackorders As Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer) = BuildDesignerStackOrders(.Scores)
+                Dim dmdscorestackorders As Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer) = BuildDesignerStackOrders(.DMDScores)
                 Dim savescores As Generic.SortedList(Of Integer, ReelAndLED.ScoreInfo) = New Generic.SortedList(Of Integer, ReelAndLED.ScoreInfo)
                 For Each score As ReelAndLED.ScoreInfo In .Scores
                     savescores.Add(score.ID, score)
@@ -763,6 +733,9 @@ Public Class Save
                             nodeScore.SetAttribute("Spacing", .Spacing.ToString())
                             nodeScore.SetAttribute("DisplayState", CInt(.DisplayState).ToString())
                             nodeScore.SetAttribute("ZOrder", .ZOrder.ToString())
+                            Dim designerStackOrder As Integer
+                            Dim stackOrders As Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer) = If(.ParentForm = eParentForm.DMD, dmdscorestackorders, scorestackorders)
+                            If stackOrders.TryGetValue(score.Value, designerStackOrder) Then nodeScore.SetAttribute("DesignerStackOrder", designerStackOrder.ToString())
                             nodeScore.SetAttribute("BehindCanvas", If(.BehindCanvas, "1", "0"))
                             If Math.Abs(.RotationAngle) > 0.001F Then
                                 nodeScore.SetAttribute("RotationAngle", .RotationAngle.ToString(Globalization.CultureInfo.InvariantCulture))
@@ -792,6 +765,8 @@ Public Class Save
 
                 ' add illumination
                 nodeHeader.AppendChild(nodeIllumination)
+                Dim bulbstackorders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = BuildDesignerStackOrders(.Bulbs)
+                Dim dmdbulbstackorders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = BuildDesignerStackOrders(.DMDBulbs)
                 Dim savebulbs As Generic.SortedList(Of Integer, Illumination.BulbInfo) = New Generic.SortedList(Of Integer, Illumination.BulbInfo)
                 For Each bulb As Illumination.BulbInfo In .Bulbs
                     savebulbs.Add(bulb.ID, bulb)
@@ -828,6 +803,7 @@ Public Class Save
                             If .Intensity <= 0 Then .Intensity = 1
                             nodeBulb.SetAttribute("Intensity", .Intensity.ToString())
                             nodeBulb.SetAttribute("LightPurpose", CInt(.LightPurpose).ToString())
+                            nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
                             nodeBulb.SetAttribute("BlinkEnabled", If(.BlinkEnabled, "1", "0"))
                             nodeBulb.SetAttribute("BlinkInterval", Math.Max(1, Math.Min(60000, .BlinkInterval)).ToString())
                             nodeBulb.SetAttribute("GlowSpread", .GlowSpread.ToString())
@@ -871,6 +847,9 @@ Public Class Save
                             End If
                             nodeBulb.SetAttribute("IlluMode", CInt(.IlluMode).ToString())
                             nodeBulb.SetAttribute("ZOrder", .ZOrder.ToString())
+                            Dim designerStackOrder As Integer
+                            Dim stackOrders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = If(.ParentForm = eParentForm.DMD, dmdbulbstackorders, bulbstackorders)
+                            If stackOrders.TryGetValue(bulb.Value, designerStackOrder) Then nodeBulb.SetAttribute("DesignerStackOrder", designerStackOrder.ToString())
                             nodeBulb.SetAttribute("IsImageSnippit", If(.IsImageSnippit, "1", "0"))
                             nodeBulb.SetAttribute("SnippitType", CInt(.SnippitInfo.SnippitType).ToString())
                             nodeBulb.SetAttribute("SnippitBrightness", Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)).ToString())
@@ -884,7 +863,8 @@ Public Class Save
                                 nodeBulb.SetAttribute("PivotDownAngle", .SnippitInfo.PivotDownAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("PivotUpAngle", .SnippitInfo.PivotUpAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("PivotDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotDuration)).ToString())
-                                nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(3, .SnippitInfo.PivotTriggerType)).ToString())
+                                If .SnippitInfo.PivotAutomaticOscillation Then nodeBulb.SetAttribute("PivotAutomaticOscillation", "1")
+                                nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(4, .SnippitInfo.PivotTriggerType)).ToString())
                                 nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())
                                 nodeBulb.SetAttribute("PivotDownTrigger", .SnippitInfo.PivotDownTrigger.Trim())
                                 nodeBulb.SetAttribute("PivotUpTrigger", .SnippitInfo.PivotUpTrigger.Trim())
@@ -903,9 +883,15 @@ Public Class Save
                                         nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
                                     End If
                                     If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
-                                If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
+                                If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then
+                                    nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
+                                    If .SnippitInfo.PhysicsSwitchAngles.Any(Function(angle) Math.Abs(angle) >= 0.001F) Then
+                                        nodeBulb.SetAttribute("PhysicsSwitchAngles", SerializePhysicsSwitchAngles(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchAngles))
+                                    End If
+                                End If
                                 If .SnippitInfo.PhysicsLauncherEnabled Then
                                     nodeBulb.SetAttribute("PhysicsLauncherEnabled", "1")
+                                    If .SnippitInfo.PhysicsLauncherFollowPivot Then nodeBulb.SetAttribute("PhysicsLauncherFollowPivot", "1")
                                     nodeBulb.SetAttribute("PhysicsLauncherTriggerType", .SnippitInfo.PhysicsLauncherTriggerType.ToString())
                                     nodeBulb.SetAttribute("PhysicsLauncherTriggerID", .SnippitInfo.PhysicsLauncherTriggerID.ToString())
                                     nodeBulb.SetAttribute("PhysicsLauncherX", .SnippitInfo.PhysicsLauncherX.ToString("R", Globalization.CultureInfo.InvariantCulture))
@@ -995,19 +981,6 @@ Public Class Save
                 nodeBIMain.SetAttribute("RomIDType", "0")
                 nodeBIMain.SetAttribute("FileName", .ImageFileName)
                 nodeBIMain.SetAttribute("Image", ImageToBase64(.Image))
-                If writeProjectFile AndAlso Not String.IsNullOrEmpty(.ImageFileName) Then
-                    If Not .ImageFileName.StartsWith(".") AndAlso IO.File.Exists(.ImageFileName) Then
-                        Try
-                            IO.File.Copy(.ImageFileName, IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.ImageFileName).Name), True)
-                        Catch
-                        End Try
-                    ElseIf .IsSavedImageDirty OrElse Not IO.File.Exists(IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.ImageFileName).Name)) Then
-                        Try
-                            .Image.Save(IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.ImageFileName).Name))
-                        Catch
-                        End Try
-                    End If
-                End If
                 .IsSavedImageDirty = False
                 ' main DMD image with some data
                 Dim nodeDIMain As Xml.XmlElement = XML.CreateElement("MainImage")
@@ -1015,19 +988,6 @@ Public Class Save
                 If .DMDImage IsNot Nothing Then
                     nodeDIMain.SetAttribute("FileName", .DMDImageFileName)
                     nodeDIMain.SetAttribute("Image", ImageToBase64(.DMDImage))
-                    If writeProjectFile AndAlso Not String.IsNullOrEmpty(.DMDImageFileName) Then
-                        If Not .DMDImageFileName.StartsWith(".") AndAlso IO.File.Exists(.DMDImageFileName) Then
-                            Try
-                                IO.File.Copy(.DMDImageFileName, IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.DMDImageFileName).Name), True)
-                            Catch
-                            End Try
-                        ElseIf .IsSavedDMDImageDirty OrElse Not IO.File.Exists(IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.DMDImageFileName).Name)) Then
-                            Try
-                                .DMDImage.Save(IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.DMDImageFileName).Name))
-                            Catch
-                            End Try
-                        End If
-                    End If
                     .IsSavedDMDImageDirty = False
                 End If
                 ' get thru all images
@@ -1054,9 +1014,6 @@ Public Class Save
                                 End If
                                 nodeImageDetails.SetAttribute("FileName", .Text)
                                 nodeImageDetails.SetAttribute("Image", ImageToBase64(.Image))
-                                If Not .Text.StartsWith(".") AndAlso IO.File.Exists(.Text) Then
-                                    IO.File.Copy(.Text, IO.Path.Combine(ProjectImagesPath, FileIO.FileSystem.GetFileInfo(.Text).Name), True)
-                                End If
                             End With
                         End If
                     ElseIf image.Image IsNot Nothing AndAlso image.Text.Equals(.ImageFileName, StringComparison.CurrentCultureIgnoreCase) AndAlso image.Type = Images.eImageInfoType.BackgroundImage Then
@@ -1068,22 +1025,6 @@ Public Class Save
             End With
 
             serializedXml = XML
-            If writeProjectFile Then
-                ' save data
-                Dim savedFilePath As String = IO.Path.Combine(BackglassProjectsPath, filename)
-                XML.Save(savedFilePath)
-                ' A recovered project enters Recent as its temporary .b2b source.
-                ' Once the user performs a normal save, Recent must point back to
-                ' the canonical .b2s or the next launch reopens stale recovery data.
-                If recent IsNot Nothing AndAlso String.IsNullOrEmpty(backupname) Then
-                    recent.AddToRecentList(_backglassData, savedFilePath)
-                    _backglassData.SourceFilePath = IO.Path.GetFullPath(savedFilePath)
-                End If
-            End If
-
-        End If
-
-        If writeProjectFile Then _backglassData.IsDirty = False
 
     End Sub
 
@@ -1226,6 +1167,73 @@ Public Class Save
                 switchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
             End If
         Next
+    End Sub
+
+    Private Shared Function SerializePhysicsSwitchAngles(ByVal zoneCount As Integer, ByVal angles As IList(Of Single)) As String
+        Dim encoded As New List(Of String)()
+        For index As Integer = 0 To zoneCount - 1
+            Dim angle As Single = If(index < angles.Count, NormalizeSwitchAngle(angles(index)), 0.0F)
+            encoded.Add(angle.ToString("R", Globalization.CultureInfo.InvariantCulture))
+        Next
+        Return String.Join("|", encoded.ToArray())
+    End Function
+
+    Private Shared Sub ParsePhysicsSwitchAngles(ByVal value As String, ByVal angles As IList(Of Single))
+        If String.IsNullOrWhiteSpace(value) Then Return
+        For Each item As String In value.Split("|"c)
+            Dim angle As Single
+            angles.Add(If(Single.TryParse(item, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, angle),
+                          NormalizeSwitchAngle(angle), 0.0F))
+        Next
+    End Sub
+
+    Private Shared Function NormalizeSwitchAngle(ByVal angle As Single) As Single
+        Dim normalized As Single = angle Mod 360.0F
+        If normalized > 180.0F Then normalized -= 360.0F
+        If normalized <= -180.0F Then normalized += 360.0F
+        Return normalized
+    End Function
+
+    Private Shared Function BuildDesignerStackOrders(Of T As Class)(ByVal items As IEnumerable(Of T)) As Generic.Dictionary(Of T, Integer)
+        Dim result As New Generic.Dictionary(Of T, Integer)()
+        If items Is Nothing Then Return result
+
+        Dim index As Integer = 0
+        For Each item As T In items
+            If item IsNot Nothing Then result(item) = index
+            index += 1
+        Next
+        Return result
+    End Function
+
+    Private Shared Sub AddSavedDesignerStackOrder(Of T As Class)(ByVal node As Xml.XmlElement,
+                                                                  ByVal item As T,
+                                                                  ByVal savedOrders As Generic.Dictionary(Of T, Integer))
+        If node Is Nothing OrElse item Is Nothing OrElse savedOrders Is Nothing OrElse
+           node.Attributes("DesignerStackOrder") Is Nothing Then Return
+
+        Dim value As Integer
+        If Integer.TryParse(node.Attributes("DesignerStackOrder").InnerText, value) AndAlso value >= 0 Then
+            savedOrders(item) = value
+        End If
+    End Sub
+
+    Private Shared Sub RestoreDesignerStackOrder(Of T As Class)(ByVal items As Generic.List(Of T),
+                                                                 ByVal savedOrders As Generic.Dictionary(Of T, Integer))
+        If items Is Nothing OrElse items.Count < 2 OrElse savedOrders Is Nothing OrElse
+           savedOrders.Count <> items.Count Then Return
+
+        ' Only a complete, unambiguous saved order is allowed to rearrange a
+        ' collection. A missing, duplicate, or damaged value leaves legacy data
+        ' exactly as it loaded instead of inventing an order.
+        Dim uniqueOrders As New Generic.HashSet(Of Integer)()
+        For Each item As T In items
+            Dim value As Integer
+            If item Is Nothing OrElse Not savedOrders.TryGetValue(item, value) OrElse
+               value < 0 OrElse Not uniqueOrders.Add(value) Then Return
+        Next
+
+        items.Sort(Function(left As T, right As T) savedOrders(left).CompareTo(savedOrders(right)))
     End Sub
 
     Private Shared Function ReadIntAttribute(ByVal node As Xml.XmlElement,

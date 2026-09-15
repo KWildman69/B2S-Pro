@@ -175,6 +175,7 @@ Public Module B2SProMainToolbar
         If key.Contains("autosave") Then Return "AUTO" & vbLf & "SAVE"
         If key.Contains("createdirectb2s") Then Return "STEP 1" & vbLf & "CREATE" & vbLf & "B2SPRO FILE"
         If key.Contains("backglasspreview") Then Return "STEP 2" & vbLf & "BACKGLASS" & vbLf & "PREVIEW & TEST"
+        If key.Contains("idtester") Then Return "ID" & vbLf & "TESTER"
         If key.Contains("undo") Then Return "UNDO"
         If key.Contains("redo") Then Return "REDO"
         If key.Contains("zoomout") Then Return "ZOOM" & vbLf & "OUT"
@@ -239,6 +240,12 @@ Public Module B2SProMainToolbar
                     Using standPen As New Pen(accent, 2.0F)
                         g.DrawLine(standPen, 12, 28, 20, 28)
                         g.DrawLine(standPen, 16, 25, 16, 28)
+                    End Using
+                ElseIf key.Contains("idtester") Then
+                    g.DrawEllipse(glow, 4, 4, 24, 24) : g.DrawEllipse(line, 4, 4, 24, 24)
+                    Using markerFont As New Font("Segoe UI", 9.0F, FontStyle.Bold, GraphicsUnit.Pixel),
+                          markerBrush As New SolidBrush(Color.White)
+                        g.DrawString("ID", markerFont, markerBrush, 9.0F, 10.0F)
                     End Using
                 ElseIf key.Contains("autosave") Then
                     g.DrawEllipse(glow, 5, 5, 22, 22) : g.DrawEllipse(line, 5, 5, 22, 22)

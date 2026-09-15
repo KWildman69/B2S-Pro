@@ -130,7 +130,7 @@
 				</object>
 
 	<ul><li> <object type="text/sitemap">
-				<param name="Name" value="Create a project backup">
+				<param name="Name" value="Automatic recovery copies">
 				<param name="Local" value="Createaprojectbackup.htm">
 				</object>
 
@@ -272,6 +272,10 @@
 	<ul><li> <object type="text/sitemap">
 				<param name="Name" value="Modern workspace and saved layouts">
 				<param name="Local" value="B2SPro.htm#workflow">
+				</object>
+	</li><li> <object type="text/sitemap">
+				<param name="Name" value="ID Tester: find live backglass IDs">
+				<param name="Local" value="B2SPro.htm#id-tester">
 				</object>
 	</li><li> <object type="text/sitemap">
 				<param name="Name" value="Layers and multi-object editing">

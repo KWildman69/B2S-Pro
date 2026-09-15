@@ -55,9 +55,12 @@ Public Class Coding
 
     ' main method(s)
 
-    Public Function CreateB2SProFile(Optional ByVal outputFilename As String = "") As Boolean
+    Public Function CreateB2SProFile(Optional ByVal outputFilename As String = "",
+                                     Optional ByVal isRecoverySnapshot As Boolean = False) As Boolean
 
-        If Not CheckData() Then Return False
+        ' A recovery copy must preserve work even while the design is incomplete.
+        ' Normal saves and exports still run the existing validation checks.
+        If Not isRecoverySnapshot AndAlso Not CheckData() Then Return False
 
         Dim ret As Boolean = True
 
@@ -556,7 +559,8 @@ Public Class Coding
             nodeHeader.AppendChild(nodeIllumination)
             For Each bulb As KeyValuePair(Of Integer, Illumination.BulbInfo) In savebulbs
                 With bulb.Value
-                    If .InitialState <> 2 OrElse (.BlinkEnabled AndAlso Not .IsImageSnippit AndAlso .IlluMode <> Illumination.eIlluMode.Flasher) Then
+                    If .InitialState <> 2 OrElse (.IsImageSnippit AndAlso .SnippitInfo.PivotAnimationEnabled) OrElse
+                       (.BlinkEnabled AndAlso Not .IsImageSnippit AndAlso .IlluMode <> Illumination.eIlluMode.Flasher) Then
                         Dim imageinfo As Illumination.Lights.ImageInfo = Nothing
                         If bulb.Key >= 1000000 Then
                             If illudmdimages.ContainsKey(.ID) Then
@@ -597,6 +601,7 @@ Public Class Coding
                                 nodeBulb.SetAttribute("RomInverted", If(.RomInverted, "1", "0"))
                             End If
                             Dim runtimeInitialState As Integer = .InitialState
+                            If runtimeInitialState = 2 AndAlso .IsImageSnippit AndAlso .SnippitInfo.PivotAnimationEnabled Then runtimeInitialState = 1
                             If PictureAnimationFrameGroup(.Name).Length > 0 Then
                                 runtimeInitialState = If(startupPictureAnimationFrames.Contains(.Name), 1, 0)
                             End If
@@ -607,6 +612,7 @@ Public Class Coding
                             nodeBulb.SetAttribute("LightColor", Color2String(.LightColor))
                             nodeBulb.SetAttribute("DodgeColor", Color2String(.DodgeColor))
                             nodeBulb.SetAttribute("IlluMode", CInt(.IlluMode).ToString())
+                            nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
                             If (.IlluMode = Illumination.eIlluMode.Flasher OrElse .LightPurpose = Illumination.eLightPurpose.Flasher) AndAlso .FlasherPulseDuration > 0 Then
                                 nodeBulb.SetAttribute("FlasherPulseDuration", Math.Max(50, Math.Min(5000, .FlasherPulseDuration)).ToString())
                             End If
@@ -672,7 +678,8 @@ Public Class Coding
                                     nodeBulb.SetAttribute("PivotDownAngle", .SnippitInfo.PivotDownAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                     nodeBulb.SetAttribute("PivotUpAngle", .SnippitInfo.PivotUpAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                     nodeBulb.SetAttribute("PivotDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotDuration)).ToString())
-                                    nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(3, .SnippitInfo.PivotTriggerType)).ToString())
+                                    If .SnippitInfo.PivotAutomaticOscillation Then nodeBulb.SetAttribute("PivotAutomaticOscillation", "1")
+                                    nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(4, .SnippitInfo.PivotTriggerType)).ToString())
                                     nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())
                                     nodeBulb.SetAttribute("PivotDownTrigger", .SnippitInfo.PivotDownTrigger.Trim())
                                     nodeBulb.SetAttribute("PivotUpTrigger", .SnippitInfo.PivotUpTrigger.Trim())
@@ -691,9 +698,15 @@ Public Class Coding
                                             nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
                                         End If
                                     If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
-                                    If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
+                                    If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then
+                                        nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
+                                        If .SnippitInfo.PhysicsSwitchAngles.Any(Function(angle) Math.Abs(angle) >= 0.001F) Then
+                                            nodeBulb.SetAttribute("PhysicsSwitchAngles", SerializePhysicsSwitchAngles(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchAngles))
+                                        End If
+                                    End If
                                     If .SnippitInfo.PhysicsLauncherEnabled Then
                                         nodeBulb.SetAttribute("PhysicsLauncherEnabled", "1")
+                                        If .SnippitInfo.PhysicsLauncherFollowPivot Then nodeBulb.SetAttribute("PhysicsLauncherFollowPivot", "1")
                                         nodeBulb.SetAttribute("PhysicsLauncherTriggerType", .SnippitInfo.PhysicsLauncherTriggerType.ToString())
                                         nodeBulb.SetAttribute("PhysicsLauncherTriggerID", .SnippitInfo.PhysicsLauncherTriggerID.ToString())
                                         nodeBulb.SetAttribute("PhysicsLauncherX", .SnippitInfo.PhysicsLauncherX.ToString("R", Globalization.CultureInfo.InvariantCulture))
@@ -876,9 +889,7 @@ Public Class Coding
         ' editor-only values that are not part of the runtime schema.
         Dim designerXML As Xml.XmlDocument = Nothing
         Dim projectSerializer As New Save()
-        projectSerializer.SaveData(Backglass.currentData,
-                                   serializedXml:=designerXML,
-                                   writeProjectFile:=False)
+        projectSerializer.SaveData(Backglass.currentData, designerXML)
         If designerXML Is Nothing Then Throw New InvalidOperationException("The embedded designer data could not be created.")
         Dim nodeDesignerData As Xml.XmlElement = XML.CreateElement("B2SProDesignerData")
         nodeDesignerData.SetAttribute("Encoding", "base64-utf8")
@@ -913,7 +924,9 @@ Public Class Coding
 
     End Function
 
-    Public Function ImportBackglassFile(ByRef _backglassData As Backglass.Data, ByVal filename As String) As Boolean
+    Public Function ImportBackglassFile(ByRef _backglassData As Backglass.Data,
+                                        ByVal filename As String,
+                                        Optional ByVal preserveEmbeddedVSName As Boolean = False) As Boolean
 
         Dim ret As Boolean = True
 
@@ -946,15 +959,31 @@ Public Class Coding
                         Dim designerXML As New Xml.XmlDocument()
                         designerXML.LoadXml(Encoding.UTF8.GetString(Convert.FromBase64String(designerDataNode.InnerText)))
                         Dim projectSerializer As New Save()
-                        If projectSerializer.LoadData(_backglassData, designerXML) AndAlso _backglassData IsNot Nothing Then
+                        ' A B2S Pro file owns the artwork-pixel light format. Files
+                        ' saved before the flag existed upgrade their regular lights;
+                        ' legacy directB2S fallback imports remain unchanged.
+                        If projectSerializer.LoadData(_backglassData,
+                                                      designerXML,
+                                                      defaultArtworkPixelLighting:=True) AndAlso
+                           _backglassData IsNot Nothing Then
+                            ' Older B2S Pro files stored the editable Z value but
+                            ' not the collection tie-break used by the Layers panel.
+                            ' Their positive, unique runtime Z ranks still preserve
+                            ' that exact stack, so use them only when the embedded
+                            ' project has no complete saved stack of its own.
+                            If Not HasCompleteDesignerBulbStackOrder(designerXML) Then
+                                RestoreBulbStackFromRuntimeData(_backglassData, topnode)
+                            End If
                             _backglassData.BackupName = String.Empty
-                            _backglassData.VSName = IO.Path.GetFileNameWithoutExtension(filename)
+                            If Not preserveEmbeddedVSName Then _backglassData.VSName = IO.Path.GetFileNameWithoutExtension(filename)
                             Return True
                         End If
                     Catch ex As Exception
                         Debug.WriteLine("Embedded B2S Pro designer data could not be loaded; using legacy directB2S import: " & ex.Message)
                     End Try
                 End If
+
+                If preserveEmbeddedVSName Then Return False
 
                 If version >= DirectB2SVersionMaybeWithDataLost Then
                     B2SMessageBox.Show(My.Resources.MSG_ImportWarning, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
@@ -1291,6 +1320,9 @@ Public Class Coding
                                 bulb.DualMode = CInt(innerNode.Attributes("DualMode").InnerText)
                             End If
                             bulb.Intensity = CInt(innerNode.Attributes("Intensity").InnerText)
+                            If innerNode.Attributes("ArtworkPixelLighting") IsNot Nothing Then
+                                bulb.ArtworkPixelLighting = (innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
+                            End If
                             If innerNode.Attributes("LightColor") IsNot Nothing Then bulb.LightColor = String2Color(innerNode.Attributes("LightColor").InnerText)
                             If innerNode.Attributes("DodgeColor") IsNot Nothing Then bulb.DodgeColor = String2Color(innerNode.Attributes("DodgeColor").InnerText)
                             If innerNode.Attributes("DesignerZOrder") IsNot Nothing Then
@@ -1308,14 +1340,15 @@ Public Class Coding
                                 bulb.SnippitInfo.Brightness = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("DesignerSnippitBrightness").InnerText)))
                             End If
                             bulb.SnippitInfo.PivotAnimationEnabled = (innerNode.Attributes("PivotAnimation") IsNot Nothing AndAlso innerNode.Attributes("PivotAnimation").InnerText = "1")
-                            bulb.SnippitInfo.PivotX = ReadPivotSingle(innerNode, "PivotX", 0.5F, 0.0F, 1.0F)
-                            bulb.SnippitInfo.PivotY = ReadPivotSingle(innerNode, "PivotY", 0.5F, 0.0F, 1.0F)
+                            bulb.SnippitInfo.PivotX = ReadPivotSingle(innerNode, "PivotX", 0.5F, -100000.0F, 100000.0F)
+                            bulb.SnippitInfo.PivotY = ReadPivotSingle(innerNode, "PivotY", 0.5F, -100000.0F, 100000.0F)
                             bulb.SnippitInfo.PivotTipX = ReadPivotSingle(innerNode, "PivotTipX", 0.9F, 0.0F, 1.0F)
                             bulb.SnippitInfo.PivotTipY = ReadPivotSingle(innerNode, "PivotTipY", 0.5F, 0.0F, 1.0F)
                             bulb.SnippitInfo.PivotDownAngle = ReadPivotSingle(innerNode, "PivotDownAngle", 0.0F, -360.0F, 360.0F)
                             bulb.SnippitInfo.PivotUpAngle = ReadPivotSingle(innerNode, "PivotUpAngle", -30.0F, -360.0F, 360.0F)
                             If innerNode.Attributes("PivotDuration") IsNot Nothing Then bulb.SnippitInfo.PivotDuration = Math.Max(10, Math.Min(5000, CInt(innerNode.Attributes("PivotDuration").InnerText)))
-                            If innerNode.Attributes("PivotTriggerType") IsNot Nothing Then bulb.SnippitInfo.PivotTriggerType = Math.Max(0, Math.Min(3, CInt(innerNode.Attributes("PivotTriggerType").InnerText)))
+                            bulb.SnippitInfo.PivotAutomaticOscillation = ReadPivotInteger(innerNode, "PivotAutomaticOscillation", 0, 0, 1) = 1
+                            If innerNode.Attributes("PivotTriggerType") IsNot Nothing Then bulb.SnippitInfo.PivotTriggerType = Math.Max(0, Math.Min(4, CInt(innerNode.Attributes("PivotTriggerType").InnerText)))
                             If innerNode.Attributes("PivotTriggerID") IsNot Nothing Then bulb.SnippitInfo.PivotTriggerID = Math.Max(0, Math.Min(255, CInt(innerNode.Attributes("PivotTriggerID").InnerText)))
                             If innerNode.Attributes("PivotDownTrigger") IsNot Nothing Then bulb.SnippitInfo.PivotDownTrigger = innerNode.Attributes("PivotDownTrigger").InnerText.Trim()
                             If innerNode.Attributes("PivotUpTrigger") IsNot Nothing Then bulb.SnippitInfo.PivotUpTrigger = innerNode.Attributes("PivotUpTrigger").InnerText.Trim()
@@ -1344,7 +1377,15 @@ Public Class Coding
                             End If
                             If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
                             If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
+                            If innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then ParsePhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, bulb.SnippitInfo.PhysicsSwitchAngles)
+                            While bulb.SnippitInfo.PhysicsSwitchAngles.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count
+                                bulb.SnippitInfo.PhysicsSwitchAngles.Add(0.0F)
+                            End While
+                            While bulb.SnippitInfo.PhysicsSwitchAngles.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count
+                                bulb.SnippitInfo.PhysicsSwitchAngles.RemoveAt(bulb.SnippitInfo.PhysicsSwitchAngles.Count - 1)
+                            End While
                             bulb.SnippitInfo.PhysicsLauncherEnabled = ReadPivotInteger(innerNode, "PhysicsLauncherEnabled", 0, 0, 1) = 1
+                            bulb.SnippitInfo.PhysicsLauncherFollowPivot = ReadPivotInteger(innerNode, "PhysicsLauncherFollowPivot", 0, 0, 1) = 1
                             bulb.SnippitInfo.PhysicsLauncherTriggerType = ReadPivotInteger(innerNode, "PhysicsLauncherTriggerType", 1, 1, 3)
                             bulb.SnippitInfo.PhysicsLauncherTriggerID = ReadPivotInteger(innerNode, "PhysicsLauncherTriggerID", 0, 0, 255)
                             bulb.SnippitInfo.PhysicsLauncherX = ReadPivotSingle(innerNode, "PhysicsLauncherX", CSng(bulb.Location.X + bulb.Size.Width / 2.0F), -100000.0F, 100000.0F)
@@ -1493,6 +1534,11 @@ Public Class Coding
                                 mybulbs.Insert(mybulbs.Count, bulb)
                             End If
                         Next
+                        ' If embedded project data was unavailable, recover the
+                        ' designer's equal-Z tie order from this B2S Pro file's
+                        ' unique runtime ranks. Legacy files without that complete
+                        ' metadata are deliberately left in their imported order.
+                        RestoreBulbStackFromRuntimeData(_backglassData, topnode)
                         ' check fonts
                         If Not String.IsNullOrEmpty(usedfonts) Then
                             Dim notfound As String = String.Empty
@@ -2518,7 +2564,7 @@ Public Class Coding
                         ' the generated backglass ran. Also preserve all glow and mask options
                         ' so runtime output matches the designer preview.
                         Dim runtimeRect As New Rectangle(.LocationX, .SizeX)
-                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .LightPurpose = Global.B2SBackglassDesigner.Illumination.eLightPurpose.Flasher, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes)))
+                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes)))
                         If font IsNot Nothing Then font.Dispose()
                     End If
                 End If
@@ -2907,6 +2953,74 @@ Public Class Coding
         Return result
     End Function
 
+    Private Function HasCompleteDesignerBulbStackOrder(ByVal designerXML As Xml.XmlDocument) As Boolean
+        If designerXML Is Nothing Then Return False
+        Dim nodes As Xml.XmlNodeList = designerXML.SelectNodes("B2SBackglassData/Illumination/Bulb")
+        If nodes Is Nothing OrElse nodes.Count = 0 Then Return True
+
+        Dim backglassOrders As New Generic.HashSet(Of Integer)()
+        Dim dmdOrders As New Generic.HashSet(Of Integer)()
+        For Each node As Xml.XmlElement In nodes
+            If node.Attributes("DesignerStackOrder") Is Nothing Then Return False
+            Dim order As Integer
+            If Not Integer.TryParse(node.Attributes("DesignerStackOrder").InnerText, order) OrElse order < 0 Then Return False
+            Dim orders As Generic.HashSet(Of Integer) = If(node.Attributes("Parent") IsNot Nothing AndAlso
+                                                            node.Attributes("Parent").InnerText.Equals("DMD", StringComparison.OrdinalIgnoreCase),
+                                                            dmdOrders,
+                                                            backglassOrders)
+            If Not orders.Add(order) Then Return False
+        Next
+        Return True
+    End Function
+
+    Private Sub RestoreBulbStackFromRuntimeData(ByVal data As Backglass.Data,
+                                                 ByVal runtimeRoot As Xml.XmlElement)
+        If data Is Nothing OrElse runtimeRoot Is Nothing Then Return
+        RestoreBulbStackFromRuntimeData(data.Bulbs, runtimeRoot, eParentForm.Backglass)
+        RestoreBulbStackFromRuntimeData(data.DMDBulbs, runtimeRoot, eParentForm.DMD)
+    End Sub
+
+    Private Sub RestoreBulbStackFromRuntimeData(ByVal bulbs As Generic.List(Of Illumination.BulbInfo),
+                                                 ByVal runtimeRoot As Xml.XmlElement,
+                                                 ByVal parent As eParentForm)
+        If bulbs Is Nothing OrElse bulbs.Count < 2 Then Return
+
+        Dim runtimeRanks As New Generic.Dictionary(Of Integer, Integer)()
+        For Each node As Xml.XmlElement In runtimeRoot.SelectNodes("Illumination/Bulb")
+            If node.Attributes("B2SProAutomaticRotationFrame") IsNot Nothing Then Continue For
+            Dim isDmd As Boolean = node.Attributes("Parent") IsNot Nothing AndAlso
+                                   node.Attributes("Parent").InnerText.Equals("DMD", StringComparison.OrdinalIgnoreCase)
+            If isDmd <> (parent = eParentForm.DMD) Then Continue For
+            ' DesignerZOrder proves that ZOrder is the translated unique runtime
+            ' rank, rather than an unmodified legacy layer value.
+            If node.Attributes("DesignerZOrder") Is Nothing OrElse
+               node.Attributes("ID") Is Nothing OrElse
+               node.Attributes("ZOrder") Is Nothing Then Return
+
+            Dim id As Integer
+            Dim rank As Integer
+            If Not Integer.TryParse(node.Attributes("ID").InnerText, id) OrElse
+               Not Integer.TryParse(node.Attributes("ZOrder").InnerText, rank) OrElse
+               rank <= 0 OrElse runtimeRanks.ContainsKey(id) Then Return
+            runtimeRanks.Add(id, rank)
+        Next
+
+        If runtimeRanks.Count <> bulbs.Count Then Return
+        Dim uniqueRanks As New Generic.HashSet(Of Integer)()
+        For Each bulb As Illumination.BulbInfo In bulbs
+            Dim rank As Integer
+            If bulb Is Nothing OrElse Not runtimeRanks.TryGetValue(bulb.ID, rank) OrElse
+               Not uniqueRanks.Add(rank) Then Return
+        Next
+
+        ' Collection index is the tie-break for equal editable Z values. Runtime
+        ' ranks increase from back to front, so descending rank restores index 0
+        ' as the frontmost tied object without changing any saved Z number.
+        bulbs.Sort(Function(left As Illumination.BulbInfo, right As Illumination.BulbInfo)
+                       Return runtimeRanks(right.ID).CompareTo(runtimeRanks(left.ID))
+                   End Function)
+    End Sub
+
     Private Sub AppendAutomaticRotationAnimation(ByVal xml As Xml.XmlDocument,
                                                   ByVal animationsNode As Xml.XmlElement,
                                                   ByVal bulb As Illumination.BulbInfo)
@@ -3192,6 +3306,31 @@ Public Class Coding
             End If
         Next
     End Sub
+
+    Private Shared Function SerializePhysicsSwitchAngles(ByVal zoneCount As Integer, ByVal angles As IList(Of Single)) As String
+        Dim encoded As New List(Of String)()
+        For index As Integer = 0 To zoneCount - 1
+            Dim angle As Single = If(index < angles.Count, NormalizeSwitchAngle(angles(index)), 0.0F)
+            encoded.Add(angle.ToString("R", Globalization.CultureInfo.InvariantCulture))
+        Next
+        Return String.Join("|", encoded.ToArray())
+    End Function
+
+    Private Shared Sub ParsePhysicsSwitchAngles(ByVal value As String, ByVal angles As IList(Of Single))
+        If String.IsNullOrWhiteSpace(value) Then Return
+        For Each item As String In value.Split("|"c)
+            Dim angle As Single
+            angles.Add(If(Single.TryParse(item, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, angle),
+                          NormalizeSwitchAngle(angle), 0.0F))
+        Next
+    End Sub
+
+    Private Shared Function NormalizeSwitchAngle(ByVal angle As Single) As Single
+        Dim normalized As Single = angle Mod 360.0F
+        If normalized > 180.0F Then normalized -= 360.0F
+        If normalized <= -180.0F Then normalized += 360.0F
+        Return normalized
+    End Function
 
     Private Function CreateAutomaticRotationCanvas(ByVal source As Image) As Image
         Dim isSquare As Boolean = (Math.Abs(source.Width - source.Height) <= 1)

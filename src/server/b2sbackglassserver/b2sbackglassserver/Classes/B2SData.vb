@@ -12,6 +12,7 @@ Public Class B2SData
     Public Class PhysicsSwitchZone
         Public Bounds As RectangleF
         Public SwitchID As Integer
+        Public Angle As Single
     End Class
     Public Class PhysicsLauncher
         Public TriggerType As Integer
@@ -22,12 +23,15 @@ Public Class B2SData
         Public RandomAngle As Single
         Public RandomStrength As Single
         Public CaptureRadius As Single
+        Public FollowPivot As Boolean
     End Class
 
     Public Shared Property PhysicsSwitchPulseTestHandler As Action(Of Integer)
 
     Public Shared Property SwitchPulsePipeName As String = String.Empty
     Public Shared Property PhysicsLauncherPipeName As String = String.Empty
+    Public Shared Property TesterSwitchesEnabled As Boolean = False
+    Public Shared Property UsedRomSwitchIDs As New Generic.SortedList(Of Integer, B2SBaseBox())
 #If B2S = "DLL" Then
     Private Shared switchPipeThread As Thread
     Private Shared switchPipeStopping As Boolean
@@ -62,6 +66,7 @@ Public Class B2SData
         End If
         SwitchPulsePipeName = String.Empty
         PhysicsLauncherPipeName = String.Empty
+        TesterSwitchesEnabled = False
     End Sub
 
     Private Shared Sub ListenForSwitchPulses()
@@ -71,7 +76,13 @@ Public Class B2SData
                     server.WaitForConnection()
                     Using reader As New BinaryReader(server)
                         Dim switchID As Integer = reader.ReadInt32()
-                        If Not switchPipeStopping AndAlso switchID > 0 Then B2SAnimation.SetSwitch(switchID)
+                        If Not switchPipeStopping Then
+                            If switchID = -5 Then
+                                TesterSwitchesEnabled = True
+                            ElseIf switchID > 0 Then
+                                B2SAnimation.SetSwitch(switchID)
+                            End If
+                        End If
                     End Using
                 End Using
             Catch
@@ -86,7 +97,7 @@ Public Class B2SData
     End Sub
 
     Private Shared Sub SendPhysicsLauncherTrigger(ByVal triggerType As Integer, ByVal triggerID As Integer, ByVal value As Integer)
-        If value = 0 OrElse String.IsNullOrWhiteSpace(PhysicsLauncherPipeName) Then Return
+        If (value = 0 AndAlso triggerType <> -5) OrElse String.IsNullOrWhiteSpace(PhysicsLauncherPipeName) Then Return
         Try
             Using client As New NamedPipeClientStream(".", PhysicsLauncherPipeName, PipeDirection.Out)
                 client.Connect(100)
@@ -99,9 +110,15 @@ Public Class B2SData
         Catch
         End Try
     End Sub
+
+    Public Shared Sub SendTesterSwitchState(ByVal switchID As Integer, ByVal state As Boolean)
+        SendPhysicsLauncherTrigger(-5, switchID, If(state, 1, 0))
+    End Sub
 #Else
     Private Shared launcherPipeThread As Thread
     Private Shared launcherPipeStopping As Boolean
+    Private Shared ReadOnly testerSwitchQueue As New Generic.Queue(Of Generic.KeyValuePair(Of Integer, Boolean))()
+    Private Shared testerSwitchAnnounced As Boolean = False
 
     Public Shared Sub StartPhysicsLauncherBridge(ByVal pipeName As String)
         If String.IsNullOrWhiteSpace(pipeName) Then Return
@@ -120,7 +137,15 @@ Public Class B2SData
                         Dim triggerType As Integer = reader.ReadInt32()
                         Dim triggerID As Integer = reader.ReadInt32()
                         Dim value As Integer = reader.ReadInt32()
-                        If Not launcherPipeStopping Then FirePhysicsLaunchers(triggerType, triggerID, value)
+                        If Not launcherPipeStopping Then
+                            If triggerType = -5 Then
+                                SyncLock testerSwitchQueue
+                                    testerSwitchQueue.Enqueue(New Generic.KeyValuePair(Of Integer, Boolean)(triggerID, value <> 0))
+                                End SyncLock
+                            Else
+                                FirePhysicsLaunchers(triggerType, triggerID, value)
+                            End If
+                        End If
                     End Using
                 End Using
             Catch
@@ -128,6 +153,30 @@ Public Class B2SData
             End Try
         End While
     End Sub
+
+    Public Shared Sub AnnounceTesterSwitches()
+        If testerSwitchAnnounced OrElse String.IsNullOrWhiteSpace(SwitchPulsePipeName) Then Return
+        Try
+            Using client As New NamedPipeClientStream(".", SwitchPulsePipeName, PipeDirection.Out)
+                client.Connect(100)
+                Using writer As New BinaryWriter(client)
+                    writer.Write(-5)
+                End Using
+            End Using
+            testerSwitchAnnounced = True
+        Catch
+        End Try
+    End Sub
+
+    Public Shared Function TryDequeueTesterSwitchState(ByRef switchID As Integer, ByRef state As Boolean) As Boolean
+        SyncLock testerSwitchQueue
+            If testerSwitchQueue.Count = 0 Then Return False
+            Dim item As Generic.KeyValuePair(Of Integer, Boolean) = testerSwitchQueue.Dequeue()
+            switchID = item.Key
+            state = item.Value
+            Return True
+        End SyncLock
+    End Function
 
     Public Shared Sub PulsePhysicsSwitch(ByVal switchID As Integer)
         If PhysicsSwitchPulseTestHandler IsNot Nothing Then PhysicsSwitchPulseTestHandler.Invoke(switchID) : Return
@@ -285,19 +334,26 @@ Public Class B2SData
     Public Shared ReadOnly PivotSolenoidIDs As New Generic.SortedList(Of Integer, Generic.List(Of B2SPictureBox))()
     Public Shared ReadOnly PivotLampIDs As New Generic.SortedList(Of Integer, Generic.List(Of B2SPictureBox))()
     Public Shared ReadOnly PivotB2SIDs As New Generic.SortedList(Of Integer, Generic.List(Of B2SPictureBox))()
+    Public Shared ReadOnly StartupPivotPictures As New Generic.List(Of B2SPictureBox)()
     Private Shared ReadOnly PivotPicturesByName As New Generic.Dictionary(Of String, B2SPictureBox)(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly PhysicsBalls As New Generic.List(Of PhysicsBallState)()
     Private Shared ReadOnly PhysicsLauncherSolenoidIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherB2SIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
 
     Public Shared Sub RegisterPivotTrigger(ByVal pictureBox As B2SPictureBox, ByVal triggerType As Integer, ByVal triggerID As Integer,
-                                           ByVal downAngle As Single, ByVal upAngle As Single, ByVal duration As Integer)
-        If pictureBox Is Nothing OrElse triggerID <= 0 Then Return
+                                           ByVal downAngle As Single, ByVal upAngle As Single, ByVal duration As Integer,
+                                           Optional ByVal automaticOscillation As Boolean = False)
+        If pictureBox Is Nothing OrElse (triggerType <> 4 AndAlso triggerID <= 0) Then Return
         pictureBox.PivotRotation = True : pictureBox.NativeRotation = True
         pictureBox.PivotDownAngle = downAngle : pictureBox.PivotUpAngle = upAngle
         pictureBox.PivotMoveDuration = Math.Max(10, Math.Min(5000, duration))
-        pictureBox.RotationAngle = downAngle
+        pictureBox.PivotAutomaticOscillation = automaticOscillation OrElse triggerType = 4
+        pictureBox.RotationAngle = If(pictureBox.PivotAutomaticOscillation, 0.0F, downAngle)
         If Not String.IsNullOrWhiteSpace(pictureBox.GroupName) Then PivotPicturesByName(pictureBox.GroupName.Trim()) = pictureBox
+        If triggerType = 4 Then
+            StartupPivotPictures.Add(pictureBox)
+            Return
+        End If
         Dim targets As Generic.SortedList(Of Integer, Generic.List(Of B2SPictureBox)) = If(triggerType = 1, PivotSolenoidIDs, If(triggerType = 2, PivotLampIDs, PivotB2SIDs))
         If Not targets.ContainsKey(triggerID) Then targets.Add(triggerID, New Generic.List(Of B2SPictureBox)())
         targets(triggerID).Add(pictureBox)
@@ -874,6 +930,13 @@ Public Class B2SData
                 ElseIf value.RomIDType = B2SBaseBox.eRomIDType.Mech Then
                     UsedRomIDs4Authentic = UsedRomMechIDs4Authentic
                     UsedRomIDs4Fantasy = UsedRomMechIDs4Fantasy
+                ElseIf value.RomIDType = B2SBaseBox.eRomIDType.Switch Then
+                    If Not UsedRomSwitchIDs.ContainsKey(value.RomID) Then
+                        UsedRomSwitchIDs.Add(value.RomID, New B2SBaseBox() {value})
+                    End If
+#If B2S = "EXE" Then
+                    AnnounceTesterSwitches()
+#End If
                 End If
                 If UsedRomIDs4Authentic IsNot Nothing AndAlso (dualmode = eDualMode.Both OrElse dualmode = eDualMode.Authentic) Then
                     If UsedRomIDs4Authentic.ContainsKey(value.RomID) Then
@@ -1226,6 +1289,8 @@ Public Class B2SData
         UsedRomSolenoidIDs4Authentic.Clear()
         UsedRomGIStringIDs4Authentic.Clear()
         UsedRomMechIDs4Authentic.Clear()
+        UsedRomSwitchIDs.Clear()
+        TesterSwitchesEnabled = False
         UsedRomLampIDs4Fantasy.Clear()
         UsedRomSolenoidIDs4Fantasy.Clear()
         UsedMotionPathSolenoidIDs.Clear()
@@ -1247,6 +1312,7 @@ Public Class B2SData
         PivotSolenoidIDs.Clear()
         PivotLampIDs.Clear()
         PivotB2SIDs.Clear()
+        StartupPivotPictures.Clear()
         PivotPicturesByName.Clear()
         For Each state As PhysicsBallState In PhysicsBalls
             state.Dispose()
@@ -1366,6 +1432,7 @@ Public Class B2SData
         Private launcherExitedCapture As Boolean
         Private ReadOnly authoredBallWidth As Single
         Private ReadOnly authoredBallHeight As Single
+        Private ReadOnly authoredBallCenter As PointF
         Private ReadOnly timer As New Windows.Forms.Timer() With {.Interval = 16}
         Private ReadOnly clock As New Diagnostics.Stopwatch()
         Private velocity As PointF = PointF.Empty
@@ -1386,6 +1453,10 @@ Public Class B2SData
             boundaryBounce = bounceValue
             authoredBallWidth = If(pictureBox.Width > 0, pictureBox.Width, pictureBox.RectangleF.Width)
             authoredBallHeight = If(pictureBox.Height > 0, pictureBox.Height, pictureBox.RectangleF.Height)
+            ' RectangleF is initialized later by screen scaling. The control
+            ' bounds already contain the ball's saved editor placement here.
+            authoredBallCenter = New PointF(pictureBox.Left + pictureBox.Width / 2.0F,
+                                            pictureBox.Top + pictureBox.Height / 2.0F)
             If returnBoundaries IsNot Nothing Then
                 For pathIndex As Integer = 0 To returnBoundaries.Count - 1
                     Dim path As Generic.List(Of PointF) = returnBoundaries(pathIndex)
@@ -1411,7 +1482,7 @@ Public Class B2SData
             If returnSwitchZones IsNot Nothing Then
                 For Each zone As PhysicsSwitchZone In returnSwitchZones
                     If zone IsNot Nothing AndAlso zone.Bounds.Width > 0.0F AndAlso zone.Bounds.Height > 0.0F AndAlso zone.SwitchID > 0 Then
-                        switchZones.Add(New PhysicsSwitchZone With {.Bounds = zone.Bounds, .SwitchID = zone.SwitchID})
+                        switchZones.Add(New PhysicsSwitchZone With {.Bounds = zone.Bounds, .SwitchID = zone.SwitchID, .Angle = NormalizeSwitchAngle(zone.Angle)})
                         switchZoneInside.Add(False)
                     End If
                 Next
@@ -1420,7 +1491,7 @@ Public Class B2SData
                 launcher = New PhysicsLauncher With {.TriggerType = returnLauncher.TriggerType, .TriggerID = returnLauncher.TriggerID,
                     .Origin = returnLauncher.Origin, .Angle = returnLauncher.Angle, .Strength = returnLauncher.Strength,
                     .RandomAngle = returnLauncher.RandomAngle, .RandomStrength = returnLauncher.RandomStrength,
-                    .CaptureRadius = Math.Max(5.0F, returnLauncher.CaptureRadius)}
+                    .CaptureRadius = Math.Max(5.0F, returnLauncher.CaptureRadius), .FollowPivot = returnLauncher.FollowPivot}
                 launcherHolding = True
             End If
             AddHandler timer.Tick, AddressOf Tick
@@ -1432,9 +1503,11 @@ Public Class B2SData
             Dim scaleY As Single = If(authoredBallHeight <= 0.0F, 1.0F, ball.RectangleF.Height / authoredBallHeight)
             Dim randomAngleOffset As Single = CSng((launcherRandom.NextDouble() * 2.0R - 1.0R) * launcher.RandomAngle)
             Dim randomStrengthFactor As Single = 1.0F + CSng((launcherRandom.NextDouble() * 2.0R - 1.0R) * launcher.RandomStrength / 100.0R)
-            Dim radians As Double = (launcher.Angle + randomAngleOffset) * Math.PI / 180.0R
+            Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
+            GetLauncherPose(scaleX, scaleY, origin, angle)
+            Dim radians As Double = (angle + randomAngleOffset) * Math.PI / 180.0R
             Dim launchStrength As Single = Math.Max(0.0F, launcher.Strength * randomStrengthFactor)
-            ball.SetMotionPathPosition(New PointF(launcher.Origin.X * scaleX, launcher.Origin.Y * scaleY))
+            ball.SetMotionPathPosition(origin)
             velocity = New PointF(CSng(Math.Cos(radians)) * launchStrength * scaleX, CSng(Math.Sin(radians)) * launchStrength * scaleY)
             launcherArmed = False
             launcherHolding = False
@@ -1473,7 +1546,9 @@ Public Class B2SData
             Dim scaleX As Single = If(authoredBallWidth <= 0.0F, 1.0F, ball.RectangleF.Width / authoredBallWidth)
             Dim scaleY As Single = If(authoredBallHeight <= 0.0F, 1.0F, ball.RectangleF.Height / authoredBallHeight)
             If launcherHolding AndAlso launcher IsNot Nothing Then
-                ball.SetMotionPathPosition(New PointF(launcher.Origin.X * scaleX, launcher.Origin.Y * scaleY))
+                Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
+                GetLauncherPose(scaleX, scaleY, origin, angle)
+                ball.SetMotionPathPosition(origin)
                 velocity = PointF.Empty
                 Return
             End If
@@ -1487,7 +1562,11 @@ Public Class B2SData
             If center.X + radius > runtimeBounds.Right Then center.X = runtimeBounds.Right - radius : velocity.X = -Math.Abs(velocity.X) * 0.55F
             If center.Y - radius < runtimeBounds.Top Then center.Y = runtimeBounds.Top + radius : velocity.Y = Math.Abs(velocity.Y) * 0.55F
             If center.Y + radius > runtimeBounds.Bottom Then center.Y = runtimeBounds.Bottom - radius : velocity.Y = -Math.Abs(velocity.Y) * 0.55F
-            If flipper IsNot Nothing Then ResolveFlipperCollision(center, radius, velocity, flipper, angularVelocity)
+            ' An attached launcher uses a generic rotating snippet, not a flipper
+            ' collision surface. Legacy physics balls keep their original contact.
+            If flipper IsNot Nothing AndAlso (launcher Is Nothing OrElse Not launcher.FollowPivot) Then
+                ResolveFlipperCollision(center, radius, velocity, flipper, angularVelocity)
+            End If
             For pathIndex As Integer = 0 To boundaryPaths.Count - 1
                 Dim path As Generic.List(Of PointF) = boundaryPaths(pathIndex)
                 For segmentIndex As Integer = 0 To path.Count - 2
@@ -1515,7 +1594,7 @@ Public Class B2SData
                 ResolveCircularObstacleCollision(center, radius, velocity, obstacle, scaleX, scaleY)
             Next
             CheckLauncherCapture(center, scaleX, scaleY)
-            CheckSwitchZones(center, scaleX, scaleY)
+            CheckSwitchZones(previousCenter, center, scaleX, scaleY)
             ball.SetMotionPathPosition(center, True)
         End Sub
 
@@ -1542,7 +1621,8 @@ Public Class B2SData
 
         Private Sub CheckLauncherCapture(ByRef center As PointF, ByVal scaleX As Single, ByVal scaleY As Single)
             If launcher Is Nothing OrElse launcherArmed Then Return
-            Dim origin As New PointF(launcher.Origin.X * scaleX, launcher.Origin.Y * scaleY)
+            Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
+            GetLauncherPose(scaleX, scaleY, origin, angle)
             Dim radius As Single = launcher.CaptureRadius * (scaleX + scaleY) / 2.0F
             Dim dx As Single = center.X - origin.X
             Dim dy As Single = center.Y - origin.Y
@@ -1557,15 +1637,119 @@ Public Class B2SData
             End If
         End Sub
 
-        Private Sub CheckSwitchZones(ByVal center As PointF, ByVal scaleX As Single, ByVal scaleY As Single)
+        Private Sub GetLauncherPose(ByVal scaleX As Single, ByVal scaleY As Single,
+                                    ByRef origin As PointF, ByRef angle As Single)
+            origin = New PointF(launcher.Origin.X * scaleX, launcher.Origin.Y * scaleY)
+            angle = launcher.Angle
+            If Not launcher.FollowPivot Then Return
+            Dim pivot As B2SPictureBox = FindPivotPicture(flipperName)
+            If pivot Is Nothing Then Return
+            If pivot.PivotAutomaticOscillation Then
+                ' The main editor ball placement is the firing point for an attached
+                ' automatic pivot. Keep the saved launch coordinates for other modes.
+                origin = New PointF(authoredBallCenter.X * scaleX, authoredBallCenter.Y * scaleY)
+            End If
+            Dim hinge As New PointF(pivot.RectangleF.Left + pivot.RectangleF.Width * pivot.RotationPivotX,
+                                    pivot.RectangleF.Top + pivot.RectangleF.Height * pivot.RotationPivotY)
+            If pivot.PreservePhysicsArtworkAspect AndAlso pivot.Width > 0 AndAlso pivot.Height > 0 Then
+                ' Keep the held ball at the point it occupied on the authored
+                ' launcher. The background and physics boundaries retain their
+                ' independent X/Y screen scaling; only this rigid pair uses one
+                ' visual scale around the hinge.
+                Dim authoredOrigin As PointF = If(pivot.PivotAutomaticOscillation, authoredBallCenter, launcher.Origin)
+                Dim authoredHinge As New PointF(pivot.Left + pivot.Width * pivot.RotationPivotX,
+                                                pivot.Top + pivot.Height * pivot.RotationPivotY)
+                Dim visualScale As Single = Math.Min(pivot.RectangleF.Width / pivot.Width,
+                                                    pivot.RectangleF.Height / pivot.Height)
+                origin = New PointF(hinge.X + (authoredOrigin.X - authoredHinge.X) * visualScale,
+                                    hinge.Y + (authoredOrigin.Y - authoredHinge.Y) * visualScale)
+            End If
+            Dim restAngle As Single = If(pivot.PivotAutomaticOscillation, 0.0F, pivot.PivotDownAngle)
+            Dim delta As Single = pivot.RotationAngle - restAngle
+            Dim radians As Double = delta * Math.PI / 180.0R
+            Dim dx As Single = origin.X - hinge.X, dy As Single = origin.Y - hinge.Y
+            If pivot.PivotAutomaticOscillation AndAlso pivot.Width > 0 AndAlso pivot.Height > 0 Then
+                ' Match the automatic pivot artwork: rotate the editor point in
+                ' authored coordinates, then apply the backglass X/Y scales.
+                Dim authoredHinge As New PointF(pivot.Left + pivot.Width * pivot.RotationPivotX,
+                                                pivot.Top + pivot.Height * pivot.RotationPivotY)
+                Dim authoredX As Single = authoredBallCenter.X - authoredHinge.X
+                Dim authoredY As Single = authoredBallCenter.Y - authoredHinge.Y
+                Dim pivotScaleX As Single = pivot.RectangleF.Width / pivot.Width
+                Dim pivotScaleY As Single = pivot.RectangleF.Height / pivot.Height
+                origin = New PointF(hinge.X + CSng((authoredX * Math.Cos(radians) - authoredY * Math.Sin(radians)) * pivotScaleX),
+                                    hinge.Y + CSng((authoredX * Math.Sin(radians) + authoredY * Math.Cos(radians)) * pivotScaleY))
+            Else
+                origin = New PointF(hinge.X + CSng(dx * Math.Cos(radians) - dy * Math.Sin(radians)),
+                                    hinge.Y + CSng(dx * Math.Sin(radians) + dy * Math.Cos(radians)))
+            End If
+            angle += delta
+        End Sub
+
+        Private Sub CheckSwitchZones(ByVal previousCenter As PointF, ByVal center As PointF,
+                                     ByVal scaleX As Single, ByVal scaleY As Single)
+            If Math.Abs(scaleX) < 0.000001F OrElse Math.Abs(scaleY) < 0.000001F Then Return
+            Dim authoredPrevious As New PointF(previousCenter.X / scaleX, previousCenter.Y / scaleY)
+            Dim authoredCurrent As New PointF(center.X / scaleX, center.Y / scaleY)
             For index As Integer = 0 To switchZones.Count - 1
-                Dim authored As RectangleF = switchZones(index).Bounds
-                Dim runtime As New RectangleF(authored.X * scaleX, authored.Y * scaleY, authored.Width * scaleX, authored.Height * scaleY)
-                Dim inside As Boolean = runtime.Contains(center)
-                If inside AndAlso Not switchZoneInside(index) Then PulsePhysicsSwitch(switchZones(index).SwitchID)
+                Dim zone As PhysicsSwitchZone = switchZones(index)
+                Dim inside As Boolean = PointInSwitchZone(authoredCurrent, zone)
+                Dim crossed As Boolean = Not inside AndAlso SegmentIntersectsSwitchZone(authoredPrevious, authoredCurrent, zone)
+                If Not switchZoneInside(index) AndAlso (inside OrElse crossed) Then PulsePhysicsSwitch(zone.SwitchID)
                 switchZoneInside(index) = inside
             Next
         End Sub
+
+        Private Shared Function PointInSwitchZone(ByVal point As PointF, ByVal zone As PhysicsSwitchZone) As Boolean
+            Dim local As PointF = SwitchZoneLocalPoint(point, zone)
+            Return zone.Bounds.Contains(local.X, local.Y)
+        End Function
+
+        Private Shared Function SegmentIntersectsSwitchZone(ByVal fromPoint As PointF, ByVal toPoint As PointF,
+                                                             ByVal zone As PhysicsSwitchZone) As Boolean
+            Dim localFrom As PointF = SwitchZoneLocalPoint(fromPoint, zone)
+            Dim localTo As PointF = SwitchZoneLocalPoint(toPoint, zone)
+            If zone.Bounds.Contains(localFrom.X, localFrom.Y) OrElse zone.Bounds.Contains(localTo.X, localTo.Y) Then Return True
+            Dim deltaX As Double = localTo.X - localFrom.X, deltaY As Double = localTo.Y - localFrom.Y
+            Dim first As Double = 0.0R, last As Double = 1.0R
+            Return ClipSwitchSegment(-deltaX, localFrom.X - zone.Bounds.Left, first, last) AndAlso
+                   ClipSwitchSegment(deltaX, zone.Bounds.Right - localFrom.X, first, last) AndAlso
+                   ClipSwitchSegment(-deltaY, localFrom.Y - zone.Bounds.Top, first, last) AndAlso
+                   ClipSwitchSegment(deltaY, zone.Bounds.Bottom - localFrom.Y, first, last)
+        End Function
+
+        Private Shared Function ClipSwitchSegment(ByVal direction As Double, ByVal distance As Double,
+                                                   ByRef first As Double, ByRef last As Double) As Boolean
+            If Math.Abs(direction) < 0.0000001R Then Return distance >= 0.0R
+            Dim ratio As Double = distance / direction
+            If direction < 0.0R Then
+                If ratio > last Then Return False
+                If ratio > first Then first = ratio
+            Else
+                If ratio < first Then Return False
+                If ratio < last Then last = ratio
+            End If
+            Return True
+        End Function
+
+        Private Shared Function SwitchZoneLocalPoint(ByVal point As PointF, ByVal zone As PhysicsSwitchZone) As PointF
+            Dim angle As Single = NormalizeSwitchAngle(zone.Angle)
+            If Math.Abs(angle) < 0.001F Then Return point
+            Dim centerX As Single = zone.Bounds.Left + zone.Bounds.Width / 2.0F
+            Dim centerY As Single = zone.Bounds.Top + zone.Bounds.Height / 2.0F
+            Dim radians As Double = -angle * Math.PI / 180.0R
+            Dim cosine As Double = Math.Cos(radians), sine As Double = Math.Sin(radians)
+            Dim x As Double = point.X - centerX, y As Double = point.Y - centerY
+            Return New PointF(CSng(centerX + x * cosine - y * sine),
+                              CSng(centerY + x * sine + y * cosine))
+        End Function
+
+        Private Shared Function NormalizeSwitchAngle(ByVal angle As Single) As Single
+            Dim normalized As Single = angle Mod 360.0F
+            If normalized > 180.0F Then normalized -= 360.0F
+            If normalized <= -180.0F Then normalized += 360.0F
+            Return normalized
+        End Function
 
         Private Sub ResolveCircularObstacleCollision(ByRef center As PointF, ByVal ballRadius As Single,
                                                       ByRef ballVelocity As PointF, ByVal obstacle As RectangleF,

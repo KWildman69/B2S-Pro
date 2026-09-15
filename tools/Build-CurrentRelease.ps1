@@ -167,16 +167,24 @@ foreach ($path in @($x64Designer, $x86Designer, $serverDll, $serverExe, $registe
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Build output is missing: $path" }
 }
 
-# Build the Designer source distributions without generated directories.
+# Build separate Designer source and portable runtime distributions.
 $designerSourceStage = Join-Path $buildRoot 'designer-source'
 Copy-DirectoryContents $designerRoot $designerSourceStage
 Copy-Item -LiteralPath (Join-Path $sourceCopyRoot 'CHANGELOG.md') -Destination (Join-Path $designerSourceStage 'B2S-Pro-Changelog.md') -Force
 Remove-GeneratedDirectories $designerSourceStage
 $designerRuntimeStage = Join-Path $buildRoot 'designer-distribution'
-Copy-DirectoryContents $designerSourceStage $designerRuntimeStage
-foreach ($name in @('.gitattributes', '.gitignore')) {
-    $path = Join-Path $designerRuntimeStage $name
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+foreach ($platform in @('x64', 'x86')) {
+    $platformStage = Join-Path $designerRuntimeStage $platform
+    New-Item -ItemType Directory -Path $platformStage -Force | Out-Null
+    foreach ($name in @('B2SPro.exe', 'B2SPro.exe.config')) {
+        Copy-Item -LiteralPath (Join-Path $designerRoot "b2sbackglassdesigner\bin\$platform\Release\$name") -Destination $platformStage -Force
+    }
+    foreach ($name in @('B2SVPinMAMEStarter.exe', 'B2SVPinMAMEStarter.exe.config')) {
+        Copy-Item -LiteralPath (Join-Path $designerRoot "B2SVPinMAMEStarter\bin\$platform\Release\$name") -Destination $platformStage -Force
+    }
+}
+foreach ($name in @('README.md', 'CHANGELOG.md', 'CREDITS.md', 'LICENSE.txt')) {
+    Copy-Item -LiteralPath (Join-Path $sourceCopyRoot $name) -Destination $designerRuntimeStage -Force
 }
 $designerZip = Join-Path $buildRoot 'B2S-Pro-Backglass-1.0.1.zip'
 $designerSourceZip = Join-Path $buildRoot 'B2S-Pro-Backglass-Source-1.0.1.zip'
@@ -191,6 +199,8 @@ Copy-Item -LiteralPath $serverDll -Destination (Join-Path $serverRuntimeStage 'B
 Copy-Item -LiteralPath $serverExe -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerEXE.exe') -Force
 Copy-Item -LiteralPath $registerApp -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerRegisterApp.exe') -Force
 Copy-Item -LiteralPath (Join-Path $sourceCopyRoot 'CHANGELOG.md') -Destination (Join-Path $serverRuntimeStage 'B2S-Pro-Changelog.md') -Force
+Copy-Item -LiteralPath (Join-Path $serverRoot 'Changelog.txt') -Destination (Join-Path $serverRuntimeStage 'Changelog.txt') -Force
+Copy-Item -LiteralPath (Join-Path $serverRoot 'B2S-native-rotation-changelog.txt') -Destination (Join-Path $serverRuntimeStage 'B2S-native-rotation-changelog.txt') -Force
 
 $serverSourceStage = Join-Path $buildRoot 'server-source'
 Copy-DirectoryContents $serverRoot $serverSourceStage
@@ -207,6 +217,10 @@ New-Zip $serverSourceStage $serverSourceZip
 # source, help, Designer binaries, Server binaries, and internal checksums.
 $completeStage = Join-Path $buildRoot 'complete'
 [System.IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $baselineRoot 'B2S-Latest-Complete-Build.zip'), $completeStage)
+$obsoleteBaselineDocument = Join-Path $completeStage 'Documentation\B2S-REAL-BUILD-BASELINE-2026-08-25.md'
+if (Test-Path -LiteralPath $obsoleteBaselineDocument -PathType Leaf) {
+    Remove-Item -LiteralPath $obsoleteBaselineDocument -Force
+}
 $completeDesignerSource = Join-Path $completeStage 'Source\B2S Pro'
 $completeServerSource = Join-Path $completeStage 'Source\B2S Server'
 Reset-Directory $completeDesignerSource $completeStage
@@ -220,6 +234,7 @@ Copy-Item -LiteralPath (Join-Path $designerRoot 'b2sbackglassdesigner\bin\x86\Re
 Copy-Item -LiteralPath (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x64\Release\B2SVPinMAMEStarter.exe') -Destination (Join-Path $completeStage 'Runtime\x64\B2SVPinMAMEStarter.exe') -Force
 Copy-Item -LiteralPath (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x86\Release\B2SVPinMAMEStarter.exe') -Destination (Join-Path $completeStage 'Runtime\x86\B2SVPinMAMEStarter.exe') -Force
 Copy-Item -LiteralPath (Join-Path $sourceCopyRoot 'CHANGELOG.md') -Destination (Join-Path $completeStage 'Documentation\B2S-Pro-Changelog.md') -Force
+Copy-Item -LiteralPath (Join-Path $designerRoot 'B2S-native-rotation-changelog.txt') -Destination (Join-Path $completeStage 'Documentation\B2S-native-rotation-changelog.txt') -Force
 Copy-DirectoryContents $serverRuntimeStage (Join-Path $completeStage 'Runtime\B2SServer')
 $internalSumTargets = @(
     'Runtime/x64/B2SPro.exe',
@@ -243,6 +258,11 @@ Write-ShaSidecar $completeZip $completeSidecar
 foreach ($path in @($designerZip, $designerSourceZip, $completeZip, $completeSidecar, $serverZip, $serverSidecar, $serverSourceZip)) {
     Copy-Item -LiteralPath $path -Destination $publicReleaseRoot -Force
 }
+$legacyTesterName = 'B2S-Pro-ID-Tester-Legacy.directb2s'
+$legacyTesterPath = Join-Path $publicReleaseRoot $legacyTesterName
+& (Join-Path $PSScriptRoot 'Build-LegacyIDTester.ps1') `
+    -ModernTesterPath (Join-Path $designerRoot 'b2sbackglassdesigner\Resources\IDTester.B2SPro') `
+    -OutputPath $legacyTesterPath
 & (Join-Path $installerRoot 'build-installer.ps1') -IncludeLocalPackage -OutputRoot $distRoot -AssetRoot $publicReleaseRoot
 $selfTest = Join-Path $distRoot 'B2SSetup.SelfTest.exe'
 & $selfTest --self-test (Join-Path $distRoot 'B2S-Latest-Complete-Build.zip') (Join-Path $distRoot 'B2S-Pro-Server-3.0.0.zip')
@@ -259,7 +279,8 @@ $publicNames = @(
     'B2S-Pro-Backglass-Source-1.0.1.zip',
     'B2S-Pro-Server-3.0.0.zip',
     'B2S-Pro-Server-3.0.0.zip.sha256',
-    'B2S-Pro-Server-Source-3.0.0.zip'
+    'B2S-Pro-Server-Source-3.0.0.zip',
+    'B2S-Pro-ID-Tester-Legacy.directb2s'
 )
 $sumLines = foreach ($name in $publicNames) {
     $path = Join-Path $publicReleaseRoot $name
@@ -275,9 +296,11 @@ New-Item -ItemType Directory -Path $offlineProStage, $offlineServerStage -Force 
 foreach ($name in @('B2SProSetup.exe', 'B2S-Latest-Complete-Build.zip', 'B2S-Latest-Complete-Build.zip.sha256')) {
     Copy-Item -LiteralPath (Join-Path $publicReleaseRoot $name) -Destination $offlineProStage -Force
 }
+Copy-Item -LiteralPath $legacyTesterPath -Destination $offlineProStage -Force
 foreach ($name in @('B2SServerSetup.exe', 'B2S-Pro-Server-3.0.0.zip', 'B2S-Pro-Server-3.0.0.zip.sha256')) {
     Copy-Item -LiteralPath (Join-Path $publicReleaseRoot $name) -Destination $offlineServerStage -Force
 }
+Copy-Item -LiteralPath $legacyTesterPath -Destination $offlineServerStage -Force
 New-Zip $offlineProStage (Join-Path $privateReleaseRoot 'B2S-Pro-Offline-Setup-1.0.1.zip')
 New-Zip $offlineProStage (Join-Path $privateReleaseRoot 'B2S-Pro-Private-Tester-Package-1.0.1.zip')
 New-Zip $offlineServerStage (Join-Path $privateReleaseRoot 'B2S-Server-Offline-Setup-3.0.0.zip')
@@ -286,17 +309,42 @@ Copy-Item -LiteralPath $serverDll -Destination $handoffRoot -Force
 Copy-Item -LiteralPath $serverExe -Destination $handoffRoot -Force
 
 # Audit archive content and prove all runtime files came from this build.
-$forbiddenPattern = '(^|/)(bin|obj|\.vs|tests|dist|B2SPro-Backups|Package-Backups|Install-Backups|recovery|diagnostics?)(/|$)|(^|/)[^/]+\.(log|tmp|bak|b2b|directb2s|b2spro)$'
+$forbiddenPattern = '(^|/)(bin|obj|\.vs|tests|dist|B2SPro-Backups|Package-Backups|Install-Backups|recovery|diagnostics?)(/|$)|(^|/)[^/]+\.(log|tmp|bak|b2b|directb2s|b2spro)$|(^|/)[^/]*(audit|real-build-baseline)[^/]*$'
 foreach ($zipPath in Get-ChildItem -LiteralPath $publicReleaseRoot, $privateReleaseRoot -Filter '*.zip' -File) {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath.FullName)
     try {
         foreach ($entry in $archive.Entries) {
             if ($entry.FullName.Contains('\')) { throw "Archive uses a backslash entry path: $($zipPath.Name): $($entry.FullName)" }
-            if ($entry.FullName -match $forbiddenPattern) { throw "Forbidden local-only content in $($zipPath.Name): $($entry.FullName)" }
+            if ($entry.FullName -match $forbiddenPattern -and
+                $entry.FullName -cne $legacyTesterName -and
+                $entry.FullName -notmatch '(^|/)Resources/IDTester\.B2SPro$') {
+                throw "Forbidden local-only content in $($zipPath.Name): $($entry.FullName)"
+            }
         }
     }
     finally { $archive.Dispose() }
 }
+$designerArchive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $publicReleaseRoot 'B2S-Pro-Backglass-1.0.1.zip'))
+try {
+    $designerRuntimeComparisons = @{
+        'x64/B2SPro.exe' = $x64Designer
+        'x86/B2SPro.exe' = $x86Designer
+        'x64/B2SVPinMAMEStarter.exe' = (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x64\Release\B2SVPinMAMEStarter.exe')
+        'x86/B2SVPinMAMEStarter.exe' = (Join-Path $designerRoot 'B2SVPinMAMEStarter\bin\x86\Release\B2SVPinMAMEStarter.exe')
+    }
+    foreach ($entryName in $designerRuntimeComparisons.Keys) {
+        if ((Get-ZipEntryHash $designerArchive $entryName) -ne (Get-FileHash -LiteralPath $designerRuntimeComparisons[$entryName] -Algorithm SHA256).Hash) {
+            throw "Designer package runtime mismatch: $entryName"
+        }
+    }
+    $designerSourceEntries = @($designerArchive.Entries | Where-Object {
+        $_.FullName -match '\.(vb|cs|vbproj|csproj|sln|resx)$'
+    })
+    if ($designerSourceEntries.Count -ne 0) {
+        throw "Designer runtime package contains source: $($designerSourceEntries[0].FullName)"
+    }
+}
+finally { $designerArchive.Dispose() }
 $completeArchive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $publicReleaseRoot 'B2S-Latest-Complete-Build.zip'))
 try {
     $runtimeComparisons = @{
@@ -330,8 +378,11 @@ $result | Format-Table -AutoSize
 Write-Output "Public release: $publicReleaseRoot"
 Write-Output "Private tester: $privateReleaseRoot"
 Write-Output "Local handoff: $handoffRoot"
-if (Test-Path -LiteralPath $backupRoot) { Write-Output "Previous release backup: $backupRoot" }
 
 # Successful builds leave no staging tree behind.
 Assert-ChildPath $buildRoot $localWorkRoot 'completed build staging'
 Remove-Item -LiteralPath $buildRoot -Recurse -Force
+if (Test-Path -LiteralPath $backupRoot -PathType Container) {
+    Assert-ChildPath $backupRoot $localWorkRoot 'completed release backup'
+    Remove-Item -LiteralPath $backupRoot -Recurse -Force
+}

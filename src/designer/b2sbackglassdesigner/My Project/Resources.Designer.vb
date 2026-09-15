@@ -2528,15 +2528,6 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to You&apos;re going to open a B2S backup file. Is this what you want?.
-        '''</summary>
-        Friend ReadOnly Property MSG_BackupFile() As String
-            Get
-                Return ResourceManager.GetString("MSG_BackupFile", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized string similar to Can&apos;t import this &apos;directB2S&apos; file. Necessary infos are missing. Please update the &apos;directB2S&apos; backglass file to a newer version..
         '''</summary>
         Friend ReadOnly Property MSG_CannotImport() As String
@@ -2730,26 +2721,6 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to The origin of this backglass data was a B2S backup file. Do you want to save it as a B2S backup once again?.
-        '''</summary>
-        Friend ReadOnly Property MSG_HowToSave1() As String
-            Get
-                Return ResourceManager.GetString("MSG_HowToSave1", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to Okay, no B2S backup. Do you want to save it as the standard backglass data?
-        '''
-        '''Please notice, you are overwriting your current backglass data. You can NOT undo this action..
-        '''</summary>
-        Friend ReadOnly Property MSG_HowToSave2() As String
-            Get
-                Return ResourceManager.GetString("MSG_HowToSave2", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized string similar to An error occurred loading the backglass file (&apos;{0}&apos;).
         '''
         '''Are you sure this is a valid &apos;directB2S&apos; backglass file?.
@@ -2807,26 +2778,6 @@ Namespace My.Resources
         Friend ReadOnly Property MSG_IsDirty() As String
             Get
                 Return ResourceManager.GetString("MSG_IsDirty", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to An error occurred loading the backglass (&apos;{0}&apos;).
-        '''
-        '''Are you sure this is a valid backglass project file?.
-        '''</summary>
-        Friend ReadOnly Property MSG_LoadError() As String
-            Get
-                Return ResourceManager.GetString("MSG_LoadError", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to This is NO B2S backup file and can not be opened therefore..
-        '''</summary>
-        Friend ReadOnly Property MSG_NoBackupFile() As String
-            Get
-                Return ResourceManager.GetString("MSG_NoBackupFile", resourceCulture)
             End Get
         End Property
         

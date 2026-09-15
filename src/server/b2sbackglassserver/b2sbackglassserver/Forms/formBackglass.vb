@@ -15,6 +15,40 @@ Public Class formBackglass
     Private B2SScreen As B2SScreen = Nothing  '  was New B2SScreen(), delayed to do later  - Westworld, 2016-11-18
     Private B2SLED As B2SLED = New B2SLED()
     Private B2SAnimation As B2SAnimation = New B2SAnimation()
+    Private ReadOnly testerSwitchOnUntil(100) As DateTime
+    Private ReadOnly testerSwitchPendingOff(100) As Boolean
+
+    Public Sub SetTesterSwitchState(ByVal switchID As Integer, ByVal state As Boolean)
+        If Me.InvokeRequired Then
+            Me.BeginInvoke(New Action(Of Integer, Boolean)(AddressOf SetTesterSwitchState), switchID, state)
+            Return
+        End If
+        If switchID < 1 OrElse switchID > 100 OrElse Not B2SData.UsedRomSwitchIDs.ContainsKey(switchID) Then Return
+        If state Then
+            testerSwitchPendingOff(switchID) = False
+            testerSwitchOnUntil(switchID) = DateTime.UtcNow.AddMilliseconds(150)
+            For Each box As B2SBaseBox In B2SData.UsedRomSwitchIDs(switchID)
+                Dim switchPicture As B2SPictureBox = TryCast(box, B2SPictureBox)
+                If switchPicture IsNot Nothing Then switchPicture.Visible = Not switchPicture.RomInverted
+            Next
+        ElseIf DateTime.UtcNow < testerSwitchOnUntil(switchID) Then
+            testerSwitchPendingOff(switchID) = True
+        Else
+            For Each box As B2SBaseBox In B2SData.UsedRomSwitchIDs(switchID)
+                Dim switchPicture As B2SPictureBox = TryCast(box, B2SPictureBox)
+                If switchPicture IsNot Nothing Then switchPicture.Visible = switchPicture.RomInverted
+            Next
+        End If
+    End Sub
+
+    Public Sub FlushTesterSwitchOffs()
+        For switchID As Integer = 1 To 100
+            If testerSwitchPendingOff(switchID) AndAlso DateTime.UtcNow >= testerSwitchOnUntil(switchID) Then
+                testerSwitchPendingOff(switchID) = False
+                SetTesterSwitchState(switchID, False)
+            End If
+        Next
+    End Sub
 
     Private formDMD As formDMD = Nothing
     Private formSettings As formSettings = Nothing
@@ -279,6 +313,10 @@ Public Class formBackglass
 #End If
 
     Private Sub formBackglass_Shown(sender As Object, e As System.EventArgs) Handles Me.Shown
+
+        For Each pivot As B2SPictureBox In B2SData.StartupPivotPictures
+            pivot.SetPivotTriggerState(True)
+        Next
 
 #If B2S = "EXE" Then
         If Not B2SSettings.FormToFront Then
@@ -640,14 +678,19 @@ Public Class formBackglass
                         e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
                         Dim pivotX As Single = If(picbox.NativeRotation, picbox.RotationPivotX, 0.5F)
                         Dim pivotY As Single = If(picbox.NativeRotation, picbox.RotationPivotY, 0.5F)
-                        Dim destination As PointF() = If(picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation,
-                                                         BallRollDestinationPoints(picbox.RectangleF, picbox.VisualRotationAngle),
-                                                         RotationDestinationPoints(picbox.RectangleF, picbox.VisualRotationAngle, pivotX, pivotY))
+                        Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
+                        Dim destination As PointF() = If(picbox.PivotRotation AndAlso picbox.PivotAutomaticOscillation,
+                                                         AutomaticPivotDestinationPoints(picbox, visualBounds),
+                                                         If(picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation,
+                                                            BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle),
+                                                            RotationDestinationPoints(visualBounds, picbox.VisualRotationAngle, pivotX, pivotY)))
                         e.Graphics.DrawImage(drawImage, destination,
                                              New RectangleF(0, 0, drawImage.Width, drawImage.Height),
                                              GraphicsUnit.Pixel)
                         e.Graphics.Restore(state)
                     End If
+                ElseIf drawImage IsNot Nothing AndAlso picbox.PreservePhysicsArtworkAspect Then
+                    e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
                 ElseIf drawImage IsNot Nothing Then
                     Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(drawImage)
                     If tiles Is Nothing Then
@@ -703,27 +746,29 @@ Public Class formBackglass
 
     Private Function PicturePaintBounds(ByVal picbox As B2SPictureBox) As Rectangle
         If picbox Is Nothing OrElse picbox.RectangleF.IsEmpty Then Return Rectangle.Empty
+        Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
         If picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation Then
             Dim radians As Double = picbox.VisualRotationAngle * Math.PI / 180.0R
             Dim factor As Single = CSng(Math.Abs(Math.Cos(radians)) + Math.Abs(Math.Sin(radians)))
-            Dim centerX As Single = picbox.RectangleF.Left + picbox.RectangleF.Width / 2.0F
-            Dim centerY As Single = picbox.RectangleF.Top + picbox.RectangleF.Height / 2.0F
+            Dim centerX As Single = visualBounds.Left + visualBounds.Width / 2.0F
+            Dim centerY As Single = visualBounds.Top + visualBounds.Height / 2.0F
             Dim transformed As Rectangle = Rectangle.Ceiling(New RectangleF(
-                centerX - picbox.RectangleF.Width * factor / 2.0F,
-                centerY - picbox.RectangleF.Height * factor / 2.0F,
-                picbox.RectangleF.Width * factor,
-                picbox.RectangleF.Height * factor))
-            Dim rollingBounds As Rectangle = Rectangle.Union(Rectangle.Ceiling(picbox.RectangleF), transformed)
+                centerX - visualBounds.Width * factor / 2.0F,
+                centerY - visualBounds.Height * factor / 2.0F,
+                visualBounds.Width * factor,
+                visualBounds.Height * factor))
+            Dim rollingBounds As Rectangle = Rectangle.Union(Rectangle.Ceiling(visualBounds), transformed)
             rollingBounds.Inflate(4, 4)
             Return rollingBounds
         End If
-        If (Not picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled) OrElse Math.Abs(picbox.VisualRotationAngle) < 0.001F Then Return Rectangle.Round(picbox.RectangleF)
+        If (Not picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled) OrElse Math.Abs(picbox.VisualRotationAngle) < 0.001F Then Return Rectangle.Round(visualBounds)
 
         Dim pivotX As Single = If(picbox.NativeRotation, picbox.RotationPivotX, 0.5F)
         Dim pivotY As Single = If(picbox.NativeRotation, picbox.RotationPivotY, 0.5F)
-        Dim points As PointF() = RotationDestinationPoints(picbox.RectangleF, picbox.VisualRotationAngle,
-                                                           pivotX, pivotY)
-        If points Is Nothing OrElse points.Length < 3 Then Return Rectangle.Round(picbox.RectangleF)
+        Dim points As PointF() = If(picbox.PivotRotation AndAlso picbox.PivotAutomaticOscillation,
+                                    AutomaticPivotDestinationPoints(picbox, visualBounds),
+                                    RotationDestinationPoints(visualBounds, picbox.VisualRotationAngle, pivotX, pivotY))
+        If points Is Nothing OrElse points.Length < 3 Then Return Rectangle.Round(visualBounds)
         Dim fourth As New PointF(points(1).X + points(2).X - points(0).X,
                                  points(1).Y + points(2).Y - points(0).Y)
         Dim left As Single = Math.Min(Math.Min(points(0).X, points(1).X), Math.Min(points(2).X, fourth.X))
@@ -959,6 +1004,12 @@ Public Class formBackglass
 
         ' poll registry data
         PollingData()
+        Dim testerSwitchID As Integer = 0
+        Dim testerSwitchState As Boolean = False
+        While B2SData.TryDequeueTesterSwitchState(testerSwitchID, testerSwitchState)
+            SetTesterSwitchState(testerSwitchID, testerSwitchState)
+        End While
+        FlushTesterSwitchOffs()
 
     End Sub
 
@@ -2657,6 +2708,7 @@ Public Class formBackglass
                         Dim externalPivotTipX As Single = 0.9F
                         Dim externalPivotTipY As Single = 0.5F
                         Dim pivotAnimation As Boolean = False
+                        Dim pivotAutomaticOscillation As Boolean = False
                         Dim pivotDownAngle As Single = 0.0F
                         Dim pivotUpAngle As Single = -30.0F
                         Dim pivotDownTrigger As String = String.Empty
@@ -2692,6 +2744,7 @@ Public Class formBackglass
                         If innerNode.Attributes("ExternalPivotX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("ExternalPivotX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotX)
                         If innerNode.Attributes("ExternalPivotY") IsNot Nothing Then Single.TryParse(innerNode.Attributes("ExternalPivotY").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotY)
                         If innerNode.Attributes("PivotAnimation") IsNot Nothing Then pivotAnimation = (innerNode.Attributes("PivotAnimation").InnerText = "1")
+                        If innerNode.Attributes("PivotAutomaticOscillation") IsNot Nothing Then pivotAutomaticOscillation = (innerNode.Attributes("PivotAutomaticOscillation").InnerText = "1")
                         If innerNode.Attributes("PivotX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotX)
                         If innerNode.Attributes("PivotY") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotY").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotY)
                         If innerNode.Attributes("PivotTipX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotTipX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotTipX)
@@ -2714,8 +2767,12 @@ Public Class formBackglass
                         If innerNode.Attributes("PhysicsBoundarySegmentBounces") IsNot Nothing Then physicsBoundarySegmentBounces = ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText)
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then physicsObstacles = ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText)
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then physicsSwitchZones = ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText)
+                        If physicsSwitchZones IsNot Nothing AndAlso innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then
+                            ApplyPhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, physicsSwitchZones)
+                        End If
                         If innerNode.Attributes("PhysicsLauncherEnabled") IsNot Nothing AndAlso innerNode.Attributes("PhysicsLauncherEnabled").InnerText = "1" Then
                             physicsLauncher = New B2SData.PhysicsLauncher With {.TriggerType = 1, .Angle = -90.0F, .Strength = 900.0F}
+                            If innerNode.Attributes("PhysicsLauncherFollowPivot") IsNot Nothing Then physicsLauncher.FollowPivot = (innerNode.Attributes("PhysicsLauncherFollowPivot").InnerText = "1")
                             If innerNode.Attributes("PhysicsLauncherTriggerType") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PhysicsLauncherTriggerType").InnerText, physicsLauncher.TriggerType)
                             If innerNode.Attributes("PhysicsLauncherTriggerID") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PhysicsLauncherTriggerID").InnerText, physicsLauncher.TriggerID)
                             Dim launcherX As Single = 0.0F, launcherY As Single = 0.0F
@@ -2838,14 +2895,18 @@ Public Class formBackglass
                         picbox.BackgroundImage = image
                         picbox.OffImage = offimage
                         picbox.IsImageSnippit = isimagesnippit
+                        ' Pivot artwork must use the background's X/Y scaling so its saved
+                        ' editor placement stays exact. A ball keeps a round visual while
+                        ' its center follows those same scaled coordinates.
+                        picbox.PreservePhysicsArtworkAspect = physicsBall
                         picbox.SnippitRotationStopBehaviour = picboxrotationstopbehaviour
                         picbox.RotationDirection = picboxrotationdirection
                         picbox.AutoStartRotation = automaticrotationcontinuous
                         picbox.NativeRotation = nativerotation
                         picbox.NativeRotationSteps = Math.Max(2, picboxrotatesteps)
                         picbox.NativeRotationInterval = Math.Max(10, picboxrotateinterval)
-                        picbox.RotationPivotX = Math.Max(0.0F, Math.Min(1.0F, externalPivotX))
-                        picbox.RotationPivotY = Math.Max(0.0F, Math.Min(1.0F, externalPivotY))
+                        picbox.RotationPivotX = If(pivotAnimation, externalPivotX, Math.Max(0.0F, Math.Min(1.0F, externalPivotX)))
+                        picbox.RotationPivotY = If(pivotAnimation, externalPivotY, Math.Max(0.0F, Math.Min(1.0F, externalPivotY)))
                         picbox.RotationTipX = Math.Max(0.0F, Math.Min(1.0F, externalPivotTipX))
                         picbox.RotationTipY = Math.Max(0.0F, Math.Min(1.0F, externalPivotTipY))
                         picbox.BehindCanvas = snippitbehindcanvas
@@ -2885,7 +2946,7 @@ Public Class formBackglass
                                 B2SData.ZOrderImages.Add(picbox)
                             End If
                             ' add info to rom collection
-                            If Not pivotAnimation AndAlso romid > 0 AndAlso picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso romidtype <> B2SBaseBox.eRomIDType.Mech Then
+                            If Not pivotAnimation AndAlso romid > 0 AndAlso picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso romidtype <> B2SBaseBox.eRomIDType.Mech AndAlso romidtype <> B2SBaseBox.eRomIDType.Switch Then
                                 Dim key As String = If(rominverted, "I", "") & Choose(romidtype, "L", "S", "GI") & romid.ToString() & "|" & romidvalue.ToString()
                                 If picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = B2SData.eDualMode.Authentic Then
                                     If roms4Authentic.ContainsKey(key) Then roms4Authentic(key) += size.Width * size.Height Else roms4Authentic.Add(key, size.Width * size.Height)
@@ -2920,12 +2981,12 @@ Public Class formBackglass
                             B2SData.RegisterExternalPivot(picbox, externalPivotGroup, name, externalPivotRepresentative, externalPivotAngle, externalPivotDuration)
                         End If
                         If pivotAnimation Then
-                            picbox.RotationPivotX = Math.Max(0.0F, Math.Min(1.0F, externalPivotX))
-                            picbox.RotationPivotY = Math.Max(0.0F, Math.Min(1.0F, externalPivotY))
+                            picbox.RotationPivotX = externalPivotX
+                            picbox.RotationPivotY = externalPivotY
                             If pivotTriggerType = 0 Then
                                 B2SData.RegisterSingleImagePivot(picbox, "Pivot:" & name, pivotDownTrigger, pivotDownAngle, pivotUpTrigger, pivotUpAngle, externalPivotDuration)
                             Else
-                                B2SData.RegisterPivotTrigger(picbox, pivotTriggerType, pivotTriggerID, pivotDownAngle, pivotUpAngle, externalPivotDuration)
+                                B2SData.RegisterPivotTrigger(picbox, pivotTriggerType, pivotTriggerID, pivotDownAngle, pivotUpAngle, externalPivotDuration, pivotAutomaticOscillation)
                             End If
                         End If
                         If physicsBall AndAlso Not physicsBounds.IsEmpty Then
@@ -3849,6 +3910,33 @@ Public Class formBackglass
         Return String.Empty
     End Function
 
+    Private Function AutomaticPivotDestinationPoints(ByVal picbox As B2SPictureBox,
+                                                     ByVal rect As RectangleF) As PointF()
+        If picbox.Width <= 0 OrElse picbox.Height <= 0 Then
+            Return RotationDestinationPoints(rect, picbox.VisualRotationAngle,
+                                             picbox.RotationPivotX, picbox.RotationPivotY)
+        End If
+        ' The designer rotates the authored image before the backglass is resized.
+        ' Applying the unequal screen scales first changes both its arc and shape.
+        Dim angle As Double = picbox.VisualRotationAngle * Math.PI / 180.0R
+        Dim cosine As Double = Math.Cos(angle), sine As Double = Math.Sin(angle)
+        Dim scaleX As Double = rect.Width / picbox.Width, scaleY As Double = rect.Height / picbox.Height
+        Dim hingeX As Double = rect.Left + rect.Width * picbox.RotationPivotX
+        Dim hingeY As Double = rect.Top + rect.Height * picbox.RotationPivotY
+        Dim left As Double = -picbox.Width * picbox.RotationPivotX
+        Dim right As Double = picbox.Width * (1.0R - picbox.RotationPivotX)
+        Dim top As Double = -picbox.Height * picbox.RotationPivotY
+        Dim bottom As Double = picbox.Height * (1.0R - picbox.RotationPivotY)
+        Return New PointF() {
+            New PointF(CSng(hingeX + (left * cosine - top * sine) * scaleX),
+                       CSng(hingeY + (left * sine + top * cosine) * scaleY)),
+            New PointF(CSng(hingeX + (right * cosine - top * sine) * scaleX),
+                       CSng(hingeY + (right * sine + top * cosine) * scaleY)),
+            New PointF(CSng(hingeX + (left * cosine - bottom * sine) * scaleX),
+                       CSng(hingeY + (left * sine + bottom * cosine) * scaleY))
+        }
+    End Function
+
     Private Sub InitB2SScreen()
 
         ' initialize screen settings
@@ -3927,7 +4015,8 @@ Public Class formBackglass
         ' now resize the detail images
         If xResizeFactor <> 1 OrElse yResizeFactor <> 1 Then
             For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                If illu.Value.PictureBoxType = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not illu.Value.NativeRotation Then
+                If illu.Value.PictureBoxType = B2SPictureBox.ePictureBoxType.StandardImage AndAlso
+                   Not illu.Value.NativeRotation AndAlso Not illu.Value.PreservePhysicsArtworkAspect Then
                     If illu.Value.BackgroundImage IsNot Nothing Then
                         Dim newsize As SizeF = New SizeF(illu.Value.BackgroundImage.Size.Width / xResizeFactor, illu.Value.BackgroundImage.Size.Height / yResizeFactor)
                         'Dim image As Image = illu.Value.BackgroundImage.ResizedF(newsize, True)
@@ -4054,6 +4143,20 @@ Public Class formBackglass
         Next
         Return result
     End Function
+
+    Private Sub ApplyPhysicsSwitchAngles(ByVal value As String, ByVal zones As List(Of B2SData.PhysicsSwitchZone))
+        If String.IsNullOrWhiteSpace(value) OrElse zones Is Nothing Then Return
+        Dim encoded As String() = value.Split("|"c)
+        For index As Integer = 0 To Math.Min(encoded.Length, zones.Count) - 1
+            Dim angle As Single
+            If Single.TryParse(encoded(index), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, angle) Then
+                angle = angle Mod 360.0F
+                If angle > 180.0F Then angle -= 360.0F
+                If angle <= -180.0F Then angle += 360.0F
+                zones(index).Angle = angle
+            End If
+        Next
+    End Sub
 
     Private Function ParsePhysicsBounds(ByVal value As String) As RectangleF
         If String.IsNullOrWhiteSpace(value) Then Return RectangleF.Empty

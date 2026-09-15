@@ -256,11 +256,6 @@
   <data name="EMR_T2_7" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T2_7.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="MSG_HowToSave2" xml:space="preserve">
-    <value>Okay, no B2S backup. Do you want to save it as the standard backglass data?
-
-Please notice, you are overwriting your current backglass data. You can NOT undo this action.</value>
-  </data>
   <data name="EMR_T3_2" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T3_2.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
@@ -338,9 +333,6 @@ Please notice, you are overwriting your current backglass data. You can NOT undo
   </data>
   <data name="led_small" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\led_small.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="MSG_NoBackupFile" xml:space="preserve">
-    <value>This is NO B2S backup file and can not be opened therefore.</value>
   </data>
   <data name="B2SPictureBox_vb" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\resources\codefiles\b2spicturebox.vb.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;Windows-1252</value>
@@ -446,9 +438,6 @@ Please notice, you are overwriting your current backglass data. You can NOT undo
   </data>
   <data name="EMR_T2_4" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T2_4.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="MSG_HowToSave1" xml:space="preserve">
-    <value>The origin of this backglass data was a B2S backup file. Do you want to save it as a B2S backup once again?</value>
   </data>
   <data name="EMR_T3_1" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T3_1.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -795,9 +784,6 @@ If you import one or more DMD images you can use them as background or main pict
   <data name="EMR_T3_4" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T3_4.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="MSG_BackupFile" xml:space="preserve">
-    <value>You're going to open a B2S backup file. Is this what you want?</value>
-  </data>
   <data name="EMR_T1_Empty" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T1_Empty.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
@@ -1019,11 +1005,6 @@ To stop the import press 'Cancel' at the file selection dialog and answer with '
     <value>You have selected an LED image set. My recommendation is to use 'Rendered LEDs' because of more flexibility, more realism and much better look.	 
 
 Do you really want to use an LED image set?</value>
-  </data>
-  <data name="MSG_LoadError" xml:space="preserve">
-    <value>An error occurred loading the backglass ('{0}').
-
-Are you sure this is a valid backglass project file?</value>
   </data>
   <data name="MSG_ImportError" xml:space="preserve">
     <value>An error occurred loading the backglass file ('{0}').

@@ -1,4 +1,8 @@
-CUSTOM BUILD 3.0.0 - Updated through September 6, 2026
+CUSTOM BUILD 3.0.0 - Updated through September 15, 2026
+- Added held-trigger and startup automatic pivot oscillation, external hinge
+  placement, and pivot-following launcher/ball positioning on stretched screens.
+- Added rotated switch zones and live switch-ID reporting for the B2S Pro ID Tester.
+- Preserved exact authored layer order and the established legacy DirectB2S path.
 - Completed the Motion Path runtime: authored entry/exit paths, automatic,
   solenoid, lamp, and B2S start/remove triggers, B2S stop/resume, looping, and
   optional repeated-trigger queuing.

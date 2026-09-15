@@ -217,12 +217,6 @@
     <Compile Include="Forms\formPictureSequenceImport.vb">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Forms\formBackup.Designer.vb">
-      <DependentUpon>formBackup.vb</DependentUpon>
-    </Compile>
-    <Compile Include="Forms\formBackup.vb">
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Include="Forms\formBrightness.Designer.vb">
       <DependentUpon>formBrightness.vb</DependentUpon>
     </Compile>
@@ -312,6 +306,9 @@
     <Compile Include="Forms\formVPM.vb">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Modules\IDTester.vb" />
+    <Compile Include="Modules\IDTesterRestore.vb" />
+    <Compile Include="Modules\IDTesterWindows.vb" />
     <Compile Include="Modules\AppThemeManager.vb" />
     <Compile Include="Modules\B2SProUIFoundation.vb" />
     <Compile Include="Modules\B2SProMainToolbar.vb" />
@@ -352,10 +349,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\formAnimations.resx">
       <DependentUpon>formAnimations.vb</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\formBackup.resx">
-      <DependentUpon>formBackup.vb</DependentUpon>
       <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\formBrightness.resx">
@@ -745,6 +738,9 @@
     <None Include="Resources\B2SProAppIcon.png" />
     <EmbeddedResource Include="Resources\B2SAboutAvatar.gif">
       <LogicalName>B2SAboutAvatar.gif</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\IDTester.B2SPro">
+      <LogicalName>B2SBackglassDesigner.IDTester.B2SPro</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\B2SProLogo.png">
       <LogicalName>B2SProLogo.png</LogicalName>

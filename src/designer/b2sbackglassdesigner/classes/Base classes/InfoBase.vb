@@ -74,6 +74,8 @@ Public Class InfoBase
                         ret &= "S"
                     Case eRomIDType.GIString
                         ret &= "GI"
+                    Case eRomIDType.Switch
+                        ret &= "W"
                     Case Else
                         ret &= "L"
                 End Select

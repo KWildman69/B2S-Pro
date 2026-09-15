@@ -2,7 +2,6 @@
 Imports System
 Imports System.Drawing
 Imports System.Drawing.Imaging
-Imports System.Runtime.InteropServices
 Imports System.Windows.Forms
 
 Public Class formLightDiffusionEditor
@@ -19,12 +18,6 @@ Public Class formLightDiffusionEditor
     Private ReadOnly falloff As TrackBar
     Private ReadOnly transmissionContrast As TrackBar
     Private ReadOnly saveTheseSettings As CheckBox
-    Private globalMaskEnabled As CheckBox
-    Private globalMaskInvert As CheckBox
-    Private globalMaskStatus As Label
-    Private globalMaskThreshold As TrackBar
-    Private globalMaskThresholdLabel As Label
-    Private lightInFrontOfMask As CheckBox
     Private flasherStyle As ComboBox
     Private flasherSaturation As TrackBar
     Private flasherHighlightProtection As TrackBar
@@ -64,6 +57,7 @@ Public Class formLightDiffusionEditor
     Private ReadOnly originalLightDiffusion As Integer
     Private ReadOnly originalLightTemperature As Integer
     Private ReadOnly originalLightPurpose As Illumination.eLightPurpose
+    Private ReadOnly originalArtworkPixelLighting As Boolean
     Private ReadOnly originalBlendMode As Integer
     Private ReadOnly originalPreviewQuality As Integer
     Private ReadOnly originalInFrontOfMask As Boolean
@@ -127,6 +121,7 @@ Public Class formLightDiffusionEditor
     Private currentProfileIsFlasher As Boolean
     Private ReadOnly originalBlinkEnabled As Boolean
     Private ReadOnly originalBlinkInterval As Integer
+    Private ReadOnly isDedicatedFlasher As Boolean
 
     ' Light and flasher slider profiles are now stored independently and persistently.
 
@@ -134,6 +129,8 @@ Public Class formLightDiffusionEditor
 
     Public Sub New(ByVal selectedBulb As Illumination.BulbInfo, Optional ByVal multiSelection As IEnumerable(Of Illumination.BulbInfo) = Nothing)
         bulb = selectedBulb
+        isDedicatedFlasher = (bulb.IlluMode = Illumination.eIlluMode.Flasher OrElse
+                              bulb.LightPurpose = Illumination.eLightPurpose.Flasher)
         If multiSelection IsNot Nothing Then
             For Each selected As Illumination.BulbInfo In multiSelection
                 If selected IsNot Nothing AndAlso Not selectedBulbs.Contains(selected) Then selectedBulbs.Add(selected)
@@ -150,6 +147,7 @@ Public Class formLightDiffusionEditor
         originalLightDiffusion = bulb.LightDiffusion
         originalLightTemperature = bulb.LightTemperature
         originalLightPurpose = bulb.LightPurpose
+        originalArtworkPixelLighting = bulb.ArtworkPixelLighting
         originalBlendMode = bulb.GlowBlendMode
         originalPreviewQuality = bulb.GlowPreviewQuality
         originalInFrontOfMask = bulb.InFrontOfGlobalMask
@@ -180,6 +178,18 @@ Public Class formLightDiffusionEditor
         originalBlinkEnabled = bulb.BlinkEnabled
         originalBlinkInterval = bulb.BlinkInterval
 
+        ' Opening the new Light editor previews the same artwork-pixel pipeline
+        ' as the Flasher editor. Cancel restores legacy lights unchanged; saving
+        ' makes the upgrade explicit for only the selected regular light(s).
+        For Each selected As Illumination.BulbInfo In selectedBulbs
+            If selected IsNot Nothing AndAlso Not selected.IsImageSnippit AndAlso
+               selected.IlluMode <> Illumination.eIlluMode.Flasher AndAlso
+               selected.LightPurpose <> Illumination.eLightPurpose.Flasher Then
+                selected.ArtworkPixelLighting = True
+                selected.IsIlluminatedImageDirty = True
+            End If
+        Next
+
         ' Opening Light Settings must reflect the values already stored on the
         ' selected light.  Do not recall the last-used profile here: doing so
         ' changed existing projects before the user touched a control.
@@ -192,7 +202,8 @@ Public Class formLightDiffusionEditor
         MinimizeBox = False
         Font = New Font("Tahoma", 9.0F)
 
-        If bulb.IlluMode = Illumination.eIlluMode.Flasher Then
+        ' The application routes image snippets to their own settings dialog.
+        ' This editor therefore has one shared current layout for lights and flashers.
             Dim initialSpread As Integer = bulb.GlowSpread
             Dim initialSoftness As Integer = bulb.GlowSoftness
             Dim initialDiffusion As Integer = bulb.GlowFalloff
@@ -200,8 +211,8 @@ Public Class formLightDiffusionEditor
             Dim initialTransmissionContrast As Integer = If(bulb.ArtworkContrast <= 0, 140, bulb.ArtworkContrast)
             Dim initialFlashColor As Color = bulb.LightColor
 
-            Text = "Flasher"
-            Name = "formFlasherEditor"
+            Text = If(isDedicatedFlasher, "Flasher", "Light")
+            Name = If(isDedicatedFlasher, "formFlasherEditor", "formLightEditor")
             ' Keep the complete dialog inside a typical 1080p working area.  The
             ' previous action row started below the client area and was clipped.
             ClientSize = New Size(1380, 800)
@@ -217,21 +228,21 @@ Public Class formLightDiffusionEditor
             Dim panelColor As Color = Color.FromArgb(27, 29, 31)
 
             flasherTitleLabel = New Label With {
-                .Text = "⚡  Flasher",
+                .Text = If(isDedicatedFlasher, "⚡  Flasher", "☀  Light"),
                 .Left = 24, .Top = 18, .Width = 430, .Height = 42,
                 .Font = New Font("Tahoma", 20.0F, FontStyle.Bold),
                 .ForeColor = accent
             }
             Controls.Add(flasherTitleLabel)
             flasherDescriptionLabel = New Label With {
-                .Text = "The placed flasher box defines the light area. Every slider updates the preview live.",
+                .Text = "The placed " & If(isDedicatedFlasher, "flasher", "light") & " box defines the light area. Every slider updates the preview live.",
                 .Left = 26, .Top = 58, .Width = 530, .Height = 26,
                 .ForeColor = Color.Gainsboro
             }
             Controls.Add(flasherDescriptionLabel)
 
             flasherSettingsGroup = New GroupBox With {
-                .Text = "  FLASH SETTINGS",
+                .Text = If(isDedicatedFlasher, "  FLASHER SETTINGS", "  LIGHT SETTINGS"),
                 .Left = 20, .Top = 94, .Width = 555, .Height = 505,
                 .ForeColor = accent, .BackColor = panelColor,
                 .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
@@ -259,23 +270,65 @@ Public Class formLightDiffusionEditor
             })
 
             flasherPreviewModeGroup = New GroupBox With {
-                .Text = "  PREVIEW MODE", .Left = 20, .Top = 610, .Width = 555, .Height = 76,
+                .Text = If(isDedicatedFlasher, "  PREVIEW MODE", "  BLINKER RUNTIME"),
+                .Left = 20, .Top = 610, .Width = 555, .Height = If(isDedicatedFlasher, 76, 92),
                 .ForeColor = accent, .BackColor = panelColor,
                 .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
             }
             Controls.Add(flasherPreviewModeGroup)
 
-            Dim flashedButton As New Button With {.Text = "☀  Live Flash", .Left = 18, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat}
-            testPulseButton = New Button With {.Text = "⚡  Test Pulse", .Left = 164, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat, .ForeColor = accent}
-            StyleDarkButton(flashedButton)
-            StyleDarkButton(testPulseButton)
-            AddHandler flashedButton.Click, Sub(sender As Object, e As EventArgs)
-                                                 StopRepeatingFlasherPulse(False)
-                                                 previewMode.SelectedIndex = 0
-                                                 RefreshPreviewImages()
-                                             End Sub
-            AddHandler testPulseButton.Click, AddressOf TestFlasherPulsePreview
-            flasherPreviewModeGroup.Controls.AddRange(New Control() {flashedButton, testPulseButton})
+            If isDedicatedFlasher Then
+                Dim flashedButton As New Button With {.Text = "☀  Live Flash", .Left = 18, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat}
+                testPulseButton = New Button With {.Text = "⚡  Test Pulse", .Left = 164, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat, .ForeColor = accent}
+                StyleDarkButton(flashedButton)
+                StyleDarkButton(testPulseButton)
+                AddHandler flashedButton.Click, Sub(sender As Object, e As EventArgs)
+                                                     StopRepeatingFlasherPulse(False)
+                                                     previewMode.SelectedIndex = 0
+                                                     RefreshPreviewImages()
+                                                 End Sub
+                AddHandler testPulseButton.Click, AddressOf TestFlasherPulsePreview
+                flasherPreviewModeGroup.Controls.AddRange(New Control() {flashedButton, testPulseButton})
+            Else
+                blinkerEnabled = New CheckBox With {
+                    .Name = "chkBlinkerLight", .Text = "Enable blinker", .Left = 18, .Top = 20,
+                    .Width = 125, .Height = 24, .Checked = bulb.BlinkEnabled,
+                    .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+                }
+                Dim intervalLabel As New Label With {
+                    .Text = "Interval:", .Left = 150, .Top = 23, .Width = 58, .Height = 22,
+                    .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+                }
+                blinkerInterval = New NumericUpDown With {
+                    .Name = "numericBlinkerInterval", .Left = 208, .Top = 19, .Width = 90,
+                    .Minimum = 1D, .Maximum = 60000D, .Increment = 1D,
+                    .ThousandsSeparator = True, .Value = Math.Max(1D, Math.Min(60000D, bulb.BlinkInterval)),
+                    .Enabled = bulb.BlinkEnabled,
+                    .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke,
+                    .Font = New Font("Tahoma", 9.0F)
+                }
+                Dim millisecondsLabel As New Label With {
+                    .Text = "ms", .Left = 304, .Top = 23, .Width = 30, .Height = 22,
+                    .Enabled = bulb.BlinkEnabled, .ForeColor = Color.WhiteSmoke,
+                    .Font = New Font("Tahoma", 9.0F)
+                }
+                intervalLabel.Enabled = bulb.BlinkEnabled
+                Dim flashedButton As New Button With {.Text = "Live Light", .Left = 18, .Top = 51, .Width = 150, .Height = 28, .FlatStyle = FlatStyle.Flat}
+                Dim blinkButton As New Button With {.Text = "Blink Preview", .Left = 178, .Top = 51, .Width = 150, .Height = 28, .FlatStyle = FlatStyle.Flat}
+                StyleDarkButton(flashedButton)
+                StyleDarkButton(blinkButton)
+                AddHandler flashedButton.Click, Sub(sender As Object, e As EventArgs) previewMode.SelectedIndex = 0
+                AddHandler blinkButton.Click, Sub(sender As Object, e As EventArgs) previewMode.SelectedIndex = 1
+                AddHandler blinkerEnabled.CheckedChanged, Sub(sender As Object, e As EventArgs)
+                                                               blinkerInterval.Enabled = blinkerEnabled.Checked
+                                                               intervalLabel.Enabled = blinkerEnabled.Checked
+                                                               millisecondsLabel.Enabled = blinkerEnabled.Checked
+                                                               BlinkerControlChanged(sender, e)
+                                                           End Sub
+                AddHandler blinkerInterval.ValueChanged, AddressOf BlinkerControlChanged
+                flasherPreviewModeGroup.Controls.AddRange(New Control() {blinkerEnabled, intervalLabel, blinkerInterval,
+                                                                         millisecondsLabel, flashedButton, blinkButton})
+            End If
 
             flasherResetButton = New Button With {.Text = "Reset", .Width = 82, .Height = 38, .FlatStyle = FlatStyle.Flat}
             StyleDarkButton(flasherResetButton)
@@ -283,7 +336,7 @@ Public Class formLightDiffusionEditor
             Controls.Add(flasherResetButton)
 
             saveTheseSettings = New CheckBox With {
-                .Text = "Flasher settings save automatically",
+                .Text = If(isDedicatedFlasher, "Flasher settings save automatically", "Light settings save automatically"),
                 .Checked = True, .Enabled = False, .Visible = False,
                 .ForeColor = Color.Gainsboro
             }
@@ -321,139 +374,29 @@ Public Class formLightDiffusionEditor
             AddHandler lightTemperature.ValueChanged, AddressOf PreviewControlChanged
             isInitializing = False
             QueueLivePreview()
-        Else
-            Text = "Light Settings"
-            ClientSize = New Size(1290, 829)
-            MinimumSize = Me.Size
-            MaximumSize = Me.Size
-
-            Controls.Add(New Label With {
-                .Text = "The glow can extend outside the light box. The selection box does not change.",
-                .Left = 16, .Top = 16, .Width = 542, .Height = 20
-            })
-            Controls.Add(New Label With {.Text = "Spread (pixels)", .Left = 16, .Top = 50, .Width = 140})
-            spread = New NumericUpDown With {.Left = 166, .Top = 46, .Width = 100, .Minimum = 0, .Maximum = 1000, .Value = Math.Max(0, Math.Min(1000, bulb.GlowSpread))}
-            Controls.Add(spread)
-            softness = AddExtendedSlider("Edge feather", 84, bulb.GlowSoftness, 0, 200)
-            falloff = AddSlider("Contrast", 138, bulb.GlowFalloff)
-            intensity = AddExtendedSlider("Brightness", 192, bulb.GlowIntensity, 0,
-                                          If(bulb.LightPurpose = Illumination.eLightPurpose.Flasher, 1600, 800))
-            lightDiffusion = AddExtendedSlider("Light Diffuser", 246, bulb.LightDiffusion, 0, 300)
-            lightTemperature = AddKelvinSlider("Light Temperature", 300, bulb.LightTemperature)
-
-            saveTheseSettings = New CheckBox With {.Text = "Light settings save automatically", .Left = 16, .Top = 356, .Width = 275, .Checked = True, .Enabled = False}
-            Controls.Add(saveTheseSettings)
-
-            Dim quickSelectButton As New Button With {.Text = "Quick Selection...", .Left = 16, .Top = 388, .Width = 150, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            AddHandler quickSelectButton.Click, AddressOf QuickSelection_Click
-            Controls.Add(quickSelectButton)
-
-            Dim copyButton As New Button With {.Text = "Copy", .Left = 174, .Top = 388, .Width = 70, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            Dim pasteButton As New Button With {.Text = "Paste", .Left = 248, .Top = 388, .Width = 70, .Height = 27, .FlatStyle = FlatStyle.Flat, .Enabled = LightPropertyClipboard.CanPaste}
-            AddHandler copyButton.Click, AddressOf CopyProperties_Click
-            AddHandler pasteButton.Click, AddressOf PasteProperties_Click
-            Controls.Add(copyButton) : Controls.Add(pasteButton)
-            Dim resetButton As New Button With {.Text = "Reset", .Left = 322, .Top = 388, .Width = 70, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            AddHandler resetButton.Click, AddressOf Reset_Click
-            Controls.Add(resetButton)
-
-            Dim globalGroup As New GroupBox With {.Text = "Global Illumination Mask", .Left = 12, .Top = 424, .Width = 546, .Height = 190}
-            globalMaskEnabled = New CheckBox With {.Text = "Enabled", .Left = 12, .Top = 24, .Width = 75, .Checked = If(Backglass.currentData IsNot Nothing, Backglass.currentData.GlobalIlluminationMaskEnabled, False)}
-            globalMaskInvert = New CheckBox With {.Text = "Invert", .Left = 92, .Top = 24, .Width = 65, .Checked = If(Backglass.currentData IsNot Nothing, Backglass.currentData.GlobalIlluminationMaskInverted, False)}
-            globalMaskStatus = New Label With {.Left = 166, .Top = 26, .Width = 360, .Text = GlobalMaskStatusText()}
-            globalMaskThresholdLabel = New Label With {.Text = "Threshold", .Left = 12, .Top = 94, .Width = 78}
-            globalMaskThreshold = New TrackBar With {.Left = 90, .Top = 85, .Width = 350, .Minimum = 0, .Maximum = 255, .TickFrequency = 32, .Value = If(Backglass.currentData IsNot Nothing, Math.Max(0, Math.Min(255, Backglass.currentData.GlobalIlluminationMaskThreshold)), 128)}
-            Dim globalMaskThresholdNumber As New NumericUpDown With {.Left = 444, .Top = 89, .Width = 80}
-            TrackBarNumericLink.Bind(globalMaskThreshold, globalMaskThresholdNumber)
-            lightInFrontOfMask = New CheckBox With {.Text = "This light is in front of mask (bypass)", .Left = 12, .Top = 155, .Width = 280, .Checked = bulb.InFrontOfGlobalMask}
-            Dim importGlobalMask As New Button With {.Text = "Import / Replace...", .Left = 12, .Top = 58, .Width = 125, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            Dim previewGlobalMask As New Button With {.Text = "Preview...", .Left = 143, .Top = 58, .Width = 82, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            Dim exportGlobalMask As New Button With {.Text = "Export...", .Left = 231, .Top = 58, .Width = 82, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            Dim removeGlobalMask As New Button With {.Text = "Remove", .Left = 319, .Top = 58, .Width = 82, .Height = 27, .FlatStyle = FlatStyle.Flat}
-            AddHandler importGlobalMask.Click, AddressOf ImportGlobalMask_Click
-            AddHandler previewGlobalMask.Click, AddressOf PreviewGlobalMask_Click
-            AddHandler exportGlobalMask.Click, AddressOf ExportGlobalMask_Click
-            AddHandler removeGlobalMask.Click, AddressOf RemoveGlobalMask_Click
-            AddHandler globalMaskEnabled.CheckedChanged, AddressOf GlobalMaskOptionChanged
-            AddHandler globalMaskInvert.CheckedChanged, AddressOf GlobalMaskOptionChanged
-            AddHandler globalMaskThreshold.ValueChanged, AddressOf GlobalMaskThresholdChanged
-            AddHandler lightInFrontOfMask.CheckedChanged, AddressOf PreviewControlChanged
-            globalGroup.Controls.AddRange(New Control() {globalMaskEnabled, globalMaskInvert, globalMaskStatus, importGlobalMask, previewGlobalMask, exportGlobalMask, removeGlobalMask, globalMaskThresholdLabel, globalMaskThreshold, globalMaskThresholdNumber, lightInFrontOfMask})
-            Controls.Add(globalGroup)
-
-            BuildArtworkPreviewUi()
-
-            Dim previewModeGroup As New GroupBox With {
-                .Text = "Blinker Runtime", .Left = 12, .Top = 622, .Width = 546, .Height = 88
-            }
-            blinkerEnabled = New CheckBox With {
-                .Name = "chkBlinkerLight", .Text = "Enable blinker", .Left = 14, .Top = 21,
-                .Width = 125, .Height = 24, .Checked = bulb.BlinkEnabled
-            }
-            Dim intervalLabel As New Label With {.Text = "Interval:", .Left = 150, .Top = 24, .Width = 58, .Height = 22}
-            blinkerInterval = New NumericUpDown With {
-                .Name = "numericBlinkerInterval", .Left = 208, .Top = 21, .Width = 90,
-                .Minimum = 1D, .Maximum = 60000D, .Increment = 1D,
-                .ThousandsSeparator = True, .Value = Math.Max(1D, Math.Min(60000D, bulb.BlinkInterval)),
-                .Enabled = bulb.BlinkEnabled
-            }
-            Dim millisecondsLabel As New Label With {.Text = "ms", .Left = 304, .Top = 24, .Width = 30, .Height = 22}
-            intervalLabel.Enabled = bulb.BlinkEnabled
-            millisecondsLabel.Enabled = bulb.BlinkEnabled
-            Dim flashedButton As New Button With {.Text = "Live Light", .Left = 14, .Top = 52, .Width = 150, .Height = 28, .FlatStyle = FlatStyle.Flat}
-            Dim blinkButton As New Button With {.Text = "Blink Preview", .Left = 174, .Top = 52, .Width = 150, .Height = 28, .FlatStyle = FlatStyle.Flat}
-            AddHandler flashedButton.Click, Sub(sender As Object, e As EventArgs) previewMode.SelectedIndex = 0
-            AddHandler blinkButton.Click, Sub(sender As Object, e As EventArgs) previewMode.SelectedIndex = 1
-            AddHandler blinkerEnabled.CheckedChanged, Sub(sender As Object, e As EventArgs)
-                                                           blinkerInterval.Enabled = blinkerEnabled.Checked
-                                                           intervalLabel.Enabled = blinkerEnabled.Checked
-                                                           millisecondsLabel.Enabled = blinkerEnabled.Checked
-                                                           BlinkerControlChanged(sender, e)
-                                                       End Sub
-            AddHandler blinkerInterval.ValueChanged, AddressOf BlinkerControlChanged
-            previewModeGroup.Controls.AddRange(New Control() {blinkerEnabled, intervalLabel, blinkerInterval, millisecondsLabel, flashedButton, blinkButton})
-            Controls.Add(previewModeGroup)
-
-            Dim okButton As New Button With {.Text = "OK", .Left = 1008, .Top = 769, .Width = 132, .Height = 42, .DialogResult = DialogResult.OK, .FlatStyle = FlatStyle.Flat}
-            Dim cancelButton As New Button With {.Text = "Cancel", .Left = 1150, .Top = 769, .Width = 126, .Height = 42, .DialogResult = DialogResult.Cancel, .FlatStyle = FlatStyle.Flat}
-            Controls.Add(okButton)
-            Controls.Add(cancelButton)
-            AcceptButton = okButton
-            Me.CancelButton = cancelButton
-
-            AddHandler spread.ValueChanged, AddressOf PreviewControlChanged
-            AddHandler softness.ValueChanged, AddressOf PreviewControlChanged
-            AddHandler falloff.ValueChanged, AddressOf PreviewControlChanged
-            AddHandler intensity.ValueChanged, AddressOf PreviewControlChanged
-            AddHandler lightDiffusion.ValueChanged, AddressOf PreviewControlChanged
-            AddHandler lightTemperature.ValueChanged, AddressOf PreviewControlChanged
-            isInitializing = False
-            QueueLivePreview()
-        End If
     End Sub
 
     Private Sub BuildArtworkPreviewUi()
         Dim accent As Color = Color.FromArgb(255, 153, 0)
         Dim panelColor As Color = Color.FromArgb(27, 29, 31)
-        Dim isArtworkFlasher As Boolean = bulb.IlluMode = Illumination.eIlluMode.Flasher
-        Dim previewGroupHeight As Integer = If(isArtworkFlasher, 396, 624)
-        Dim previewImageHeight As Integer = If(isArtworkFlasher, 250, 470)
-        Dim previewControlsTop As Integer = If(isArtworkFlasher, 320, 538)
+        ' Light and Flasher intentionally share the exact same managed layout.
+        ' Only their user-facing labels and their trigger identity differ.
+        Dim previewGroupHeight As Integer = 396
+        Dim previewImageHeight As Integer = 250
+        Dim previewControlsTop As Integer = 320
 
         Dim previewGroup As New GroupBox With {
-            .Text = If(bulb.IlluMode = Illumination.eIlluMode.Flasher, "  LIVE FLASHER PREVIEW", "  LIVE LIGHT PREVIEW"),
-            .Left = If(isArtworkFlasher, 495, 575), .Top = 18, .Width = 695, .Height = previewGroupHeight,
+            .Text = If(isDedicatedFlasher, "  LIVE FLASHER PREVIEW", "  LIVE LIGHT PREVIEW"),
+            .Left = 495, .Top = 18, .Width = 695, .Height = previewGroupHeight,
             .ForeColor = accent, .BackColor = panelColor,
             .Font = New Font("Tahoma", 9.0F, FontStyle.Bold),
-            .Anchor = If(isArtworkFlasher,
-                         AnchorStyles.Top Or AnchorStyles.Left,
-                         AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right)
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Left
         }
 
-        If isArtworkFlasher Then flasherPreviewGroup = previewGroup
+        flasherPreviewGroup = previewGroup
 
         previewGroup.Controls.Add(New Label With {
-            .Text = If(bulb.IlluMode = Illumination.eIlluMode.Flasher, "Live Flash Result", "Live Light Result"), .Left = 14, .Top = 29, .Width = 665, .Height = 24,
+            .Text = If(isDedicatedFlasher, "Live Flash Result", "Live Light Result"), .Left = 14, .Top = 29, .Width = 665, .Height = 24,
             .TextAlign = ContentAlignment.MiddleCenter, .ForeColor = Color.WhiteSmoke,
             .Font = New Font("Tahoma", 9.0F),
             .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
@@ -463,9 +406,7 @@ Public Class formLightDiffusionEditor
             .Left = 14, .Top = 57, .Width = 665, .Height = previewImageHeight,
             .BackColor = Color.FromArgb(11, 12, 13), .BorderStyle = BorderStyle.FixedSingle,
             .SizeMode = PictureBoxSizeMode.Normal,
-            .Anchor = If(isArtworkFlasher,
-                         AnchorStyles.Top Or AnchorStyles.Left,
-                         AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right)
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Left
         }
 
         ' Kept as an internal mode selector for the existing Live Flash/Blink buttons.
@@ -475,7 +416,7 @@ Public Class formLightDiffusionEditor
             .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke,
             .Visible = False, .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left
         }
-        previewMode.Items.AddRange(New Object() {"Live Flash", "Blink"})
+        previewMode.Items.AddRange(New Object() {If(isDedicatedFlasher, "Live Flash", "Live Light"), "Blink"})
         previewMode.SelectedIndex = 0
         AddHandler previewMode.SelectedIndexChanged, AddressOf PreviewModeChanged
 
@@ -547,7 +488,7 @@ Public Class formLightDiffusionEditor
         flasherRadialSpikes = AddMaskSlider(flasherSettingsGroup, "flasherRadialSpikesSlider", "Radial Spikes", 280, 397, bulb.FlasherRadialSpikes, 0, 100, "%")
         flasherSettingsGroup.Controls.Add(New Label With {
             .Name = "flasherMaskHelp",
-            .Text = "The flasher box is the mask. Positive Shift Edge expands it; negative contracts it.",
+            .Text = "The " & If(isDedicatedFlasher, "flasher", "light") & " box is the mask. Positive Shift Edge expands it; negative contracts it.",
             .Left = 18, .Top = 441, .Width = 515, .Height = 20,
             .ForeColor = Color.Silver, .Font = New Font("Tahoma", 8.25F),
             .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right
@@ -862,7 +803,7 @@ Public Class formLightDiffusionEditor
                 bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection,
                 bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY,
                 bulb.LightDiffusion, bulb.LightTemperature,
-                bulb.LightPurpose = Illumination.eLightPurpose.Flasher,
+                bulb.UsesArtworkPixelRenderer,
                 bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius,
                 bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge,
                 bulb.FlasherRadialSpikes, bulb.LightRotationAngle)
@@ -1308,41 +1249,6 @@ Public Class formLightDiffusionEditor
         End Using
     End Sub
 
-    Private Function AddSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer) As TrackBar
-        Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim number As New NumericUpDown With {.Left = 462, .Top = top + 4, .Width = 72}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 300, .Minimum = 0, .Maximum = 100, .TickFrequency = 10, .Value = Math.Max(0, Math.Min(100, initialValue))}
-        TrackBarNumericLink.Bind(slider, number)
-        Controls.Add(slider)
-        Controls.Add(number)
-        Controls.Add(New Label With {.Text = "%", .Left = 536, .Top = top + 8, .Width = 22})
-        Return slider
-    End Function
-
-
-    Private Function AddKelvinSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer) As TrackBar
-        Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim number As New NumericUpDown With {.Left = 454, .Top = top + 4, .Width = 80}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 292, .Minimum = 2000, .Maximum = 6500, .SmallChange = 100, .LargeChange = 500, .TickFrequency = 500, .Value = Math.Max(2000, Math.Min(6500, initialValue))}
-        TrackBarNumericLink.Bind(slider, number, 100)
-        Controls.Add(slider)
-        Controls.Add(number)
-        Controls.Add(New Label With {.Text = "K", .Left = 536, .Top = top + 8, .Width = 22})
-        Return slider
-    End Function
-
-    Private Function AddExtendedSlider(ByVal caption As String, ByVal top As Integer, ByVal initialValue As Integer, ByVal minimum As Integer, ByVal maximum As Integer) As TrackBar
-        Controls.Add(New Label With {.Text = caption, .Left = 16, .Top = top + 8, .Width = 140})
-        Dim number As New NumericUpDown With {.Left = 462, .Top = top + 4, .Width = 72}
-        Dim slider As New TrackBar With {.Left = 158, .Top = top, .Width = 300, .Minimum = minimum, .Maximum = maximum, .TickFrequency = 30, .Value = Math.Max(minimum, Math.Min(maximum, initialValue))}
-        TrackBarNumericLink.Bind(slider, number)
-        Controls.Add(slider)
-        Controls.Add(number)
-        Controls.Add(New Label With {.Text = "%", .Left = 536, .Top = top + 8, .Width = 22})
-        Return slider
-    End Function
-
-
     Private Function AddMaskSlider(ByVal parent As Control,
                                    ByVal controlName As String,
                                    ByVal caption As String,
@@ -1525,10 +1431,6 @@ Public Class formLightDiffusionEditor
             If lightDiffusion IsNot Nothing AndAlso Object.ReferenceEquals(sender, lightDiffusion) Then selected.LightDiffusion = lightDiffusion.Value
             If lightTemperature IsNot Nothing AndAlso Object.ReferenceEquals(sender, lightTemperature) Then selected.LightTemperature = lightTemperature.Value
             If transmissionContrast IsNot Nothing AndAlso Object.ReferenceEquals(sender, transmissionContrast) Then selected.ArtworkContrast = transmissionContrast.Value
-            If lightInFrontOfMask IsNot Nothing AndAlso Object.ReferenceEquals(sender, lightInFrontOfMask) Then
-                selected.InFrontOfGlobalMask = lightInFrontOfMask.Checked
-                selected.GlobalMaskLayerExplicit = True
-            End If
             selected.IsIlluminatedImageDirty = True
         Next
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
@@ -1547,6 +1449,7 @@ Public Class formLightDiffusionEditor
             bulb.LightDiffusion = originalLightDiffusion
             bulb.LightTemperature = originalLightTemperature
             bulb.LightPurpose = originalLightPurpose
+            bulb.ArtworkPixelLighting = originalArtworkPixelLighting
             bulb.GlowBlendMode = originalBlendMode
             bulb.GlowPreviewQuality = originalPreviewQuality
             bulb.InFrontOfGlobalMask = originalInFrontOfMask
@@ -1610,220 +1513,6 @@ Public Class formLightDiffusionEditor
     End Sub
 
 
-    Private Function GlobalMaskStatusText() As String
-        If Backglass.currentData Is Nothing OrElse String.IsNullOrEmpty(Backglass.currentData.GlobalIlluminationMaskData) Then Return "No mask loaded"
-        Return "Mask loaded (white passes light)"
-    End Function
-
-    Private Sub MarkAllLightsDirty()
-        Illumination.Create.InvalidateGlobalMaskCache()
-        If Backglass.currentData Is Nothing Then Return
-        For Each item As Illumination.BulbInfo In Backglass.currentData.Bulbs
-            item.IsIlluminatedImageDirty = True
-        Next
-        For Each item As Illumination.BulbInfo In Backglass.currentData.DMDBulbs
-            item.IsIlluminatedImageDirty = True
-        Next
-        Backglass.currentData.IsDirty = True
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
-    End Sub
-
-    Private Sub GlobalMaskOptionChanged(ByVal sender As Object, ByVal e As EventArgs)
-        If isInitializing OrElse Backglass.currentData Is Nothing Then Return
-        Backglass.currentData.GlobalIlluminationMaskEnabled = globalMaskEnabled.Checked
-        Backglass.currentData.GlobalIlluminationMaskInverted = globalMaskInvert.Checked
-        MarkAllLightsDirty()
-        QueueLivePreview()
-    End Sub
-
-    Private Sub GlobalMaskThresholdChanged(ByVal sender As Object, ByVal e As EventArgs)
-        If isInitializing OrElse Backglass.currentData Is Nothing Then Return
-        Backglass.currentData.GlobalIlluminationMaskThreshold = globalMaskThreshold.Value
-        globalMaskThresholdLabel.Text = "Threshold"
-        RebuildBinaryMaskFromSource()
-        Backglass.currentData.IsDirty = True
-        MarkAllLightsDirty()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
-        QueueLivePreview()
-    End Sub
-
-    Private Sub RebuildBinaryMaskFromSource()
-        If Backglass.currentData Is Nothing OrElse String.IsNullOrEmpty(Backglass.currentData.GlobalIlluminationMaskSourceData) Then Return
-        Try
-            Dim bytes() As Byte = Convert.FromBase64String(Backglass.currentData.GlobalIlluminationMaskSourceData)
-            Using ms As New IO.MemoryStream(bytes)
-                Using sourceTemp As New Bitmap(ms)
-                    Using source As New Bitmap(sourceTemp)
-                        Using normalized As New Bitmap(source.Width, source.Height, Imaging.PixelFormat.Format32bppArgb)
-                            Dim threshold As Integer = Math.Max(0, Math.Min(255, Backglass.currentData.GlobalIlluminationMaskThreshold))
-                            Dim bounds As New Rectangle(0, 0, source.Width, source.Height)
-                            Dim sourceData As Imaging.BitmapData = source.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
-                            Dim normalizedData As Imaging.BitmapData = normalized.LockBits(bounds, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb)
-                            Try
-                                Dim sourceStride As Integer = Math.Abs(sourceData.Stride)
-                                Dim normalizedStride As Integer = Math.Abs(normalizedData.Stride)
-                                Dim sourceBytes(sourceStride * source.Height - 1) As Byte
-                                Dim normalizedBytes(normalizedStride * normalized.Height - 1) As Byte
-                                Marshal.Copy(sourceData.Scan0, sourceBytes, 0, sourceBytes.Length)
-                                For y As Integer = 0 To source.Height - 1
-                                    Dim sourceRow As Integer = y * sourceStride
-                                    Dim normalizedRow As Integer = y * normalizedStride
-                                    For x As Integer = 0 To source.Width - 1
-                                        Dim sourceOffset As Integer = sourceRow + x * 4
-                                        Dim outputOffset As Integer = normalizedRow + x * 4
-                                        Dim luminance As Integer = (CInt(sourceBytes(sourceOffset + 2)) * 299 + CInt(sourceBytes(sourceOffset + 1)) * 587 + CInt(sourceBytes(sourceOffset)) * 114) \ 1000
-                                        Dim value As Byte = If(sourceBytes(sourceOffset + 3) >= 128 AndAlso luminance >= threshold, CByte(255), CByte(0))
-                                        normalizedBytes(outputOffset) = value
-                                        normalizedBytes(outputOffset + 1) = value
-                                        normalizedBytes(outputOffset + 2) = value
-                                        normalizedBytes(outputOffset + 3) = 255
-                                    Next
-                                Next
-                                Marshal.Copy(normalizedBytes, 0, normalizedData.Scan0, normalizedBytes.Length)
-                            Finally
-                                source.UnlockBits(sourceData)
-                                normalized.UnlockBits(normalizedData)
-                            End Try
-                            Using output As New IO.MemoryStream()
-                                normalized.Save(output, Imaging.ImageFormat.Png)
-                                Backglass.currentData.GlobalIlluminationMaskData = Convert.ToBase64String(output.ToArray())
-                            End Using
-                        End Using
-                    End Using
-                End Using
-            End Using
-        Catch
-            ' Keep the last valid binary mask when optional source data is corrupt.
-        End Try
-    End Sub
-
-    Private Sub ImportGlobalMask_Click(ByVal sender As Object, ByVal e As EventArgs)
-        If Backglass.currentData Is Nothing Then Return
-        Using dlg As New OpenFileDialog With {.Title = "Import Global Illumination Mask", .Filter = "PNG images (*.png)|*.png|Image files|*.png;*.bmp;*.jpg;*.jpeg"}
-            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
-            Try
-                Using source As New Bitmap(dlg.FileName)
-                    Dim targetSize As Size = source.Size
-                    Dim bg As Image = If(Backglass.currentData.IsDMDImageShown, Backglass.currentData.DMDImage, Backglass.currentData.Image)
-                    If bg IsNot Nothing Then targetSize = bg.Size
-                    ' Enhanced 2.7.2: global masks are strictly binary.
-                    ' White passes all light; black blocks all light. Gray is removed
-                    ' during import using the adjustable project threshold.
-                    Using resized As New Bitmap(targetSize.Width, targetSize.Height, Imaging.PixelFormat.Format32bppArgb)
-                        Using g As Graphics = Graphics.FromImage(resized)
-                            g.Clear(Color.Black)
-                            g.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
-                            g.PixelOffsetMode = Drawing2D.PixelOffsetMode.Half
-                            g.DrawImage(source, New Rectangle(Point.Empty, targetSize))
-                        End Using
-
-                        Using sourceStream As New IO.MemoryStream()
-                            resized.Save(sourceStream, Imaging.ImageFormat.Png)
-                            Backglass.currentData.GlobalIlluminationMaskSourceData = Convert.ToBase64String(sourceStream.ToArray())
-                        End Using
-                        RebuildBinaryMaskFromSource()
-                    End Using
-                End Using
-                globalMaskEnabled.Checked = True
-                Backglass.currentData.GlobalIlluminationMaskEnabled = True
-                globalMaskStatus.Text = GlobalMaskStatusText()
-                MarkAllLightsDirty()
-                QueueLivePreview()
-            Catch ex As Exception
-                B2SMessageBox.Show(Me, "The mask could not be imported." & Environment.NewLine & ex.Message, "Global Illumination Mask", MessageBoxButtons.OK, MessageBoxIcon.Error)
-            End Try
-        End Using
-    End Sub
-
-    Private Function DecodeGlobalMask() As Bitmap
-        If Backglass.currentData Is Nothing OrElse String.IsNullOrEmpty(Backglass.currentData.GlobalIlluminationMaskData) Then Return Nothing
-        Dim bytes() As Byte = Convert.FromBase64String(Backglass.currentData.GlobalIlluminationMaskData)
-        Using ms As New IO.MemoryStream(bytes)
-            Using temp As New Bitmap(ms)
-                Return New Bitmap(temp)
-            End Using
-        End Using
-    End Function
-
-    Private Sub PreviewGlobalMask_Click(ByVal sender As Object, ByVal e As EventArgs)
-        Dim mask As Bitmap = Nothing
-        Dim artwork As Image = Nothing
-        Try
-            mask = DecodeGlobalMask()
-            If mask Is Nothing Then B2SMessageBox.Show(Me, "No global illumination mask is loaded.") : Return
-            If Backglass.currentData IsNot Nothing Then artwork = If(Backglass.currentData.IsDMDImageShown, Backglass.currentData.DMDImage, Backglass.currentData.Image)
-
-            Using preview As New B2SThemedForm With {.Text = "Global Illumination Mask Preview", .StartPosition = FormStartPosition.CenterParent, .ClientSize = New Size(900, 680), .MinimumSize = New Size(620, 480)}
-                Dim picture As New PictureBox With {.Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Zoom, .BackColor = Color.Black}
-                Dim controlsPanel As New FlowLayoutPanel With {.Dock = DockStyle.Top, .Height = 42, .Padding = New Padding(8), .BackColor = SystemColors.Control}
-                Dim overlay As New CheckBox With {.Text = "Overlay on backglass", .AutoSize = True, .Checked = (artwork IsNot Nothing)}
-                Dim opacityText As New Label With {.Text = "Mask opacity", .AutoSize = True, .Margin = New Padding(18, 5, 3, 0)}
-                Dim opacity As New TrackBar With {.Minimum = 10, .Maximum = 100, .Value = 50, .TickFrequency = 10, .Width = 180, .Height = 32}
-                Dim opacityNumber As New NumericUpDown With {.Width = 62, .Height = 24}
-                TrackBarNumericLink.Bind(opacity, opacityNumber)
-                controlsPanel.Controls.AddRange(New Control() {overlay, opacityText, opacity, opacityNumber, New Label With {.Text = "%", .AutoSize = True, .Margin = New Padding(0, 5, 0, 0)}})
-                preview.Controls.Add(picture)
-                preview.Controls.Add(controlsPanel)
-
-                Dim refreshPreview As Action = Sub()
-                    If picture.Image IsNot Nothing Then picture.Image.Dispose()
-                    If Not overlay.Checked OrElse artwork Is Nothing Then
-                        picture.Image = New Bitmap(mask)
-                        Return
-                    End If
-                    Dim combined As New Bitmap(mask.Width, mask.Height, Imaging.PixelFormat.Format32bppArgb)
-                    Using g As Graphics = Graphics.FromImage(combined)
-                        g.DrawImage(artwork, New Rectangle(0, 0, combined.Width, combined.Height))
-                        Using overlayImage As New Bitmap(mask.Width, mask.Height, Imaging.PixelFormat.Format32bppArgb)
-                            For y As Integer = 0 To mask.Height - 1
-                                For x As Integer = 0 To mask.Width - 1
-                                    Dim m As Color = mask.GetPixel(x, y)
-                                    Dim alpha As Integer = CInt(opacity.Value * 255 / 100)
-                                    overlayImage.SetPixel(x, y, If(m.R >= 128, Color.FromArgb(alpha, Color.Lime), Color.FromArgb(alpha, Color.Red)))
-                                Next
-                            Next
-                            g.DrawImageUnscaled(overlayImage, 0, 0)
-                        End Using
-                    End Using
-                    picture.Image = combined
-                End Sub
-                AddHandler overlay.CheckedChanged, Sub(o As Object, args As EventArgs) refreshPreview()
-                AddHandler opacity.ValueChanged, Sub(o As Object, args As EventArgs)
-                                                     refreshPreview()
-                                                 End Sub
-                refreshPreview()
-                preview.ShowDialog(Me)
-                If picture.Image IsNot Nothing Then picture.Image.Dispose()
-                picture.Image = Nothing
-            End Using
-        Finally
-            If mask IsNot Nothing Then mask.Dispose()
-        End Try
-    End Sub
-
-    Private Sub ExportGlobalMask_Click(ByVal sender As Object, ByVal e As EventArgs)
-        Dim bmp As Bitmap = Nothing
-        Try
-            bmp = DecodeGlobalMask()
-            If bmp Is Nothing Then B2SMessageBox.Show(Me, "No global illumination mask is loaded.") : Return
-            Using dlg As New SaveFileDialog With {.Title = "Export Global Illumination Mask", .Filter = "PNG image (*.png)|*.png", .DefaultExt = "png"}
-                If dlg.ShowDialog(Me) = DialogResult.OK Then bmp.Save(dlg.FileName, Imaging.ImageFormat.Png)
-            End Using
-        Finally
-            If bmp IsNot Nothing Then bmp.Dispose()
-        End Try
-    End Sub
-
-    Private Sub RemoveGlobalMask_Click(ByVal sender As Object, ByVal e As EventArgs)
-        If Backglass.currentData Is Nothing OrElse String.IsNullOrEmpty(Backglass.currentData.GlobalIlluminationMaskData) Then Return
-        If B2SMessageBox.Show(Me, "Remove the global illumination mask from this project?", "Global Illumination Mask", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return
-        Backglass.currentData.GlobalIlluminationMaskData = String.Empty
-        Backglass.currentData.GlobalIlluminationMaskSourceData = String.Empty
-        globalMaskStatus.Text = GlobalMaskStatusText()
-        MarkAllLightsDirty()
-        QueueLivePreview()
-    End Sub
-
     Private Sub QuickSelection_Click(ByVal sender As Object, ByVal e As EventArgs)
         If Backglass.currentTabPage Is Nothing OrElse Backglass.currentTabPage.BackglassData Is Nothing Then Return
         Dim bg As Image = If(Backglass.currentTabPage.BackglassData.IsDMDImageShown, Backglass.currentTabPage.BackglassData.DMDImage, Backglass.currentTabPage.BackglassData.Image)
@@ -1836,15 +1525,22 @@ Public Class formLightDiffusionEditor
         Using editor As New formQuickSelection(bulb, bg)
             If editor.ShowDialog(Me) = DialogResult.OK Then
                 bulb.InFrontOfGlobalMask = inFrontBeforeQuickSelection
-                If lightInFrontOfMask IsNot Nothing Then lightInFrontOfMask.Checked = inFrontBeforeQuickSelection
-                bulb.IsIlluminatedImageDirty = True
+
+                ' Quick Selection stores one full-backglass mask. Apply that
+                ' completed mask to every selected Light or Flasher; each object
+                ' crops the shared mask through its own bounds while rendering.
+                Dim sharedSelectionMask As String = bulb.SelectionMaskData
+                For Each selected As Illumination.BulbInfo In selectedBulbs
+                    If selected Is Nothing Then Continue For
+                    selected.SelectionMaskData = sharedSelectionMask
+                    selected.IsIlluminatedImageDirty = True
+                Next
                 If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
                 UpdateFlasherMaskAvailability()
                 QueueLivePreview()
                 RaiseEvent PreviewChanged(Me, EventArgs.Empty)
             Else
                 bulb.InFrontOfGlobalMask = inFrontBeforeQuickSelection
-                If lightInFrontOfMask IsNot Nothing Then lightInFrontOfMask.Checked = inFrontBeforeQuickSelection
             End If
         End Using
     End Sub
@@ -2006,7 +1702,7 @@ Public Class formLightDiffusionEditor
         isInitializing = True
         Try
             SetIntensityRange(bulb.IlluMode = Illumination.eIlluMode.Flasher OrElse
-                              bulb.LightPurpose = Illumination.eLightPurpose.Flasher)
+                              bulb.UsesArtworkPixelRenderer)
             spread.Value = Math.Max(spread.Minimum, Math.Min(spread.Maximum, bulb.GlowSpread))
             softness.Value = Math.Max(softness.Minimum, Math.Min(softness.Maximum, bulb.GlowSoftness))
             intensity.Value = Math.Max(intensity.Minimum, Math.Min(intensity.Maximum, bulb.GlowIntensity))
@@ -2043,7 +1739,7 @@ Public Class formLightDiffusionEditor
         spread.Value = 0
         softness.Value = 60
         falloff.Value = 60
-        intensity.Value = If(bulb.IlluMode = Illumination.eIlluMode.Flasher, 200, 100)
+        intensity.Value = If(bulb.UsesArtworkPixelRenderer, 200, 100)
         If lightDiffusion IsNot Nothing Then lightDiffusion.Value = 0
         If lightTemperature IsNot Nothing Then lightTemperature.Value = 4000
         If flasherPulseEnabled IsNot Nothing Then flasherPulseEnabled.Checked = False
@@ -2064,6 +1760,11 @@ Public Class formLightDiffusionEditor
     End Sub
 
     Private Sub ApplyControlsToBulb(ByVal target As Illumination.BulbInfo)
+        If Not target.IsImageSnippit AndAlso
+           target.IlluMode <> Illumination.eIlluMode.Flasher AndAlso
+           target.LightPurpose <> Illumination.eLightPurpose.Flasher Then
+            target.ArtworkPixelLighting = True
+        End If
         target.GlowSpread = CInt(spread.Value)
         target.GlowSoftness = softness.Value
         target.GlowFalloff = falloff.Value
@@ -2076,7 +1777,6 @@ Public Class formLightDiffusionEditor
                                    Illumination.eLightPurpose.Lamp)
         End If
         If transmissionContrast IsNot Nothing Then target.ArtworkContrast = transmissionContrast.Value
-        If lightInFrontOfMask IsNot Nothing Then target.InFrontOfGlobalMask = lightInFrontOfMask.Checked
         If blinkerEnabled IsNot Nothing Then target.BlinkEnabled = blinkerEnabled.Checked
         If blinkerInterval IsNot Nothing Then target.BlinkInterval = Math.Max(1, Math.Min(60000, CInt(blinkerInterval.Value)))
         If flasherPulseEnabled IsNot Nothing AndAlso flasherPulseDuration IsNot Nothing Then
@@ -2096,12 +1796,13 @@ Public Class formLightDiffusionEditor
     Private NotInheritable Class LightSettingsSnapshot
         Private ReadOnly spread, softness, falloff, glowIntensity, diffusion, temperature, artworkBrightness, artworkContrast, adjustmentPasses, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes, blinkInterval, flasherPulseDuration As Integer
         Private ReadOnly purpose As Illumination.eLightPurpose
-        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius As Boolean
+        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting As Boolean
         Private ReadOnly lightColor As Color
 
         Public Sub New(ByVal source As Illumination.BulbInfo)
             spread = source.GlowSpread : softness = source.GlowSoftness : falloff = source.GlowFalloff : glowIntensity = source.GlowIntensity
             diffusion = source.LightDiffusion : temperature = source.LightTemperature : purpose = source.LightPurpose
+            artworkPixelLighting = source.ArtworkPixelLighting
             artworkBrightness = source.ArtworkBrightness : artworkContrast = source.ArtworkContrast : adjustmentPasses = source.ArtworkAdjustmentPasses
             maskRadius = source.MaskRadius : smartRadius = source.MaskSmartRadius : maskSmooth = source.MaskSmooth : maskFeather = source.MaskFeather
             maskContrast = source.MaskContrast : maskShiftEdge = source.MaskShiftEdge : inFront = source.InFrontOfGlobalMask : globalMaskLayerExplicit = source.GlobalMaskLayerExplicit
@@ -2113,6 +1814,7 @@ Public Class formLightDiffusionEditor
         Public Sub Restore(ByVal target As Illumination.BulbInfo)
             target.GlowSpread = spread : target.GlowSoftness = softness : target.GlowFalloff = falloff : target.GlowIntensity = glowIntensity
             target.LightDiffusion = diffusion : target.LightTemperature = temperature : target.LightPurpose = purpose
+            target.ArtworkPixelLighting = artworkPixelLighting
             target.ArtworkBrightness = artworkBrightness : target.ArtworkContrast = artworkContrast : target.ArtworkAdjustmentPasses = adjustmentPasses
             target.MaskRadius = maskRadius : target.MaskSmartRadius = smartRadius : target.MaskSmooth = maskSmooth : target.MaskFeather = maskFeather
             target.MaskContrast = maskContrast : target.MaskShiftEdge = maskShiftEdge : target.InFrontOfGlobalMask = inFront : target.GlobalMaskLayerExplicit = globalMaskLayerExplicit

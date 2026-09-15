@@ -19,6 +19,7 @@ Public Class B2STab
     Public Event LightColorChanged(ByVal sedner As Object, ByVal e As Illumination.Lights.LightColorChangedEventArgs)
     Public Event NewProjectRequested(ByVal sender As Object, ByVal e As EventArgs)
     Public Event ProjectSaveRequestedOnClose(ByVal data As Backglass.Data, ByRef saveSucceeded As Boolean)
+    Public Event ProjectClosed(ByVal data As Backglass.Data)
 
     Private Const tabheight As Integer = 32
 
@@ -526,6 +527,7 @@ Public Class B2STab
                 End If
             End If
             If ret = DialogResult.No Then
+                RaiseEvent ProjectClosed(tabpage.BackglassData)
                 RemoveHandler tabpage.Scrolled, AddressOf B2STabPage_Scrolled
                 Me.Controls.Remove(tabpage)
                 tabpage.Dispose()

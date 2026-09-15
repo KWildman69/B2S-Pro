@@ -27,6 +27,7 @@ Public Class formDesigner
     Private tsbBackglassBrightnessEnhanced As ToolStripButton
     Private tsbCreateDirectB2SEnhanced As ToolStripButton
     Private tsbBackglassPreviewEnhanced As ToolStripButton
+    Private tsbIDTester As ToolStripButton
     Private mainNormalBounds As Rectangle = Rectangle.Empty
     Private previousMainWindowState As FormWindowState = FormWindowState.Normal
     Private correctingMainWindowBounds As Boolean
@@ -324,12 +325,21 @@ Public Class formDesigner
         tsB2SDesigner.Items.Insert(previewIndex + 1, tsbCreateDirectB2SEnhanced)
         tsB2SDesigner.Items.Insert(previewIndex + 2, tsbBackglassPreviewEnhanced)
 
+        ' Stage the embedded ID test backglass beside the matching VPX table.
+        tsbIDTester = New ToolStripButton() With {
+            .Name = "tsbIDTester",
+            .Text = "ID" & vbLf & "TESTER",
+            .ToolTipText = "Run the separate ID tester with a VPX table"
+        }
+        AddHandler tsbIDTester.Click, AddressOf IDTester_Click
+        tsB2SDesigner.Items.Insert(previewIndex + 3, tsbIDTester)
+
         ' Keep the existing save/export progress control and its behavior, but
         ' place it where it remains visible beside the two-step output workflow.
         ssB2SDesigner.Items.Remove(tsProgress)
         tsProgress.ToolTipText = "Save and export progress"
-        tsB2SDesigner.Items.Insert(previewIndex + 3, tsProgress)
-        tsB2SDesigner.Items.Insert(previewIndex + 4, previewDividerAfter)
+        tsB2SDesigner.Items.Insert(previewIndex + 4, tsProgress)
+        tsB2SDesigner.Items.Insert(previewIndex + 5, previewDividerAfter)
 
         ' Give every toolbar control breathing room.  This keeps the original
         ' controls and handlers intact while preventing the compressed look.
@@ -932,17 +942,27 @@ Public Class formDesigner
         If String.IsNullOrWhiteSpace(Backglass.currentData.Name) Then Return
 
         autoSaveInProgress = True
-        Dim wasDirty As Boolean = Backglass.currentData.IsDirty
+        Dim data As Backglass.Data = Backglass.currentData
+        Dim wasDirty As Boolean = data.IsDirty
         Try
-            If SaveB2SPro(Backglass.currentData, False) Then
-                Backglass.currentData.IsDirty = wasDirty
-                ShowStatus("Auto-saved B2S Pro file at " & DateTime.Now.ToShortTimeString())
+            Dim recoveryFile As String = If(IsB2SProRecoveryPath(data.RecoverySourceFilePath),
+                                            data.RecoverySourceFilePath,
+                                            RecoveryFileFor(data))
+            If Not IsB2SProRecoveryPath(recoveryFile) Then Throw New InvalidOperationException("The AutoRecovery destination is invalid.")
+            Dim saveStartedUtc As DateTime = DateTime.UtcNow
+            If coding.CreateB2SProFile(recoveryFile, isRecoverySnapshot:=True) AndAlso
+               IO.File.Exists(recoveryFile) AndAlso
+               IO.File.GetLastWriteTimeUtc(recoveryFile) >= saveStartedUtc.AddSeconds(-2) Then
+                data.RecoverySourceFilePath = IO.Path.GetFullPath(recoveryFile)
+                ShowStatus("Auto-recovery copy saved at " & DateTime.Now.ToShortTimeString())
+            Else
+                ShowStatus("Auto-recovery was not saved; please save your backglass manually")
             End If
         Catch ex As Exception
-            ' Keep editing uninterrupted; a later timer tick will try again.
-            Debug.WriteLine("Auto-save failed: " & ex.Message)
-            Backglass.currentData.IsDirty = wasDirty
+            Debug.WriteLine("Auto-recovery failed: " & ex.Message)
+            ShowStatus("Auto-recovery failed; please save your backglass manually")
         Finally
+            data.IsDirty = wasDirty
             autoSaveInProgress = False
         End Try
     End Sub
@@ -952,6 +972,90 @@ Public Class formDesigner
         Dim fileName As String = If(String.IsNullOrWhiteSpace(data.VSName), data.Name, data.VSName) & B2SProFileExtension
         Return IO.Path.Combine(BackglassProjectsPath, data.Name, fileName)
     End Function
+
+    Private Function RecoveryFileFor(ByVal data As Backglass.Data,
+                                     Optional ByVal sourceFilename As String = "") As String
+        If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return String.Empty
+        Dim source As String = If(String.IsNullOrWhiteSpace(sourceFilename), data.SourceFilePath, sourceFilename)
+        Dim identity As String = If(String.IsNullOrWhiteSpace(source),
+                                    "new:" & data.ProjectGUID,
+                                    "file:" & IO.Path.GetFullPath(source).ToUpperInvariant())
+        Dim token As String
+        Using sha = Security.Cryptography.SHA256.Create()
+            token = BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(identity))).Replace("-", "").Substring(0, 12)
+        End Using
+        Dim projectName As String = If(String.IsNullOrWhiteSpace(data.LoadedName), data.Name, data.LoadedName)
+        Dim fileBase As String = If(String.IsNullOrWhiteSpace(source),
+                                    "Unsaved_" & If(String.IsNullOrWhiteSpace(data.VSName), projectName, data.VSName),
+                                    IO.Path.GetFileNameWithoutExtension(source))
+        For Each invalidCharacter As Char In IO.Path.GetInvalidFileNameChars()
+            fileBase = fileBase.Replace(invalidCharacter, "_"c)
+        Next
+        Return IO.Path.Combine(BackglassProjectsPath,
+                               projectName,
+                               AutoRecoverySuffix,
+                               fileBase & "_" & AutoRecoverySuffix & "_" & token & B2SProFileExtension)
+    End Function
+
+    Private Function IsB2SProRecoveryPath(ByVal filename As String) As Boolean
+        If String.IsNullOrWhiteSpace(filename) Then Return False
+        Try
+            Dim fullPath As String = IO.Path.GetFullPath(filename)
+            Dim projectsRoot As String = IO.Path.GetFullPath(BackglassProjectsPath).TrimEnd(IO.Path.DirectorySeparatorChar)
+            Return fullPath.StartsWith(projectsRoot & IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) AndAlso
+                   IO.Path.GetExtension(fullPath).Equals(B2SProFileExtension, StringComparison.OrdinalIgnoreCase) AndAlso
+                   IO.Path.GetFileNameWithoutExtension(fullPath).IndexOf("_" & AutoRecoverySuffix & "_", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso
+                   IO.Path.GetFileName(IO.Path.GetDirectoryName(fullPath)).Equals(AutoRecoverySuffix, StringComparison.OrdinalIgnoreCase)
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Sub RemoveRecoveryCopy(ByVal data As Backglass.Data)
+        If data Is Nothing OrElse Not IsB2SProRecoveryPath(data.RecoverySourceFilePath) Then Return
+        Dim filename As String = data.RecoverySourceFilePath
+        Try
+            If IO.File.Exists(filename) Then IO.File.Delete(filename)
+            Dim folder As String = IO.Path.GetDirectoryName(filename)
+            If IO.Directory.Exists(folder) AndAlso IO.Directory.GetFileSystemEntries(folder).Length = 0 Then
+                IO.Directory.Delete(folder)
+            End If
+            data.RecoverySourceFilePath = String.Empty
+        Catch ex As Exception
+            Debug.WriteLine("Could not remove auto-recovery copy: " & ex.Message)
+            ShowStatus("Could not remove the auto-recovery copy: " & IO.Path.GetFileName(filename))
+        End Try
+    End Sub
+
+    Private Sub OfferUnsavedRecoveryCopies()
+        If Not IO.Directory.Exists(BackglassProjectsPath) Then Return
+        For Each projectFolder As String In IO.Directory.GetDirectories(BackglassProjectsPath)
+            Dim recoveryFolder As String = IO.Path.Combine(projectFolder, AutoRecoverySuffix)
+            If Not IO.Directory.Exists(recoveryFolder) Then Continue For
+            For Each recoveryFile As String In IO.Directory.GetFiles(recoveryFolder, "Unsaved_*_" & AutoRecoverySuffix & "_*.B2SPro")
+                If Not IsB2SProRecoveryPath(recoveryFile) Then Continue For
+                Try
+                    Dim recoveryData As Backglass.Data = Nothing
+                    If Not coding.ImportBackglassFile(recoveryData, recoveryFile, preserveEmbeddedVSName:=True) OrElse
+                       recoveryData Is Nothing Then Continue For
+                    recoveryData.RecoverySourceFilePath = recoveryFile
+                    Dim answer As DialogResult = B2SMessageBox.Show(Me,
+                        "An AutoRecovery copy was found for the unsaved backglass " & recoveryData.Name & "." & Environment.NewLine & Environment.NewLine &
+                        "Yes opens the recovered work. No discards the recovery copy.",
+                        AppTitle, MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                    If answer = DialogResult.Yes Then
+                        LoadData(recoveryData)
+                        If Object.ReferenceEquals(Backglass.currentData, recoveryData) Then recoveryData.IsDirty = True
+                    Else
+                        RemoveRecoveryCopy(recoveryData)
+                    End If
+                Catch ex As Exception
+                    Debug.WriteLine("Could not load unsaved AutoRecovery copy: " & ex.Message)
+                    ShowStatus("An AutoRecovery copy could not be read; it was kept for inspection")
+                End Try
+            Next
+        Next
+    End Sub
 
     Private Function SaveB2SPro(ByVal data As Backglass.Data,
                                 Optional ByVal markClean As Boolean = True,
@@ -970,7 +1074,7 @@ Public Class formDesigner
         End If
 
         data.BackupName = String.Empty
-        data.RecoverySourceFilePath = String.Empty
+        RemoveRecoveryCopy(data)
         data.SourceFilePath = IO.Path.GetFullPath(target)
         data.LoadedName = data.Name
         data.IsDirty = Not markClean
@@ -984,9 +1088,6 @@ Public Class formDesigner
     Private Sub formDesigner_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Load
         ' allow drag and drop
         Me.AllowDrop = True
-        InitializeOpenBackupMenu()
-        tsmiOpenBackup.Visible = False
-        tsmiSaveBackupAs.Visible = False
         ' start app title and status bar
         Me.Text = Headline
         'Me.KeyPreview = True
@@ -1010,20 +1111,6 @@ Public Class formDesigner
         ' the finished toolbar, never its native hosted-control setup frames.
         PrepareRecoveryPromptWorkspace()
     End Sub
-
-    Private Function RecoveryFileBelongsToProject(ByVal filename As String, ByVal projectName As String) As Boolean
-        If String.IsNullOrWhiteSpace(filename) OrElse String.IsNullOrWhiteSpace(projectName) OrElse
-           Not IsAutomaticRecoveryFile(filename) Then Return False
-        Try
-            Dim document As New Xml.XmlDocument()
-            document.Load(filename)
-            Dim nameNode As Xml.XmlNode = document.SelectSingleNode("B2SBackglassData/Name")
-            Return nameNode IsNot Nothing AndAlso nameNode.Attributes("Value") IsNot Nothing AndAlso
-                   String.Equals(nameNode.Attributes("Value").InnerText, projectName, StringComparison.OrdinalIgnoreCase)
-        Catch
-            Return False
-        End Try
-    End Function
 
     Private Function RestoredCanvasZoom() As String
         Dim saved As String = "100%"
@@ -1146,7 +1233,11 @@ Public Class formDesigner
         ' Windows file associations and Open With pass the selected file as a
         ' command-line argument. Route it through the same proven loaders used by
         ' File/Open, Recent Files, and drag-and-drop after the workspace is ready.
-        If Not String.IsNullOrEmpty(startupFile) Then OpenStartupFile(startupFile)
+        If Not String.IsNullOrEmpty(startupFile) Then
+            OpenStartupFile(startupFile)
+        Else
+            OfferUnsavedRecoveryCopies()
+        End If
 
         ' Theme the newly opened windows and keep every owned startup window on
         ' the designer's current monitor.
@@ -1270,6 +1361,12 @@ Public Class formDesigner
         Catch ex As Exception
             TraceMotionPersistence("Close B2S Pro save failed; keeping tab open: " & ex.ToString())
         End Try
+    End Sub
+
+    Private Sub B2STab_ProjectClosed(ByVal data As Backglass.Data) Handles B2STab.ProjectClosed
+        ' This also runs after the user explicitly chooses No. The original
+        ' project was not saved, so its temporary recovery copy is discarded.
+        RemoveRecoveryCopy(data)
     End Sub
 
     Private Sub formDesigner_DragEnter(sender As System.Object, e As System.Windows.Forms.DragEventArgs) Handles Me.DragEnter
@@ -1648,65 +1745,6 @@ Public Class formDesigner
             End With
         End Using
     End Sub
-    Private Sub InitializeOpenBackupMenu()
-        tsmiOpenBackup.DropDownItems.Clear()
-        tsmiOpenBackup.DropDownItems.Add("Browse for Backup...", Nothing, AddressOf BrowseForBackup_Click)
-    End Sub
-
-    Private Sub OpenBackup_DropDownOpening(ByVal sender As Object, ByVal e As EventArgs) Handles tsmiOpenBackup.DropDownOpening
-        tsmiOpenBackup.DropDownItems.Clear()
-        Dim backups As New List(Of IO.FileInfo)()
-        Try
-            If IO.Directory.Exists(BackglassProjectsPath) Then
-                For Each filename As String In IO.Directory.GetFiles(BackglassProjectsPath, "*.b2b", IO.SearchOption.TopDirectoryOnly)
-                    backups.Add(New IO.FileInfo(filename))
-                Next
-            End If
-            backups.Sort(Function(left As IO.FileInfo, right As IO.FileInfo) right.LastWriteTimeUtc.CompareTo(left.LastWriteTimeUtc))
-        Catch ex As Exception
-            TraceMotionPersistence("Could not enumerate backup list: " & ex.Message)
-        End Try
-
-        Dim count As Integer = Math.Min(5, backups.Count)
-        For index As Integer = 0 To count - 1
-            Dim backup As IO.FileInfo = backups(index)
-            Dim isRecovery As Boolean = IsAutomaticRecoveryFile(backup.FullName)
-            Dim caption As String = backup.LastWriteTime.ToString("yyyy-MM-dd  h:mm tt") & "  —  " &
-                                    IO.Path.GetFileNameWithoutExtension(backup.Name) &
-                                    If(isRecovery, "  [Auto Recovery]", String.Empty)
-            Dim item As New ToolStripMenuItem(caption)
-            item.Tag = backup.FullName
-            item.ToolTipText = backup.FullName
-            AddHandler item.Click, AddressOf OpenBackupListItem_Click
-            tsmiOpenBackup.DropDownItems.Add(item)
-        Next
-        If count = 0 Then
-            Dim emptyItem As New ToolStripMenuItem("(No backup files found)") With {.Enabled = False}
-            tsmiOpenBackup.DropDownItems.Add(emptyItem)
-        End If
-        tsmiOpenBackup.DropDownItems.Add(New ToolStripSeparator())
-        tsmiOpenBackup.DropDownItems.Add("Browse for Backup...", Nothing, AddressOf BrowseForBackup_Click)
-    End Sub
-
-    Private Sub OpenBackupListItem_Click(ByVal sender As Object, ByVal e As EventArgs)
-        Dim item As ToolStripMenuItem = TryCast(sender, ToolStripMenuItem)
-        Dim filename As String = If(item Is Nothing, String.Empty, TryCast(item.Tag, String))
-        If Not String.IsNullOrWhiteSpace(filename) AndAlso IO.File.Exists(filename) Then LoadB2B(filename)
-    End Sub
-
-    Private Sub BrowseForBackup_Click(sender As System.Object, e As System.EventArgs)
-        Using filedialog As OpenFileDialog = New OpenFileDialog
-            With filedialog
-                .Filter = "B2S backup file (*.b2b)|*.b2b|ALL (*.*)|*.*"
-                .FileName = String.Empty
-                .InitialDirectory = BackglassProjectsPath
-                If .ShowDialog(Me) = DialogResult.OK Then
-                    LoadB2B(.FileName)
-                End If
-            End With
-        End Using
-    End Sub
-
     Private Sub Close_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiClose.Click
         B2STab.RemoveBackglass(B2STab.SelectedIndex)
         ShowStatus()
@@ -1722,9 +1760,6 @@ Public Class formDesigner
             tsmiNew.PerformClick()
         End If
         LockUnlockMenus()
-    End Sub
-    Private Sub SaveBackupAs_Click(sender As System.Object, e As System.EventArgs) Handles tsmiSaveBackupAs.Click
-        SaveAs_Click(sender, e)
     End Sub
     Private Sub SaveAs_Click(sender As System.Object, e As System.EventArgs) Handles tsmiSaveAs.Click
         If Backglass.currentTabPage IsNot Nothing Then
@@ -1781,6 +1816,8 @@ Public Class formDesigner
 
     ' open recent stuff
     Private Sub OpenRecent_DropDownOpening(ByVal sender As Object, ByVal e As System.EventArgs) Handles tsmiOpenRecent.DropDownOpening
+        Dim recentDropDown As ToolStripDropDownMenu = TryCast(tsmiOpenRecent.DropDown, ToolStripDropDownMenu)
+        If recentDropDown IsNot Nothing Then recentDropDown.ShowImageMargin = False
         ' Older builds added new/unsaved projects to this file menu. Remove
         ' entries that have no source file before rebuilding it.
         recent.RemoveUnsupportedBackglassEntries()
@@ -1804,10 +1841,9 @@ Public Class formDesigner
             Dim i As Integer = recent.recentEntries.Count
             For Each recentEntry As KeyValuePair(Of Integer, Recent.recentEntry) In recent.recentEntries
                 With recentEntry.Value
-                    Dim newTSMI As ToolStripMenuItem = New ToolStripMenuItem(If(i = 10, "1&0 ", "&" & i.ToString() & " ") & .Name, .ThumbnailImage, AddressOf OpenRecent_ChildClick)
+                    Dim newTSMI As ToolStripMenuItem = New ToolStripMenuItem(If(i = 10, "1&0 ", "&" & i.ToString() & " ") & .Name, Nothing, AddressOf OpenRecent_ChildClick)
                     newTSMI.Name = "recent" & recentEntry.Key
                     newTSMI.Tag = recentEntry.Value
-                    newTSMI.ImageScaling = ToolStripItemImageScaling.None
                     tsmiOpenRecent.DropDownItems.Insert(0, newTSMI)
                 End With
                 i -= 1
@@ -1881,6 +1917,7 @@ Public Class formDesigner
         If source Is Nothing OrElse target Is Nothing Then Return
 
         target.LightPurpose = source.LightPurpose
+        target.ArtworkPixelLighting = source.ArtworkPixelLighting
         target.GlowSpread = source.GlowSpread
         target.GlowSoftness = source.GlowSoftness
         target.GlowIntensity = source.GlowIntensity
@@ -3111,58 +3148,45 @@ Public Class formDesigner
         Try
             coding.ImportBackglassFile(backglassdata, filename)
             If backglassdata IsNot Nothing Then
-                LoadData(backglassdata, filename)
-            End If
-        Catch ex As Exception
-            B2SMessageBox.Show(My.Resources.MSG_ImportError2, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-        Cursor.Current = Cursors.Default
-        ShowStatus()
-        LockUnlockMenus()
-    End Sub
-
-    Private Sub LoadB2S(ByVal filename As String)
-        TraceMotionPersistence("LoadB2S: " & filename)
-        Dim backglassdata As Backglass.Data = Nothing
-        Cursor.Current = Cursors.WaitCursor
-        Try
-            save.LoadData(backglassdata, filename)
-            If backglassdata IsNot Nothing Then
-                If backglassdata.IsBackup Then
-                    If B2SMessageBox.Show(My.Resources.MSG_BackupFile, AppTitle, MessageBoxButtons.YesNo, MessageBoxIcon.Question) = Windows.Forms.DialogResult.Yes Then
-                        If IsAutomaticRecoveryFile(filename) Then
-                            backglassdata.RecoverySourceFilePath = IO.Path.GetFullPath(filename)
-                            TraceMotionPersistence("LoadB2S tagged recovery: " & backglassdata.RecoverySourceFilePath)
+                Dim originalData As Backglass.Data = backglassdata
+                Dim recoveryFile As String = RecoveryFileFor(originalData, filename)
+                Dim recovered As Boolean = False
+                If IsB2SProRecoveryPath(recoveryFile) AndAlso IO.File.Exists(recoveryFile) Then
+                    Try
+                        Dim recoveryData As Backglass.Data = Nothing
+                        If coding.ImportBackglassFile(recoveryData, recoveryFile, preserveEmbeddedVSName:=True) AndAlso
+                           recoveryData IsNot Nothing AndAlso
+                           Not String.IsNullOrWhiteSpace(originalData.ProjectGUID) AndAlso
+                           String.Equals(recoveryData.ProjectGUID, originalData.ProjectGUID, StringComparison.OrdinalIgnoreCase) Then
+                            If IO.File.GetLastWriteTimeUtc(recoveryFile) > IO.File.GetLastWriteTimeUtc(filename) Then
+                                Cursor.Current = Cursors.Default
+                                Dim answer As DialogResult = B2SMessageBox.Show(Me,
+                                    "A newer AutoRecovery copy was found for " & originalData.Name & "." & Environment.NewLine & Environment.NewLine &
+                                    "Yes restores the unsaved changes. No discards the recovery copy and opens the original file.",
+                                    AppTitle, MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                                Cursor.Current = Cursors.WaitCursor
+                                If answer = DialogResult.Yes Then
+                                    recoveryData.LoadedName = originalData.Name
+                                    recoveryData.RecoverySourceFilePath = recoveryFile
+                                    backglassdata = recoveryData
+                                    recovered = True
+                                Else
+                                    originalData.RecoverySourceFilePath = recoveryFile
+                                    RemoveRecoveryCopy(originalData)
+                                End If
+                            Else
+                                originalData.RecoverySourceFilePath = recoveryFile
+                                RemoveRecoveryCopy(originalData)
+                            End If
                         End If
-                        LoadData(backglassdata, filename)
-                    End If
-                Else
-                    LoadData(backglassdata, filename)
+                    Catch ex As Exception
+                        Debug.WriteLine("Could not load AutoRecovery copy; opening original: " & ex.Message)
+                        ShowStatus("AutoRecovery copy could not be read; original backglass opened")
+                    End Try
                 End If
-            End If
-        Catch ex As Exception
-            B2SMessageBox.Show(My.Resources.MSG_ImportError2, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-        Cursor.Current = Cursors.Default
-        ShowStatus()
-        LockUnlockMenus()
-    End Sub
-
-    Private Sub LoadB2B(ByVal filename As String)
-        TraceMotionPersistence("LoadB2B: " & filename)
-        Dim backglassdata As Backglass.Data = Nothing
-        Cursor.Current = Cursors.WaitCursor
-        Try
-            save.LoadData(backglassdata, filename)
-            If backglassdata IsNot Nothing Then
-                If backglassdata.IsBackup Then
-                    If IsAutomaticRecoveryFile(filename) Then
-                        backglassdata.RecoverySourceFilePath = IO.Path.GetFullPath(filename)
-                        TraceMotionPersistence("LoadB2B tagged recovery: " & backglassdata.RecoverySourceFilePath)
-                    End If
-                    LoadData(backglassdata, filename)
-                Else
-                    B2SMessageBox.Show(My.Resources.MSG_NoBackupFile, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
+                LoadData(backglassdata, filename)
+                If recovered AndAlso Object.ReferenceEquals(Backglass.currentData, backglassdata) Then
+                    backglassdata.IsDirty = True
                 End If
             End If
         Catch ex As Exception
@@ -3791,14 +3815,19 @@ Public Class formDesigner
         End If
     End Sub
 
-    Private Function IsAutomaticRecoveryFile(ByVal filename As String) As Boolean
-        Return Not String.IsNullOrWhiteSpace(filename) AndAlso
-               IO.Path.GetExtension(filename).Equals(".b2b", StringComparison.OrdinalIgnoreCase) AndAlso
-               IO.Path.GetFileNameWithoutExtension(filename).EndsWith("_" & AutoRecoverySuffix, StringComparison.OrdinalIgnoreCase)
-    End Function
-
     Private Sub TraceMotionPersistence(ByVal message As String)
         Debug.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") & " | " & message)
+    End Sub
+
+    Private Sub IDTester_Click(sender As Object, e As EventArgs)
+        If Backglass.currentData Is Nothing OrElse Backglass.currentTabPage Is Nothing Then
+            MessageBox.Show(Me, "Open a backglass first so the ID tester can find its table.", "ID Tester", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        Dim tableName As String = If(String.IsNullOrWhiteSpace(Backglass.currentData.VSName),
+                                     Backglass.currentData.Name, Backglass.currentData.VSName)
+        IDTester.Run(Me, tableName, DefaultVPTablesFolder)
     End Sub
 
     Private Function NormalizeSourcePath(ByVal sourceFileName As String) As String

@@ -20,7 +20,6 @@ Public Class formToolLayers
     Private ReadOnly opacityLabel As New Label()
     Private ReadOnly layerNumber As New NumericUpDown()
     Private ReadOnly btnSetLayer As New Button()
-    Private ReadOnly searchBox As New TextBox()
     Private ReadOnly filterBox As New ComboBox()
     Private ReadOnly countLabel As New Label()
     Private ReadOnly chkShowLights As New CategoryToggleCheckBox()
@@ -120,10 +119,6 @@ Public Class formToolLayers
         filterPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
         filterPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 92.0F))
         filterPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 38.0F))
-        searchBox.Name = "txtLayerSearch"
-        searchBox.Dock = DockStyle.Fill
-        searchBox.Font = Font
-        searchBox.Text = String.Empty
         filterBox.Name = "cmbLayerFilter"
         filterBox.Dock = DockStyle.Fill
         filterBox.DropDownStyle = ComboBoxStyle.DropDownList
@@ -134,9 +129,7 @@ Public Class formToolLayers
         countLabel.TextAlign = ContentAlignment.MiddleRight
         countLabel.Font = Font
         countLabel.ForeColor = ForeColor
-        AddHandler searchBox.TextChanged, AddressOf FilterChanged
         AddHandler filterBox.SelectedIndexChanged, AddressOf FilterChanged
-        filterPanel.Controls.Add(searchBox, 0, 0)
         filterPanel.Controls.Add(filterBox, 1, 0)
         filterPanel.Controls.Add(countLabel, 2, 0)
 
@@ -290,7 +283,6 @@ Public Class formToolLayers
             StartPosition = FormStartPosition.Manual
             Bounds = savedBounds
             filterBox.SelectedIndex = Math.Max(0, Math.Min(filterBox.Items.Count - 1, ReadLayoutInt(root, "filter", 0)))
-            searchBox.Text = root.GetAttribute("search")
             chkShowLights.Checked = ReadLayoutBool(root, "lights", True)
             chkShowFlashers.Checked = ReadLayoutBool(root, "flashers", True)
             chkShowSnippets.Checked = ReadLayoutBool(root, "snippets", True)
@@ -319,7 +311,7 @@ Public Class formToolLayers
             Dim savedBounds As Rectangle = If(WindowState = FormWindowState.Normal, Bounds, RestoreBounds)
             root.SetAttribute("x", savedBounds.X.ToString()) : root.SetAttribute("y", savedBounds.Y.ToString())
             root.SetAttribute("width", savedBounds.Width.ToString()) : root.SetAttribute("height", savedBounds.Height.ToString())
-            root.SetAttribute("filter", filterBox.SelectedIndex.ToString()) : root.SetAttribute("search", searchBox.Text)
+            root.SetAttribute("filter", filterBox.SelectedIndex.ToString())
             root.SetAttribute("lights", chkShowLights.Checked.ToString()) : root.SetAttribute("flashers", chkShowFlashers.Checked.ToString()) : root.SetAttribute("snippets", chkShowSnippets.Checked.ToString())
             For index As Integer = 0 To layers.Columns.Count - 1
                 root.SetAttribute("column" & index.ToString(), layers.Columns(index).Width.ToString())
@@ -751,8 +743,6 @@ Public Class formToolLayers
     End Sub
 
     Private Function MatchesFilter(name As String, typeName As String, item As Object) As Boolean
-        Dim searchText As String = searchBox.Text.Trim()
-        If searchText.Length > 0 AndAlso name.IndexOf(searchText, StringComparison.CurrentCultureIgnoreCase) < 0 AndAlso typeName.IndexOf(searchText, StringComparison.CurrentCultureIgnoreCase) < 0 Then Return False
         Select Case filterBox.Text
             Case "Images"
                 Return typeName = "Image" OrElse typeName = "Canvas"
@@ -1202,7 +1192,9 @@ Public Class formToolLayers
             MessageBox.Show(Me, "Select one image snippet in the Layers panel first.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information)
             Return
         End If
-        Using editor As New formPivotAnimation(snippet)
+        If Backglass.currentTabPage Is Nothing OrElse Backglass.currentTabPage.CurrentPictureBox Is Nothing OrElse
+           Backglass.currentTabPage.CurrentPictureBox.Image Is Nothing Then Return
+        Using editor As New formPivotAnimation(snippet, Backglass.currentTabPage.CurrentPictureBox.Image)
             If editor.ShowDialog(Me) <> DialogResult.OK Then Return
         End Using
         snippet.IsIlluminatedImageDirty = True
@@ -1249,7 +1241,10 @@ Public Class formToolLayers
             ball.SnippitInfo.PhysicsSwitchZones.AddRange(editor.ResultSwitchZones)
             ball.SnippitInfo.PhysicsSwitchIDs.Clear()
             ball.SnippitInfo.PhysicsSwitchIDs.AddRange(editor.ResultSwitchIDs)
+            ball.SnippitInfo.PhysicsSwitchAngles.Clear()
+            ball.SnippitInfo.PhysicsSwitchAngles.AddRange(editor.ResultSwitchAngles)
             ball.SnippitInfo.PhysicsLauncherEnabled = editor.ResultLauncherEnabled
+            ball.SnippitInfo.PhysicsLauncherFollowPivot = editor.ResultLauncherFollowPivot
             ball.SnippitInfo.PhysicsLauncherTriggerType = editor.ResultLauncherTriggerType
             ball.SnippitInfo.PhysicsLauncherTriggerID = editor.ResultLauncherTriggerID
             ball.SnippitInfo.PhysicsLauncherX = editor.ResultLauncherX
@@ -1259,6 +1254,10 @@ Public Class formToolLayers
             ball.SnippitInfo.PhysicsLauncherRandomAngle = editor.ResultLauncherRandomAngle
             ball.SnippitInfo.PhysicsLauncherRandomStrength = editor.ResultLauncherRandomStrength
             ball.SnippitInfo.PhysicsLauncherCaptureRadius = editor.ResultLauncherCaptureRadius
+            If editor.ResultLauncherEnabled AndAlso editor.ResultLauncherFollowPivot Then
+                ball.Location = New Point(CInt(Math.Round(editor.ResultLauncherX - ball.Size.Width / 2.0F)),
+                                          CInt(Math.Round(editor.ResultLauncherY - ball.Size.Height / 2.0F)))
+            End If
         End Using
         MarkDirty()
         RefreshAll(ball)

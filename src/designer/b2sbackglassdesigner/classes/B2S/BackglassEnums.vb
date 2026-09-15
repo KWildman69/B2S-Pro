@@ -78,6 +78,8 @@ Public Enum eRomIDType
     Lamp = 1
     Solenoid = 2
     GIString = 3
+    Mech = 4
+    Switch = 5
 End Enum
 
 Public Enum eDualMode

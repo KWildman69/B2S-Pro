@@ -1278,6 +1278,9 @@ Public Class B2STabPage
             newBulb.IlluMode = Illumination.eIlluMode.Flasher
             newBulb.LightPurpose = Illumination.eLightPurpose.Flasher
         End If
+        ' Every newly authored B2S Pro light uses the artwork-pixel pipeline.
+        ' The light remains a lamp unless it was created with Add Flasher.
+        newBulb.ArtworkPixelLighting = True
         Illumination.LightGlowDefaults.ApplyTo(newBulb)
         With newBulb
             If Mouse.LastBulbSize <> Nothing Then 'size of last bulb

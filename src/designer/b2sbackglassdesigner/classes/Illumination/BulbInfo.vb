@@ -39,6 +39,18 @@
         Public Intensity As Integer = 1
         Public IlluMode As eIlluMode = eIlluMode.Standard
         Public LightPurpose As eLightPurpose = eLightPurpose.Lamp
+        ' Regular B2S Pro lights can use the same artwork-pixel renderer as
+        ' flashers without changing their lamp identity or trigger behavior.
+        ' False preserves imported legacy directB2S illumination exactly.
+        Public ArtworkPixelLighting As Boolean = False
+
+        Public ReadOnly Property UsesArtworkPixelRenderer As Boolean
+            Get
+                Return ArtworkPixelLighting OrElse
+                       IlluMode = eIlluMode.Flasher OrElse
+                       LightPurpose = eLightPurpose.Flasher
+            End Get
+        End Property
 
         ' Optional per-light blinker. Interval is the duration of each on/off phase.
         Public BlinkEnabled As Boolean = False
@@ -168,6 +180,7 @@
         Public PivotDownAngle As Single = 0.0F
         Public PivotUpAngle As Single = -30.0F
         Public PivotDuration As Integer = 80
+        Public PivotAutomaticOscillation As Boolean = False
         ' 0=named commands, 1=solenoid, 2=lamp, 3=B2S ID.
         Public PivotTriggerType As Integer = 1
         Public PivotTriggerID As Integer = 0
@@ -192,7 +205,9 @@
         Public PhysicsObstacles As New List(Of RectangleF)()
         Public PhysicsSwitchZones As New List(Of RectangleF)()
         Public PhysicsSwitchIDs As New List(Of Integer)()
+        Public PhysicsSwitchAngles As New List(Of Single)()
         Public PhysicsLauncherEnabled As Boolean = False
+        Public PhysicsLauncherFollowPivot As Boolean = False
         Public PhysicsLauncherTriggerType As Integer = 1
         Public PhysicsLauncherTriggerID As Integer = 0
         Public PhysicsLauncherX As Single = 0.0F
