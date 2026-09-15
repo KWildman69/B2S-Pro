@@ -131,7 +131,11 @@ namespace B2SPro.Setup
         private readonly Button _installButton = new Button();
         private readonly ProgressBar _progress = new ProgressBar();
         private readonly Label _status = new Label();
+        private readonly Label _intro = new Label();
+        private readonly Panel _contentHost = new Panel();
+        private readonly TableLayoutPanel _root = new TableLayoutPanel();
         private readonly PackagePaths _localPackages;
+        private bool _fittingLayout;
 
         public InstallerForm(InstallerLaunchOptions launchOptions)
         {
@@ -146,10 +150,70 @@ namespace B2SPro.Setup
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = SetupEdition.ServerOnly ? new Size(704, 422) : new Size(704, 532);
-            MinimumSize = Size;
             BuildInterface();
             ApplyLaunchOptions(launchOptions);
             _vpxFolder.Leave += delegate { if (Directory.Exists(_vpxFolder.Text.Trim())) SetSuggestedFolders(_vpxFolder.Text.Trim()); };
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            FitWindowToCurrentDisplay();
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            if (IsHandleCreated && !IsDisposed)
+                BeginInvoke(new MethodInvoker(FitWindowToCurrentDisplay));
+        }
+
+        private int ScaleLogicalPixels(int value)
+        {
+            return Math.Max(1, (int)Math.Ceiling(value * DeviceDpi / 96F));
+        }
+
+        private void FitWindowToCurrentDisplay()
+        {
+            if (_fittingLayout || _root.Parent == null) return;
+            _fittingLayout = true;
+            try
+            {
+                SuspendLayout();
+                MinimumSize = Size.Empty;
+
+                Rectangle workingArea = Screen.FromControl(this).WorkingArea;
+                int chromeWidth = Math.Max(0, Width - ClientSize.Width);
+                int chromeHeight = Math.Max(0, Height - ClientSize.Height);
+                int outerMargin = ScaleLogicalPixels(24);
+                int availableWidth = Math.Max(1, workingArea.Width - chromeWidth - outerMargin);
+                int availableHeight = Math.Max(1, workingArea.Height - chromeHeight - outerMargin);
+                int targetWidth = Math.Min(ScaleLogicalPixels(704), availableWidth);
+
+                ClientSize = new Size(targetWidth, Math.Min(ClientSize.Height, availableHeight));
+                int textWidth = Math.Max(ScaleLogicalPixels(280), targetWidth - _root.Padding.Horizontal - ScaleLogicalPixels(8));
+                _intro.MaximumSize = new Size(textWidth, 0);
+                _status.MaximumSize = new Size(textWidth, 0);
+                _root.PerformLayout();
+                _contentHost.PerformLayout();
+
+                int preferredHeight = Math.Max(_root.PreferredSize.Height, _root.Height);
+                int targetHeight = Math.Min(preferredHeight, availableHeight);
+                ClientSize = new Size(targetWidth, targetHeight);
+                _contentHost.AutoScrollMinSize = new Size(0, preferredHeight);
+
+                int minimumHeight = Math.Min(ScaleLogicalPixels(300), availableHeight);
+                MinimumSize = SizeFromClientSize(new Size(Math.Min(targetWidth, availableWidth), minimumHeight));
+
+                int x = Math.Max(workingArea.Left, Math.Min(Left, workingArea.Right - Width));
+                int y = Math.Max(workingArea.Top, Math.Min(Top, workingArea.Bottom - Height));
+                Location = new Point(x, y);
+            }
+            finally
+            {
+                ResumeLayout(true);
+                _fittingLayout = false;
+            }
         }
 
         private void ApplyLaunchOptions(InstallerLaunchOptions options)
@@ -183,52 +247,53 @@ namespace B2SPro.Setup
 
         private void BuildInterface()
         {
-            var root = new TableLayoutPanel();
-            root.Dock = DockStyle.Fill;
-            root.Padding = new Padding(16, 12, 16, 12);
-            root.ColumnCount = 1;
-            root.RowCount = SetupEdition.ServerOnly ? 7 : 9;
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, SetupEdition.ServerOnly ? 78 : 82));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, SetupEdition.ServerOnly ? 48 : 56));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-            if (!SetupEdition.ServerOnly)
-            {
-                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            }
-            else root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            Controls.Add(root);
+            _contentHost.Dock = DockStyle.Fill;
+            _contentHost.AutoScroll = true;
+            _contentHost.BackColor = BackColor;
 
-            root.Controls.Add(CreateHeader(), 0, 0);
-            root.Controls.Add(CreateIntro(), 0, 1);
-            root.Controls.Add(CreatePathRow("1. Visual Pinball folder", _vpxFolder, BrowseVpx, "Browse..."), 0, 2);
+            _root.Dock = DockStyle.Top;
+            _root.AutoSize = true;
+            _root.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            _root.Padding = new Padding(16, 12, 16, 12);
+            _root.ColumnCount = 1;
+            _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _root.RowCount = SetupEdition.ServerOnly ? 7 : 9;
+            for (int row = 0; row < _root.RowCount; row++)
+                _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            _contentHost.Controls.Add(_root);
+            Controls.Add(_contentHost);
+
+            _root.Controls.Add(CreateHeader(), 0, 0);
+            _root.Controls.Add(CreateIntro(), 0, 1);
+            _root.Controls.Add(CreatePathRow("1. Visual Pinball folder", _vpxFolder, BrowseVpx, "Browse..."), 0, 2);
             int nextRow = 3;
             if (!SetupEdition.ServerOnly)
             {
-                root.Controls.Add(CreatePathRow("2. B2S Pro Designer folder", _designerFolder, delegate { BrowseFolder(_designerFolder); }, "Browse..."), 0, nextRow++);
+                _root.Controls.Add(CreatePathRow("2. B2S Pro Designer folder", _designerFolder, delegate { BrowseFolder(_designerFolder); }, "Browse..."), 0, nextRow++);
             }
-            root.Controls.Add(CreatePathRow(SetupEdition.ServerOnly ? "2. B2S Server folder — automatically detected" : "B2S Server folder — automatically detected", _serverFolder, delegate { BrowseFolder(_serverFolder); }, "Change..."), 0, nextRow++);
+            _root.Controls.Add(CreatePathRow(SetupEdition.ServerOnly ? "2. B2S Server folder — automatically detected" : "B2S Server folder — automatically detected", _serverFolder, delegate { BrowseFolder(_serverFolder); }, "Change..."), 0, nextRow++);
             _serverFolder.ReadOnly = true;
-            if (!SetupEdition.ServerOnly) root.Controls.Add(CreateArchitectureRow(), 0, nextRow++);
-            root.Controls.Add(CreateSourcePanel(), 0, nextRow++);
+            if (!SetupEdition.ServerOnly) _root.Controls.Add(CreateArchitectureRow(), 0, nextRow++);
+            _root.Controls.Add(CreateSourcePanel(), 0, nextRow++);
 
-            var statusPanel = new Panel { Dock = DockStyle.Fill };
-            _progress.Dock = DockStyle.Top;
-            _progress.Height = 8;
+            var statusPanel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 2 };
+            statusPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            statusPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
+            statusPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            _progress.Dock = DockStyle.Fill;
+            _progress.MinimumSize = new Size(0, 8);
             _progress.Style = ProgressBarStyle.Continuous;
-            _status.Dock = DockStyle.Fill;
+            _status.AutoSize = true;
+            _status.Dock = DockStyle.Top;
             _status.Padding = new Padding(2, 8, 2, 0);
             _status.ForeColor = Color.FromArgb(140, 220, 255);
             _status.Text = SetupEdition.ServerOnly ? "Choose the Visual Pinball and Server folders, then click Install / Update." : "Choose the three folders, then click Install / Update.";
-            statusPanel.Controls.Add(_status);
-            statusPanel.Controls.Add(_progress);
-            root.Controls.Add(statusPanel, 0, nextRow++);
+            statusPanel.Controls.Add(_progress, 0, 0);
+            statusPanel.Controls.Add(_status, 0, 1);
+            _root.Controls.Add(statusPanel, 0, nextRow++);
 
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
             var close = StyledButton("Close", 104);
             close.Click += delegate { Close(); };
             _installButton.Text = SetupEdition.ButtonText;
@@ -237,12 +302,12 @@ namespace B2SPro.Setup
             _installButton.Click += InstallClicked;
             buttons.Controls.Add(close);
             buttons.Controls.Add(_installButton);
-            root.Controls.Add(buttons, 0, nextRow);
+            _root.Controls.Add(buttons, 0, nextRow);
         }
 
         private Control CreateHeader()
         {
-            var panel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Black };
+            var panel = new Panel { Dock = DockStyle.Top, BackColor = Color.Black, MinimumSize = new Size(0, SetupEdition.ServerOnly ? 78 : 82) };
             try
             {
                 using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("B2SProHeader.png"))
@@ -263,32 +328,32 @@ namespace B2SPro.Setup
 
         private Control CreateIntro()
         {
-            var label = new Label();
-            label.Dock = DockStyle.Fill;
-            label.Text = SetupEdition.ServerOnly
+            _intro.AutoSize = true;
+            _intro.Dock = DockStyle.Top;
+            _intro.Text = SetupEdition.ServerOnly
                 ? "Installs or updates only the B2S Server used by Visual Pinball. B2S Pro and the original Backglass Designer are not installed or changed."
                 : "B2S Pro installs beside the original Backglass Designer and includes the required B2S Server update. Nothing is written until all locations are validated and every existing program-file replacement is approved.";
-            label.Font = new Font(Font, FontStyle.Bold);
-            label.ForeColor = Color.FromArgb(230, 235, 245);
-            label.Padding = new Padding(2, 8, 2, 2);
-            return label;
+            _intro.Font = new Font(Font, FontStyle.Bold);
+            _intro.ForeColor = Color.FromArgb(230, 235, 245);
+            _intro.Padding = new Padding(2, 8, 2, 2);
+            return _intro;
         }
 
         private Control CreatePathRow(string title, TextBox textBox, EventHandler browse, string buttonText)
         {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 2 };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 98));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var label = new Label { Text = title, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold) };
+            var label = new Label { Text = title, AutoSize = true, Dock = DockStyle.Top, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold) };
             textBox.Dock = DockStyle.Fill;
+            textBox.Margin = new Padding(3, 3, 3, 4);
             textBox.BackColor = Color.FromArgb(27, 33, 45);
             textBox.ForeColor = Color.White;
             textBox.BorderStyle = BorderStyle.FixedSingle;
             var button = StyledButton(buttonText, 90);
-            button.Dock = DockStyle.Fill;
             button.Click += browse;
 
             panel.Controls.Add(label, 0, 0);
@@ -300,21 +365,21 @@ namespace B2SPro.Setup
 
         private Control CreateArchitectureRow()
         {
-            var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 3, 0, 0), WrapContents = false };
-            panel.Controls.Add(new Label { Text = "Designer edition:", Width = 114, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold), Height = 27 });
+            var panel = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 3, 0, 0), WrapContents = true };
+            panel.Controls.Add(new Label { Text = "Designer edition:", AutoSize = true, MinimumSize = new Size(114, 27), TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(80, 210, 255), Font = new Font(Font, FontStyle.Bold) });
             _architecture.DropDownStyle = ComboBoxStyle.DropDownList;
             _architecture.Items.AddRange(new object[] { "64-bit (recommended)", "32-bit" });
             _architecture.SelectedIndex = Environment.Is64BitOperatingSystem ? 0 : 1;
-            _architecture.Width = 194;
+            _architecture.MinimumSize = new Size(194, 0);
             panel.Controls.Add(_architecture);
-            panel.Controls.Add(new Label { Text = "Server supports both x86 and x64.", Width = 250, Height = 27, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver });
+            panel.Controls.Add(new Label { Text = "Server supports both x86 and x64.", AutoSize = true, MinimumSize = new Size(250, 27), TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Silver });
             return panel;
         }
 
         private Control CreateSourcePanel()
         {
-            var group = new GroupBox { Text = "Build source", Dock = DockStyle.Fill, ForeColor = Color.White, Padding = new Padding(10, 7, 10, 5) };
-            var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(4, 1, 0, 0) };
+            var group = new GroupBox { Text = "Build source", Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ForeColor = Color.White, Padding = new Padding(10, 7, 10, 5) };
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(4, 1, 0, 0) };
             _localSource.Text = SetupEdition.ServerOnly ? "Install from the verified Server package beside this updater" : "Install from the verified Designer and Server packages beside this updater";
             _localSource.AutoSize = true;
             _localSource.Margin = new Padding(3, 0, 3, 0);
@@ -557,8 +622,9 @@ namespace B2SPro.Setup
 
         private static void StyleButton(Button button, int width)
         {
-            button.Width = width;
-            button.Height = 30;
+            button.AutoSize = true;
+            button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            button.MinimumSize = new Size(width, 30);
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderColor = Color.FromArgb(55, 145, 255);
             button.BackColor = Color.FromArgb(28, 48, 82);
