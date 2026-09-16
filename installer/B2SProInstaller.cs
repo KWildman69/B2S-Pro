@@ -136,6 +136,7 @@ namespace B2SPro.Setup
         private readonly TableLayoutPanel _root = new TableLayoutPanel();
         private readonly PackagePaths _localPackages;
         private bool _fittingLayout;
+        private string _suggestedVpxRoot;
 
         public InstallerForm(InstallerLaunchOptions launchOptions)
         {
@@ -151,6 +152,7 @@ namespace B2SPro.Setup
             AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = SetupEdition.ServerOnly ? new Size(704, 422) : new Size(704, 532);
             BuildInterface();
+            LoadSavedPaths();
             ApplyLaunchOptions(launchOptions);
             _vpxFolder.Leave += delegate { if (Directory.Exists(_vpxFolder.Text.Trim())) SetSuggestedFolders(_vpxFolder.Text.Trim()); };
         }
@@ -214,6 +216,18 @@ namespace B2SPro.Setup
                 ResumeLayout(true);
                 _fittingLayout = false;
             }
+        }
+
+        private void LoadSavedPaths()
+        {
+            string[] paths = SetupPaths.Load();
+            if (Directory.Exists(paths[0]) && Directory.GetFiles(paths[0], "VPinballX*.exe").Length > 0)
+            {
+                _vpxFolder.Text = paths[0];
+                SetSuggestedFolders(paths[0]);
+            }
+            if (!SetupEdition.ServerOnly && Directory.Exists(paths[1])) _designerFolder.Text = paths[1];
+            if (Directory.Exists(paths[2])) _serverFolder.Text = paths[2];
         }
 
         private void ApplyLaunchOptions(InstallerLaunchOptions options)
@@ -421,6 +435,8 @@ namespace B2SPro.Setup
         private void SetSuggestedFolders(string vpxRoot)
         {
             if (String.IsNullOrWhiteSpace(vpxRoot)) return;
+            if (String.Equals(_suggestedVpxRoot, vpxRoot, StringComparison.OrdinalIgnoreCase)) return;
+            _suggestedVpxRoot = vpxRoot;
             if (!SetupEdition.ServerOnly && String.IsNullOrWhiteSpace(_designerFolder.Text)) _designerFolder.Text = Path.Combine(vpxRoot, "B2SPro");
             _serverFolder.Text = ServerLocator.FindOrSuggest(vpxRoot);
             if (File.Exists(Path.Combine(_serverFolder.Text, "B2SBackglassServer.dll")))
@@ -482,6 +498,14 @@ namespace B2SPro.Setup
                     InstallResult result = await Task.Run(delegate { return plan.Execute(true, !SetupEdition.ServerOnly, !SetupEdition.ServerOnly); });
                     SetBusy(false, SetupEdition.Product + " installation completed successfully.");
                     string message = result.BuildSummary();
+                    try
+                    {
+                        SetupPaths.Save(_vpxFolder.Text.Trim(), SetupEdition.ServerOnly ? null : _designerFolder.Text.Trim(), _serverFolder.Text.Trim());
+                    }
+                    catch (Exception ex)
+                    {
+                        message += Environment.NewLine + "Installation paths could not be remembered: " + ex.Message;
+                    }
                     MessageBox.Show(this, message, SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
                     Close();
                 }
@@ -1006,9 +1030,9 @@ namespace B2SPro.Setup
 
                 string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
                 File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; retired " + retired + " obsolete files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
-                MarkProtected(log);
-                if (_installDesigner) MarkProtected(Path.Combine(_designer, "B2SPro-Backups"));
-                MarkProtected(Path.Combine(_server, "B2SPro-Backups"));
+                MakeVisible(log);
+                if (_installDesigner) MakeBackupVisible(Path.Combine(_designer, "B2SPro-Backups"));
+                MakeBackupVisible(Path.Combine(_server, "B2SPro-Backups"));
                 bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
                 return new InstallResult(_designer, _server, installed, preserved, retired, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
             }
@@ -1048,32 +1072,52 @@ namespace B2SPro.Setup
 
         private static void ApplyVisibility(string path, bool isDesigner)
         {
-            string name = Path.GetFileName(path);
-            bool hidden;
-            if (isDesigner)
-            {
-                hidden = !String.Equals(name, "B2SPro.exe", StringComparison.OrdinalIgnoreCase);
-            }
-            else
-            {
-                hidden = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-                    || name.EndsWith(".config", StringComparison.OrdinalIgnoreCase)
-                    || String.Equals(name, "B2SBackglassServerEXE.exe", StringComparison.OrdinalIgnoreCase)
-                    || String.Equals(name, "B2SUpdateChecker.exe", StringComparison.OrdinalIgnoreCase)
-                    || String.Equals(name, "B2SInit.cmd", StringComparison.OrdinalIgnoreCase)
-                    || String.Equals(name, "B2SWindowPunch.exe", StringComparison.OrdinalIgnoreCase);
-            }
-
-            FileAttributes attributes = File.GetAttributes(path);
-            if (hidden) File.SetAttributes(path, attributes | FileAttributes.Hidden | FileAttributes.System);
-            else File.SetAttributes(path, attributes & ~FileAttributes.Hidden & ~FileAttributes.System);
+            MakeVisible(path);
         }
 
-        private static void MarkProtected(string path)
+        private static void MakeVisible(string path)
         {
             if (!File.Exists(path) && !Directory.Exists(path)) return;
             FileAttributes attributes = File.GetAttributes(path);
-            File.SetAttributes(path, attributes | FileAttributes.Hidden | FileAttributes.System);
+            File.SetAttributes(path, attributes & ~FileAttributes.Hidden & ~FileAttributes.System);
+        }
+
+        private static void MakeBackupVisible(string path)
+        {
+            if (!Directory.Exists(path)) return;
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) return;
+            MakeVisible(path);
+            foreach (string file in Directory.GetFiles(path)) MakeVisible(file);
+            foreach (string directory in Directory.GetDirectories(path)) MakeBackupVisible(directory);
+        }
+    }
+
+    internal static class SetupPaths
+    {
+        private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "B2SPro", "SetupPaths.txt");
+
+        public static string[] Load()
+        {
+            try
+            {
+                string[] paths = File.ReadAllLines(SettingsPath);
+                if (paths.Length == 3) return paths;
+            }
+            catch { }
+            return new string[] { "", "", "" };
+        }
+
+        public static void Save(string vpx, string designer, string server)
+        {
+            string[] paths = Load();
+            paths[0] = vpx;
+            if (designer != null) paths[1] = designer;
+            paths[2] = server;
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
+            string temporary = SettingsPath + ".new";
+            File.WriteAllLines(temporary, paths);
+            if (File.Exists(SettingsPath)) File.Replace(temporary, SettingsPath, null);
+            else File.Move(temporary, SettingsPath);
         }
     }
 
@@ -1418,15 +1462,15 @@ namespace B2SPro.Setup
                             if (Directory.GetFiles(Path.Combine(server, "B2SPro-Backups"), name, SearchOption.AllDirectories).Length != 1) throw new Exception(arch + " obsolete Server file was not backed up: " + name);
                         }
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " main Designer executable was hidden.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.Hidden) == 0) throw new Exception(arch + " Designer config was not hidden.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.System) == 0) throw new Exception(arch + " Designer config was not marked as a protected system file.");
-                        if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.Hidden) == 0) throw new Exception(arch + " Server DLL was not hidden.");
-                        if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.System) == 0) throw new Exception(arch + " Server DLL was not marked as a protected system file.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Designer update checker was not protected.");
-                        if ((File.GetAttributes(Path.Combine(server, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Server update checker was not protected.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " Designer config was hidden.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.System) != 0) throw new Exception(arch + " Designer config was marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " Server DLL was hidden.");
+                        if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.System) != 0) throw new Exception(arch + " Server DLL was marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Designer update checker was hidden or marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(server, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Server update checker was hidden or marked as a system file.");
                         if ((File.GetAttributes(Path.Combine(server, "ScreenRes.txt")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " ScreenRes.txt was hidden.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Install.log")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " install log was not protected.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Backups")) & (FileAttributes.Hidden | FileAttributes.System)) != (FileAttributes.Hidden | FileAttributes.System)) throw new Exception(arch + " Designer backup folder was not protected.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Install.log")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " install log was hidden or marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Backups")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Designer backup folder was hidden or marked as a system file.");
                     }
                 }
 

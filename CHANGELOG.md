@@ -2,6 +2,12 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## 1.0.1 / Server 3.0.0 update — 2026-09-16
+
+- Both setup programs remember Visual Pinball, Designer, and Server installation paths after successful installation and prefill them on subsequent updates. Server-only updates preserve the saved Designer location.
+- Installed program files, supporting files, installation logs, and backup folders are visible. Updating clears the previous Hidden/System attributes from installer-managed program files and backups.
+- Existing executable filenames and VPX/server interfaces remain unchanged.
+
 ## 1.0.1 / Server 3.0.0 update — 2026-09-15
 
 - Added independent, once-daily update checks for B2S Pro Designer and B2S Server. Checks stay silent when current or offline, run without elevation, and offer the correct verified setup only when a newer GitHub release exists.

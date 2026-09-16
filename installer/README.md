@@ -10,6 +10,10 @@ The same tested installation engine produces two separate setup programs:
 ## Installation model
 
 - The user selects the Visual Pinball folder containing a `VPinballX*.exe`.
+- After successful installation, both setups share saved installation paths in
+  `%ProgramData%\B2SPro\SetupPaths.txt`. Later runs prefill existing locations;
+  server-only updates retain the saved Designer location. Explicit updater
+  launch arguments take precedence over remembered locations.
 - The installer automatically detects a server in `B2SServer`, `Tables`, or the
   VPX folder itself. A Change button remains available for nonstandard layouts.
 - On a completely fresh setup, the installer creates `B2SServer` inside the
@@ -30,11 +34,9 @@ The same tested installation engine produces two separate setup programs:
 - `ScreenRes.txt`, `B2STableSettings.xml`, the `Plugins` and `Plugins64`
   folders, projects, tables, backglasses, and unrelated files are preserved.
 - Runtime DLLs, helper executables, `.config` files, installer logs, and backup
-  folders are marked Hidden + System after installation. `B2SPro.exe`, useful
-  server utilities, documentation, `Projects`, and `ScreenRes.txt` remain
-  visible. Protected internal files can still be deliberately revealed through
-  Windows Explorer's protected-operating-system-files setting; NTFS access is
-  not denied because the applications and future updates still need the files.
+  folders remain visible. Updates clear Hidden/System attributes previously
+  applied to installer-managed program files and backups. Unrelated user files
+  and display settings are preserved.
 - The complete setup creates a `B2S Pro` shortcut on the current user's desktop and in a
   `B2S Pro` Start Menu folder. Reinstalling refreshes both shortcuts without
   changing the original Designer's shortcuts. Server-only setup creates no
