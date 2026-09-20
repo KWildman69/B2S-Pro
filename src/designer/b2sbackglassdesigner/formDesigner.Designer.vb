@@ -116,6 +116,7 @@ Partial Class formDesigner
         Me.tsmiTranslucent = New System.Windows.Forms.ToolStripMenuItem()
         Me.tsmiHelp = New System.Windows.Forms.ToolStripMenuItem()
         Me.tsmiHelpTopics = New System.Windows.Forms.ToolStripMenuItem()
+        Me.tsmiCheckForUpdates = New System.Windows.Forms.ToolStripMenuItem()
         Me.ToolStripSeparator5 = New System.Windows.Forms.ToolStripSeparator()
         Me.tsmiAbout = New System.Windows.Forms.ToolStripMenuItem()
         Me.tsB2SDesigner = New System.Windows.Forms.ToolStrip()
@@ -653,7 +654,7 @@ Partial Class formDesigner
         '
         'tsmiHelp
         '
-        Me.tsmiHelp.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.tsmiHelpTopics, Me.ToolStripSeparator5, Me.tsmiAbout})
+        Me.tsmiHelp.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.tsmiHelpTopics, Me.tsmiCheckForUpdates, Me.ToolStripSeparator5, Me.tsmiAbout})
         Me.tsmiHelp.Name = "tsmiHelp"
         resources.ApplyResources(Me.tsmiHelp, "tsmiHelp")
         '
@@ -662,6 +663,8 @@ Partial Class formDesigner
         Me.tsmiHelpTopics.Image = Global.B2SBackglassDesigner.My.Resources.Resources.help
         Me.tsmiHelpTopics.Name = "tsmiHelpTopics"
         resources.ApplyResources(Me.tsmiHelpTopics, "tsmiHelpTopics")
+        Me.tsmiCheckForUpdates.Name = "tsmiCheckForUpdates"
+        Me.tsmiCheckForUpdates.Text = "Check for &Updates..."
         '
         'ToolStripSeparator5
         '
@@ -971,6 +974,7 @@ Partial Class formDesigner
     Friend WithEvents tsmiImportBackglassImage As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents tsmiShowIlluFrames As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents tsmiHelpTopics As System.Windows.Forms.ToolStripMenuItem
+    Friend WithEvents tsmiCheckForUpdates As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents ToolStripSeparator5 As System.Windows.Forms.ToolStripSeparator
     Friend WithEvents tsmiAbout As System.Windows.Forms.ToolStripMenuItem
     Friend WithEvents ToolStripSeparator6 As System.Windows.Forms.ToolStripSeparator

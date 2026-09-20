@@ -1258,17 +1258,20 @@ Public Class formDesigner
         Me.BringToFront()
         B2STab.Focus()
         tscmbZoomInPercent.ComboBox.SelectionLength = 0
-        StartAutomaticUpdateCheck()
+        StartUpdateCheck(False)
     End Sub
 
-    Private Sub StartAutomaticUpdateCheck()
+    Private Sub StartUpdateCheck(ByVal interactive As Boolean)
         Try
             Dim checkerPath As String = IO.Path.Combine(Application.StartupPath, "B2SUpdateChecker.exe")
-            If Not IO.File.Exists(checkerPath) Then Return
+            If Not IO.File.Exists(checkerPath) Then
+                If interactive Then Throw New IO.FileNotFoundException("The update checker is missing. Please rerun B2S Pro setup to restore it.", checkerPath)
+                Return
+            End If
 
             Dim start As New ProcessStartInfo() With {
                 .FileName = checkerPath,
-                .Arguments = "--automatic designer",
+                .Arguments = If(interactive, "--check-now designer", "--automatic designer"),
                 .WorkingDirectory = Application.StartupPath,
                 .UseShellExecute = False,
                 .CreateNoWindow = True,
@@ -1276,8 +1279,10 @@ Public Class formDesigner
             }
             Using checker As Process = Process.Start(start)
             End Using
-        Catch
+        Catch ex As Exception
             ' Update availability must never interrupt Designer startup.
+            If interactive Then B2SMessageBox.Show(Me, "The update check could not be started." & Environment.NewLine & Environment.NewLine & ex.Message,
+                                                 AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End Try
     End Sub
 
@@ -3113,6 +3118,10 @@ Public Class formDesigner
 #End Region
 
 #Region "help"
+
+    Private Sub CheckForUpdates_Click(sender As Object, e As EventArgs) Handles tsmiCheckForUpdates.Click
+        StartUpdateCheck(True)
+    End Sub
 
     Private Sub HelpTopics_Click(sender As System.Object, e As System.EventArgs) Handles tsmiHelpTopics.Click
         Try

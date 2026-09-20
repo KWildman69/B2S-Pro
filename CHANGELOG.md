@@ -4,6 +4,7 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.2 / Server 3.0.1 — 2026-09-20
 
+- Added Help → Check for Updates for manual checks at any time, independent of the once-per-day automatic check.
 - Setup hides only the designated runtime configuration files, update checker, and installation log in each product folder. Files remain installed; applications, DLLs, tools, and backups remain visible.
 - Designer About and the Server settings version display now read release metadata automatically, keeping their displayed versions aligned with future releases.
 - Reduced light-rendering work with equivalent blur output, bounded image caches, and coalesced Light dialog canvas updates.
