@@ -267,6 +267,7 @@ Public Class B2SPictureBox
     Private motionPathExternalLastVelocity As PointF = PointF.Empty
     Private nativePreparingWidth As Integer = 0
     Private nativePreparingHeight As Integer = 0
+    Private nativePreparationDispatch As TaskCompletionSource(Of Boolean)
     Public ReadOnly Property NativeRotationFramePlayback As Boolean
         Get
             Return nativeRotationFrames IsNot Nothing AndAlso nativeRotationFrames.Count > 0
@@ -285,6 +286,14 @@ Public Class B2SPictureBox
         If targetHeight <= 1 AndAlso Me.Height > 1 Then targetHeight = Me.Height
         If nativeRotationFrames IsNot Nothing AndAlso nativeRotationFrames.Count > 0 AndAlso
            nativeRotationFrames(0).Width = targetWidth AndAlso nativeRotationFrames(0).Height = targetHeight Then Return
+        ' A worker cannot clear UI-owned dimensions when dispatch fails. Its
+        ' per-attempt result lets the next UI request release only that attempt.
+        If nativePreparationDispatch IsNot Nothing AndAlso nativePreparationDispatch.Task.IsCompleted AndAlso
+           Not nativePreparationDispatch.Task.Result Then
+            nativePreparingWidth = 0
+            nativePreparingHeight = 0
+            nativePreparationDispatch = Nothing
+        End If
         If nativePreparingWidth = targetWidth AndAlso nativePreparingHeight = targetHeight Then Return
 
         If nativeRotationFrames IsNot Nothing Then
@@ -307,33 +316,44 @@ Public Class B2SPictureBox
         Dim source As Image = New Bitmap(nativeRotationSource)
         nativePreparingWidth = targetWidth
         nativePreparingHeight = targetHeight
+        Dim dispatch As New TaskCompletionSource(Of Boolean)()
+        nativePreparationDispatch = dispatch
 
         Task.Run(
             Function() As List(Of Image)
+                Dim prepared As New List(Of Image)(frameCount)
                 Try
-                    Dim prepared As New List(Of Image)(frameCount)
                     For frameIndex As Integer = 0 To frameCount - 1
                         Dim angle As Single = 360.0F * frameIndex / frameCount
                         If direction = eSnippitRotationDirection.AntiClockwise Then angle = -angle
                         prepared.Add(CreateNativeRotationFrame(source, angle, targetWidth, targetHeight))
                     Next
                     Return prepared
+                Catch
+                    DisposeNativeRotationFrames(prepared)
+                    Throw
                 Finally
                     source.Dispose()
                 End Try
             End Function).ContinueWith(
                 Sub(task As Task(Of List(Of Image)))
-                    If task.IsCanceled Then Return
-                    If task.IsFaulted Then Return
-                    Dim prepared As List(Of Image) = task.Result
+                    Dim prepared As List(Of Image) = Nothing
+                    If task.IsFaulted Then
+                        Diagnostics.Trace.TraceError("B2S rotation frame preparation failed: " & task.Exception.GetBaseException().Message)
+                    ElseIf Not task.IsCanceled Then
+                        prepared = task.Result
+                    End If
                     If Me.IsDisposed OrElse Me.Parent Is Nothing OrElse Not Me.Parent.IsHandleCreated Then
                         DisposeNativeRotationFrames(prepared)
+                        dispatch.TrySetResult(False)
                         Return
                     End If
                     Try
                         Me.Parent.BeginInvoke(New Action(Of List(Of Image), Integer)(AddressOf InstallNativeRotationFrames), prepared, generation)
+                        dispatch.TrySetResult(True)
                     Catch
                         DisposeNativeRotationFrames(prepared)
+                        dispatch.TrySetResult(False)
                     End Try
                 End Sub)
     End Sub
@@ -374,12 +394,13 @@ Public Class B2SPictureBox
     End Function
 
     Private Sub InstallNativeRotationFrames(ByVal prepared As List(Of Image), ByVal generation As Integer)
-        nativePreparingWidth = 0
-        nativePreparingHeight = 0
         If Me.IsDisposed OrElse generation <> nativeFrameGeneration Then
             DisposeNativeRotationFrames(prepared)
             Return
         End If
+        nativePreparingWidth = 0
+        nativePreparingHeight = 0
+        If prepared Is Nothing Then Return
         Dim replaced As List(Of Image) = nativeRotationFrames
         nativeRotationFrames = prepared
         nativeFrameIndex = -1
@@ -1153,6 +1174,9 @@ Public Class B2SPictureBox
                 _BackgroundImage = value
                 If Not Object.ReferenceEquals(value, nativeRotationSource) Then
                     nativeFrameGeneration += 1
+                    nativePreparingWidth = 0
+                    nativePreparingHeight = 0
+                    nativePreparationDispatch = Nothing
                     DisposeNativeRotationFrames(nativeRotationFrames)
                     nativeRotationFrames = Nothing
                     nativeFrameIndex = -1

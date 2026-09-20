@@ -262,7 +262,7 @@ Public Class formToolIllumination
 
     Private Sub LightGlowPreviewChanged(ByVal sender As Object, ByVal e As EventArgs)
         If Backglass.currentTabPage Is Nothing Then Return
-        Backglass.currentTabPage.RefreshIllumination()
+        Backglass.currentTabPage.RefreshEditorLighting()
         Backglass.currentTabPage.Invalidate()
         LoadGlowControls(Backglass.currentTabPage.Mouse.SelectedBulb)
         RaiseEvent DataChanged(Me, New IlluminationEventArgs(eIlluminationDataType.LightClassification))

@@ -911,9 +911,11 @@ Public Class Coding
             If IO.File.Exists(temporaryExport) Then IO.File.Delete(temporaryExport)
         End Try
 
-        lastExportedData = Backglass.currentData
-        lastExportedChangeVersion = Backglass.currentData.ChangeVersion
-        lastExportedFile = exportedFile
+        If Not isRecoverySnapshot Then
+            lastExportedData = Backglass.currentData
+            lastExportedChangeVersion = Backglass.currentData.ChangeVersion
+            lastExportedFile = exportedFile
+        End If
 
         RaiseEvent ReportProgress(Me, New CodingProgressEventArgs(100))
 

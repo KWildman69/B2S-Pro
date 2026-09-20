@@ -91,6 +91,7 @@ Public Class formLightDiffusionEditor
     Private livePreviewStatus As Label
     Private livePreviewTimer As Timer
     Private livePreviewPending As Boolean
+    Private canvasPreviewPending As Boolean
     Private previewMode As ComboBox
     Private blinkTimer As Timer
     Private blinkShowingFlashed As Boolean = True
@@ -330,10 +331,12 @@ Public Class formLightDiffusionEditor
                                                                          millisecondsLabel, flashedButton, blinkButton})
             End If
 
-            flasherResetButton = New Button With {.Text = "Reset", .Width = 82, .Height = 38, .FlatStyle = FlatStyle.Flat}
-            StyleDarkButton(flasherResetButton)
-            AddHandler flasherResetButton.Click, AddressOf Reset_Click
-            Controls.Add(flasherResetButton)
+            If isDedicatedFlasher Then
+                flasherResetButton = New Button With {.Text = "Reset", .Width = 82, .Height = 38, .FlatStyle = FlatStyle.Flat}
+                StyleDarkButton(flasherResetButton)
+                AddHandler flasherResetButton.Click, AddressOf Reset_Click
+                Controls.Add(flasherResetButton)
+            End If
 
             saveTheseSettings = New CheckBox With {
                 .Text = If(isDedicatedFlasher, "Flasher settings save automatically", "Light settings save automatically"),
@@ -578,8 +581,10 @@ Public Class formLightDiffusionEditor
         flasherOkButton.Margin = Padding.Empty
         flasherActionPanel.Controls.Add(flasherCloseButton)
         flasherActionPanel.Controls.Add(flasherOkButton)
-        flasherResetButton.Margin = New Padding(18, 0, 0, 0)
-        flasherActionPanel.Controls.Add(flasherResetButton)
+        If flasherResetButton IsNot Nothing Then
+            flasherResetButton.Margin = New Padding(18, 0, 0, 0)
+            flasherActionPanel.Controls.Add(flasherResetButton)
+        End If
 
         flasherLayoutRoot.BringToFront()
     End Sub
@@ -652,7 +657,19 @@ Public Class formLightDiffusionEditor
         If Not livePreviewPending Then Return
         livePreviewPending = False
         UpdateLiveArtworkPreview()
+        FlushCanvasPreview()
         If livePreviewPending Then livePreviewTimer.Start()
+    End Sub
+
+    Private Sub QueueCanvasPreview()
+        canvasPreviewPending = True
+        QueueLivePreview()
+    End Sub
+
+    Private Sub FlushCanvasPreview()
+        If Not canvasPreviewPending Then Return
+        canvasPreviewPending = False
+        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
     End Sub
 
     Private Sub UpdateLiveArtworkPreview()
@@ -875,7 +892,7 @@ Public Class formLightDiffusionEditor
         Next
         blinkPreviewSignature = Nothing
         QueueLivePreview()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
     End Sub
 
     Private Sub FlasherPulseControlChanged(ByVal sender As Object, ByVal e As EventArgs)
@@ -1245,7 +1262,7 @@ Public Class formLightDiffusionEditor
             flashColorButton.ForeColor = If(dialog.Color.GetBrightness() < 0.45F, Color.White, Color.Black)
             If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
             QueueLivePreview()
-            RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
         End Using
     End Sub
 
@@ -1377,7 +1394,7 @@ Public Class formLightDiffusionEditor
         LoadCurrentProfileIntoSliders()
         ApplyToBulb()
         QueueLivePreview()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
 
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
         RefreshOpenLayersPanel()
@@ -1436,7 +1453,7 @@ Public Class formLightDiffusionEditor
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
         If livePreviewStatus IsNot Nothing Then livePreviewStatus.Text = "Updating live preview..."
         QueueLivePreview()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
     End Sub
 
     Protected Overrides Sub OnFormClosing(ByVal e As FormClosingEventArgs)
@@ -1484,7 +1501,7 @@ Public Class formLightDiffusionEditor
             For Each original As KeyValuePair(Of Illumination.BulbInfo, LightSettingsSnapshot) In additionalOriginals
                 original.Value.Restore(original.Key)
             Next
-            RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
         ElseIf Me.DialogResult = DialogResult.OK OrElse automaticFlasherCommit Then
             ' Save automatically into the independent Light or Flasher profile.
             Illumination.LightGlowDefaults.Save(CInt(spread.Value), softness.Value, falloff.Value,
@@ -1493,6 +1510,7 @@ Public Class formLightDiffusionEditor
                                                   If(lightTemperature IsNot Nothing, lightTemperature.Value, 4000))
             If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
         End If
+        FlushCanvasPreview()
         RefreshOpenLayersPanel()
         If livePreviewTimer IsNot Nothing Then
             livePreviewTimer.Stop()
@@ -1538,7 +1556,7 @@ Public Class formLightDiffusionEditor
                 If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
                 UpdateFlasherMaskAvailability()
                 QueueLivePreview()
-                RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
             Else
                 bulb.InFrontOfGlobalMask = inFrontBeforeQuickSelection
             End If
@@ -1560,7 +1578,7 @@ Public Class formLightDiffusionEditor
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
         If livePreviewStatus IsNot Nothing Then livePreviewStatus.Text = "Updating live preview..."
         QueueLivePreview()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
     End Sub
 
     Private Sub ApplyMaskRefinementToBulb(ByVal target As Illumination.BulbInfo)
@@ -1673,7 +1691,7 @@ Public Class formLightDiffusionEditor
             bulb.IsIlluminatedImageDirty = True
             If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
             QueueLivePreview()
-            RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
             If showMessages Then B2SMessageBox.Show(Me, "The padded Photoshop-style flasher asset was created. The image remains sharp while the alpha feather now has room to spread outside the original selection.", "Flasher Image", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             If showMessages Then B2SMessageBox.Show(Me, "The flasher image could not be generated." & Environment.NewLine & ex.Message, "Flasher Image", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -1695,7 +1713,7 @@ Public Class formLightDiffusionEditor
         UpdateFlasherMaskAvailability()
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
         QueueLivePreview()
-        RaiseEvent PreviewChanged(Me, EventArgs.Empty)
+        QueueCanvasPreview()
     End Sub
 
     Private Sub LoadBulbValues()

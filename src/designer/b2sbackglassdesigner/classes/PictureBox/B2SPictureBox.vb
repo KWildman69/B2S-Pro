@@ -12,8 +12,6 @@ Public Class B2SPictureBox
     ' Opaque artwork, including true black pixels, is drawn unchanged.
     Private Shared ReadOnly EditorCanvasUnderlayColor As Color = Color.FromArgb(96, 96, 96)
 
-    Private ReadOnly lightBlinkTimer As Windows.Forms.Timer
-    Private ReadOnly lightBlinkStartedAt As Long = Diagnostics.Stopwatch.GetTimestamp()
 
     ' Enhanced 2.8.6: reduce flicker and repaint overhead on large canvases.
     Public Sub New()
@@ -22,50 +20,12 @@ Public Class B2SPictureBox
         Me.ResizeRedraw = False
         Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.UserPaint Or ControlStyles.OptimizedDoubleBuffer, True)
         Me.UpdateStyles()
-        lightBlinkTimer = New Windows.Forms.Timer With {.Interval = 25}
-        AddHandler lightBlinkTimer.Tick, AddressOf LightBlinkTimer_Tick
     End Sub
 
-    Private Sub LightBlinkTimer_Tick(ByVal sender As Object, ByVal e As EventArgs)
-        MyBase.Invalidate()
-    End Sub
-
+    ' Canvas illumination stays steady; blinking belongs to the dialog/runtime.
     Private Function IsBlinkPhaseOn(ByVal bulb As Illumination.BulbInfo) As Boolean
-        ' Designer illumination preview is a steady, inspectable view of the
-        ' finished lights. Runtime blink timing must not make that preview go
-        ' dark or appear to jump between bulbs after selection/canvas clicks.
-        If ShowIllumination Then Return True
-        If bulb Is Nothing OrElse Not bulb.BlinkEnabled OrElse bulb.IsImageSnippit OrElse bulb.IlluMode = Illumination.eIlluMode.Flasher Then Return True
-        Dim interval As Integer = Math.Max(1, Math.Min(60000, bulb.BlinkInterval))
-        Dim elapsedMilliseconds As Double = (Diagnostics.Stopwatch.GetTimestamp() - lightBlinkStartedAt) * 1000.0R / Diagnostics.Stopwatch.Frequency
-        Return (CLng(Math.Floor(elapsedMilliseconds / interval)) Mod 2L) = 0L
+        Return True
     End Function
-
-    Private Sub UpdateLightBlinkTimer()
-        ' WinForms can invoke OnPaint from the base PictureBox constructor before
-        ' this derived class has created its timer. Early startup paint is valid;
-        ' there is simply no blinker timer to update yet.
-        If lightBlinkTimer Is Nothing OrElse Me.IsDisposed OrElse Me.Disposing Then Return
-        If ShowIllumination Then
-            lightBlinkTimer.Stop()
-            Return
-        End If
-
-        Dim shortestInterval As Integer = Integer.MaxValue
-        If Backglass.currentBulbs IsNot Nothing Then
-            For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
-                If bulb IsNot Nothing AndAlso bulb.BlinkEnabled AndAlso Not bulb.IsImageSnippit AndAlso bulb.IlluMode <> Illumination.eIlluMode.Flasher Then
-                    shortestInterval = Math.Min(shortestInterval, Math.Max(1, Math.Min(60000, bulb.BlinkInterval)))
-                End If
-            Next
-        End If
-        If shortestInterval = Integer.MaxValue Then
-            lightBlinkTimer.Stop()
-        Else
-            lightBlinkTimer.Interval = Math.Max(1, Math.Min(100, shortestInterval))
-            If Not lightBlinkTimer.Enabled Then lightBlinkTimer.Start()
-        End If
-    End Sub
 
     Private helper As HelperBase = New HelperBase()
 
@@ -93,6 +53,43 @@ Public Class B2SPictureBox
     ' changes, including position, size, Z-order, opacity, masks or artwork.
     Private unifiedCompositeCache As Bitmap = Nothing
     Private unifiedCompositeSignature As Long = Long.MinValue
+    Private NotInheritable Class CachedLightLayer
+        Public Signature As Long
+        Public BackdropDigest As String
+        Public Bounds As Rectangle
+        Public Image As Bitmap
+    End Class
+    Private ReadOnly lightLayerCache As New Generic.Dictionary(Of Integer, CachedLightLayer)()
+    Private lightLayerCacheBytes As Long
+    Private Const MaxLightLayerCacheBytes As Long = 64L * 1024 * 1024
+
+    Private Sub ClearLightLayerCache()
+        For Each entry As CachedLightLayer In lightLayerCache.Values
+            entry.Image.Dispose()
+        Next
+        lightLayerCache.Clear()
+        lightLayerCacheBytes = 0
+    End Sub
+
+    Private Shared Function BackdropDigest(ByVal bitmap As Bitmap, ByVal bounds As Rectangle) As String
+        ' An upper light depends on everything already drawn underneath it.
+        ' Hash actual pixels, not only the background object's identity, so
+        ' moving a lower snippet/light can never reuse the old illuminated art.
+        Dim data As BitmapData = bitmap.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
+        Try
+            Dim row(bounds.Width * 4 - 1) As Byte
+            Using hash As Security.Cryptography.SHA256 = Security.Cryptography.SHA256.Create()
+                For y As Integer = 0 To bounds.Height - 1
+                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                    hash.TransformBlock(row, 0, row.Length, row, 0)
+                Next
+                hash.TransformFinalBlock(New Byte() {}, 0, 0)
+                Return Convert.ToBase64String(hash.Hash)
+            End Using
+        Finally
+            bitmap.UnlockBits(data)
+        End Try
+    End Function
 
     ' Enhanced 3.0.7 Stage 6: while an object is being dragged, keep a frozen
     ' full-quality composite that excludes the moving bulbs/snippets. Mouse
@@ -195,9 +192,6 @@ Public Class B2SPictureBox
     Public Sub RefreshAfterVisualCollectionChanged()
         EndDragPreview(False)
         ClearUnifiedCompositeCache()
-        cachedVisualOrder.Clear()
-        cachedCollectionOrder.Clear()
-        cachedZOrders.Clear()
         Lights.ClearImages()
 
         If ShowIllumination Then
@@ -219,15 +213,6 @@ Public Class B2SPictureBox
             If Not IsPictureAnimationReferenceFrame(bulb) Then Continue For
             Dim target As New Rectangle(CInt(bulb.Location.X * factor), CInt(bulb.Location.Y * factor),
                                         Math.Max(1, CInt(bulb.Size.Width * factor)), Math.Max(1, CInt(bulb.Size.Height * factor)))
-            Dim cachedLight As Illumination.Lights.ImageInfo = Nothing
-            If Not bulb.IsImageSnippit AndAlso Lights IsNot Nothing AndAlso Lights.Images.ContainsKey(bulb.ID) Then
-                cachedLight = Lights.Images(bulb.ID)
-                If cachedLight IsNot Nothing AndAlso cachedLight.Image IsNot Nothing Then
-                    target = New Rectangle(CInt(cachedLight.Rectangle.X * factor), CInt(cachedLight.Rectangle.Y * factor),
-                                           Math.Max(1, CInt(cachedLight.Rectangle.Width * factor)),
-                                           Math.Max(1, CInt(cachedLight.Rectangle.Height * factor)))
-                End If
-            End If
             Dim rotationState As Drawing2D.GraphicsState = Nothing
             If Mouse.IsPictureAnimationRotationActive Then
                 rotationState = graphics.Save()
@@ -236,12 +221,16 @@ Public Class B2SPictureBox
                 graphics.TranslateTransform(centerX, centerY)
                 graphics.RotateTransform(Mouse.PendingPictureAnimationAngle)
                 graphics.TranslateTransform(-centerX, -centerY)
-            ElseIf Mouse.IsLightRotationActive AndAlso Object.ReferenceEquals(bulb, Mouse.SelectedBulb) Then
+            ElseIf Not bulb.IsImageSnippit Then
                 rotationState = graphics.Save()
                 Dim centerX As Single = CSng((bulb.Location.X + bulb.Size.Width / 2.0R) * factor)
                 Dim centerY As Single = CSng((bulb.Location.Y + bulb.Size.Height / 2.0R) * factor)
                 graphics.TranslateTransform(centerX, centerY)
-                graphics.RotateTransform(Mouse.PendingLightRotationAngle - bulb.LightRotationAngle)
+                Dim angle As Single = bulb.LightRotationAngle
+                If Mouse.IsLightRotationActive AndAlso Object.ReferenceEquals(bulb, Mouse.SelectedBulb) Then
+                    angle = Mouse.PendingLightRotationAngle
+                End If
+                graphics.RotateTransform(angle)
                 graphics.TranslateTransform(-centerX, -centerY)
             ElseIf Not target.IntersectsWith(Me.ClientRectangle) Then
                 Continue For
@@ -263,9 +252,11 @@ Public Class B2SPictureBox
                         attributes.SetColorMatrix(matrix)
                         graphics.DrawImage(bulb.Image, target, 0, 0, bulb.Image.Width, bulb.Image.Height, GraphicsUnit.Pixel, attributes)
                     End Using
-                ElseIf cachedLight IsNot Nothing AndAlso cachedLight.Image IsNot Nothing Then
-                    graphics.DrawImage(cachedLight.Image, target)
                 Else
+                    ' Cached illumination contains artwork sampled at the old
+                    ' position. Never move/rotate that artwork with the handle.
+                    ' Use the same immediate circle for lamps and flashers; the
+                    ' compositor resamples the artwork after the drag finishes.
                     Using brush As New SolidBrush(Color.FromArgb(110, bulb.LightColor))
                         graphics.FillEllipse(brush, target)
                     End Using
@@ -281,6 +272,74 @@ Public Class B2SPictureBox
         Return ((hash * 16777619L) + CLng(value And &H7FFFFFFF)) Mod 2147483647L
     End Function
 
+    Private Function BulbVisualSignature(ByVal bulb As Illumination.BulbInfo) As Long
+        Dim hash As Long = 216613626L
+        hash = MixVisualHash(hash, bulb.ID)
+        hash = MixVisualHash(hash, bulb.ZOrder)
+        hash = MixVisualHash(hash, bulb.Location.X)
+        hash = MixVisualHash(hash, bulb.Location.Y)
+        hash = MixVisualHash(hash, bulb.Size.Width)
+        hash = MixVisualHash(hash, bulb.Size.Height)
+        hash = MixVisualHash(hash, bulb.LocationX.X)
+        hash = MixVisualHash(hash, bulb.LocationX.Y)
+        hash = MixVisualHash(hash, bulb.SizeX.Width)
+        hash = MixVisualHash(hash, bulb.SizeX.Height)
+        hash = MixVisualHash(hash, If(bulb.IsImageSnippit, 1, 0))
+        hash = MixVisualHash(hash, If(bulb.Image Is Nothing, 0, bulb.Image.GetHashCode()))
+        hash = MixVisualHash(hash, If(bulb.SnippitInfo Is Nothing, 100, bulb.SnippitInfo.Brightness))
+        hash = MixVisualHash(hash, If(bulb.SnippitInfo IsNot Nothing AndAlso bulb.SnippitInfo.BehindCanvas, 1, 0))
+        hash = MixVisualHash(hash, bulb.Intensity)
+        hash = MixVisualHash(hash, If(bulb.BlinkEnabled, 1, 0))
+        hash = MixVisualHash(hash, bulb.BlinkInterval)
+        hash = MixVisualHash(hash, bulb.LightColor.ToArgb())
+        hash = MixVisualHash(hash, bulb.DodgeColor.ToArgb())
+        hash = MixVisualHash(hash, bulb.IlluMode)
+        hash = MixVisualHash(hash, bulb.GlowSpread)
+        hash = MixVisualHash(hash, bulb.GlowSoftness)
+        hash = MixVisualHash(hash, bulb.GlowFalloff)
+        hash = MixVisualHash(hash, bulb.LightDiffusion)
+        hash = MixVisualHash(hash, bulb.LightTemperature)
+        hash = MixVisualHash(hash, CInt(Math.Round(bulb.LightRotationAngle * 100.0F)))
+        hash = MixVisualHash(hash, bulb.GlowIntensity)
+        hash = MixVisualHash(hash, CInt(bulb.LightPurpose))
+        hash = MixVisualHash(hash, bulb.FlasherStyle)
+        hash = MixVisualHash(hash, bulb.FlasherSaturation)
+        hash = MixVisualHash(hash, bulb.FlasherHighlightProtection)
+        hash = MixVisualHash(hash, bulb.FlasherDarkAreaLift)
+        hash = MixVisualHash(hash, bulb.FlasherHotspotX)
+        hash = MixVisualHash(hash, bulb.FlasherHotspotY)
+        hash = MixVisualHash(hash, bulb.SelectionFeather)
+        hash = MixVisualHash(hash, bulb.ArtworkBrightness)
+        hash = MixVisualHash(hash, bulb.ArtworkContrast)
+        hash = MixVisualHash(hash, bulb.ArtworkAdjustmentPasses)
+        hash = MixVisualHash(hash, bulb.MaskRadius)
+        hash = MixVisualHash(hash, If(bulb.MaskSmartRadius, 1, 0))
+        hash = MixVisualHash(hash, bulb.MaskSmooth)
+        hash = MixVisualHash(hash, bulb.MaskFeather)
+        hash = MixVisualHash(hash, bulb.MaskContrast)
+        hash = MixVisualHash(hash, bulb.MaskShiftEdge)
+        hash = MixVisualHash(hash, bulb.FlasherRadialSpikes)
+        hash = MixVisualHash(hash, If(bulb.GlobalMaskLayerExplicit, 1, 0))
+        hash = MixVisualHash(hash, If(bulb.InFrontOfGlobalMask, 1, 0))
+        hash = MixVisualHash(hash, If(bulb.LightBehindCanvas, 1, 0))
+        hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.SelectionMaskData), 0, bulb.SelectionMaskData.GetHashCode()))
+        hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.Text), 0, bulb.Text.GetHashCode()))
+        hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.FontName), 0, bulb.FontName.GetHashCode()))
+        hash = MixVisualHash(hash, CInt(bulb.FontSize * 100.0F))
+        hash = MixVisualHash(hash, CInt(bulb.FontStyle))
+        hash = MixVisualHash(hash, CInt(bulb.TextAlignment))
+        hash = MixVisualHash(hash, LayerManager.GetOpacity(bulb))
+        hash = MixVisualHash(hash, If(LayerManager.IsVisible(bulb), 1, 0))
+        hash = MixVisualHash(hash, If(bulb.ArtworkPixelLighting, 1, 0))
+        If Backglass.currentData IsNot Nothing Then
+            hash = MixVisualHash(hash, If(Backglass.currentData.GlobalIlluminationMaskEnabled, 1, 0))
+            hash = MixVisualHash(hash, If(Backglass.currentData.GlobalIlluminationMaskInverted, 1, 0))
+            hash = MixVisualHash(hash, Backglass.currentData.GlobalIlluminationMaskThreshold)
+            hash = MixVisualHash(hash, If(Backglass.currentData.GlobalIlluminationMaskData, String.Empty).GetHashCode())
+        End If
+        Return hash
+    End Function
+
     Private Function CurrentVisualSignature(ByVal nativeWidth As Integer, ByVal nativeHeight As Integer) As Long
         Dim hash As Long = 216613626L
         hash = MixVisualHash(hash, nativeWidth)
@@ -293,63 +352,7 @@ Public Class B2SPictureBox
             hash = MixVisualHash(hash, Backglass.currentBulbs.Count)
             For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
                 If bulb Is Nothing Then Continue For
-                hash = MixVisualHash(hash, bulb.ID)
-                hash = MixVisualHash(hash, bulb.ZOrder)
-                hash = MixVisualHash(hash, bulb.Location.X)
-                hash = MixVisualHash(hash, bulb.Location.Y)
-                hash = MixVisualHash(hash, bulb.Size.Width)
-                hash = MixVisualHash(hash, bulb.Size.Height)
-                hash = MixVisualHash(hash, bulb.LocationX.X)
-                hash = MixVisualHash(hash, bulb.LocationX.Y)
-                hash = MixVisualHash(hash, bulb.SizeX.Width)
-                hash = MixVisualHash(hash, bulb.SizeX.Height)
-                hash = MixVisualHash(hash, If(bulb.IsImageSnippit, 1, 0))
-                hash = MixVisualHash(hash, If(bulb.Image Is Nothing, 0, bulb.Image.GetHashCode()))
-                hash = MixVisualHash(hash, If(bulb.SnippitInfo Is Nothing, 100, bulb.SnippitInfo.Brightness))
-                hash = MixVisualHash(hash, If(bulb.SnippitInfo IsNot Nothing AndAlso bulb.SnippitInfo.BehindCanvas, 1, 0))
-                hash = MixVisualHash(hash, bulb.Intensity)
-                hash = MixVisualHash(hash, If(bulb.BlinkEnabled, 1, 0))
-                hash = MixVisualHash(hash, bulb.BlinkInterval)
-                If bulb.BlinkEnabled Then hash = MixVisualHash(hash, If(IsBlinkPhaseOn(bulb), 1, 0))
-                hash = MixVisualHash(hash, bulb.LightColor.ToArgb())
-                hash = MixVisualHash(hash, bulb.DodgeColor.ToArgb())
-                hash = MixVisualHash(hash, bulb.IlluMode)
-                hash = MixVisualHash(hash, bulb.GlowSpread)
-                hash = MixVisualHash(hash, bulb.GlowSoftness)
-                hash = MixVisualHash(hash, bulb.GlowFalloff)
-                hash = MixVisualHash(hash, bulb.LightDiffusion)
-                hash = MixVisualHash(hash, bulb.LightTemperature)
-                hash = MixVisualHash(hash, CInt(Math.Round(bulb.LightRotationAngle * 100.0F)))
-                hash = MixVisualHash(hash, bulb.GlowIntensity)
-                hash = MixVisualHash(hash, CInt(bulb.LightPurpose))
-                hash = MixVisualHash(hash, bulb.FlasherStyle)
-                hash = MixVisualHash(hash, bulb.FlasherSaturation)
-                hash = MixVisualHash(hash, bulb.FlasherHighlightProtection)
-                hash = MixVisualHash(hash, bulb.FlasherDarkAreaLift)
-                hash = MixVisualHash(hash, bulb.FlasherHotspotX)
-                hash = MixVisualHash(hash, bulb.FlasherHotspotY)
-                hash = MixVisualHash(hash, bulb.SelectionFeather)
-                hash = MixVisualHash(hash, bulb.ArtworkBrightness)
-                hash = MixVisualHash(hash, bulb.ArtworkContrast)
-                hash = MixVisualHash(hash, bulb.ArtworkAdjustmentPasses)
-                hash = MixVisualHash(hash, bulb.MaskRadius)
-                hash = MixVisualHash(hash, If(bulb.MaskSmartRadius, 1, 0))
-                hash = MixVisualHash(hash, bulb.MaskSmooth)
-                hash = MixVisualHash(hash, bulb.MaskFeather)
-                hash = MixVisualHash(hash, bulb.MaskContrast)
-                hash = MixVisualHash(hash, bulb.MaskShiftEdge)
-                hash = MixVisualHash(hash, bulb.FlasherRadialSpikes)
-                hash = MixVisualHash(hash, If(bulb.GlobalMaskLayerExplicit, 1, 0))
-                hash = MixVisualHash(hash, If(bulb.InFrontOfGlobalMask, 1, 0))
-                hash = MixVisualHash(hash, If(bulb.LightBehindCanvas, 1, 0))
-                hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.SelectionMaskData), 0, bulb.SelectionMaskData.GetHashCode()))
-                hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.Text), 0, bulb.Text.GetHashCode()))
-                hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.FontName), 0, bulb.FontName.GetHashCode()))
-                hash = MixVisualHash(hash, CInt(bulb.FontSize * 100.0F))
-                hash = MixVisualHash(hash, CInt(bulb.FontStyle))
-                hash = MixVisualHash(hash, CInt(bulb.TextAlignment))
-                hash = MixVisualHash(hash, LayerManager.GetOpacity(bulb))
-                hash = MixVisualHash(hash, If(LayerManager.IsVisible(bulb), 1, 0))
+                hash = MixVisualHash(hash, CInt(BulbVisualSignature(bulb)))
             Next
         End If
         If Backglass.currentScores IsNot Nothing Then
@@ -393,43 +396,6 @@ Public Class B2SPictureBox
         unifiedCompositeSignature = Long.MinValue
     End Sub
 
-    ' Enhanced 3.0.2 Stage 1: the visual Z stack changes far less often than
-    ' objects move. Keep the sorted references until collection membership or
-    ' a Z value actually changes. Location/size changes do not rebuild this list.
-    Private ReadOnly cachedVisualOrder As New Generic.List(Of Illumination.BulbInfo)()
-    Private ReadOnly cachedCollectionOrder As New Generic.List(Of Illumination.BulbInfo)()
-    Private ReadOnly cachedZOrders As New Generic.List(Of Integer)()
-
-    Private Function VisualOrderChanged() As Boolean
-        If Backglass.currentBulbs Is Nothing Then Return cachedCollectionOrder.Count <> 0
-        If cachedCollectionOrder.Count <> Backglass.currentBulbs.Count Then Return True
-        For i As Integer = 0 To Backglass.currentBulbs.Count - 1
-            If Not Object.ReferenceEquals(cachedCollectionOrder(i), Backglass.currentBulbs(i)) Then Return True
-            If cachedZOrders(i) <> Backglass.currentBulbs(i).ZOrder Then Return True
-        Next
-        Return False
-    End Function
-
-    Private Function OrderedVisualBulbs() As Generic.IList(Of Illumination.BulbInfo)
-        If VisualOrderChanged() Then
-            cachedVisualOrder.Clear()
-            cachedCollectionOrder.Clear()
-            cachedZOrders.Clear()
-            If Backglass.currentBulbs IsNot Nothing Then
-                For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
-                    cachedVisualOrder.Add(bulb)
-                    cachedCollectionOrder.Add(bulb)
-                    cachedZOrders.Add(bulb.ZOrder)
-                Next
-                cachedVisualOrder.Sort(Function(left As Illumination.BulbInfo, right As Illumination.BulbInfo)
-                                           Dim result As Integer = left.ZOrder.CompareTo(right.ZOrder)
-                                           If result <> 0 Then Return result
-                                           Return Backglass.currentBulbs.IndexOf(right).CompareTo(Backglass.currentBulbs.IndexOf(left))
-                                       End Function)
-            End If
-        End If
-        Return cachedVisualOrder
-    End Function
 
     Private Function OrderedVisualItems() As Generic.IList(Of Object)
         Dim items As New Generic.List(Of Object)()
@@ -589,7 +555,6 @@ Public Class B2SPictureBox
     Protected Overrides Sub OnPaint(pe As System.Windows.Forms.PaintEventArgs)
 
         MyBase.OnPaint(pe)
-        UpdateLightBlinkTimer()
 
         ' Enhanced 2.3.2: show a clear selection frame around the actual canvas image.
         If IsCanvasImageSelected AndAlso Me.Image IsNot Nothing Then
@@ -1434,6 +1399,7 @@ Public Class B2SPictureBox
         Dim overlay As Image = Nothing
         Dim font As Font = Nothing
         Dim convertedCanvas As Bitmap = Nothing
+        Dim retainOverlay As Boolean = False
         Try
             If Not String.IsNullOrEmpty(bulb.Text) Then
                 font = New Font(bulb.FontName, bulb.FontSize, bulb.FontStyle)
@@ -1449,6 +1415,14 @@ Public Class B2SPictureBox
                     End Using
                     renderBackground = convertedCanvas
                 End If
+            End If
+            Dim signature As Long = BulbVisualSignature(bulb)
+            Dim digest As String = BackdropDigest(renderBackground, rectX)
+            Dim cached As CachedLightLayer = Nothing
+            If lightLayerCache.TryGetValue(bulb.ID, cached) AndAlso cached.Signature = signature AndAlso
+               cached.Bounds.Equals(rectX) AndAlso cached.BackdropDigest = digest Then
+                graphics.DrawImageUnscaled(cached.Image, rectX.Location)
+                Return
             End If
             overlay = renderer.CreateOverlayImage(renderBackground,
                                                   rect,
@@ -1474,8 +1448,23 @@ Public Class B2SPictureBox
                 End If
             End If
             If overlay IsNot Nothing Then graphics.DrawImageUnscaled(overlay, rectX.Location)
+            If TypeOf overlay Is Bitmap Then
+                Dim size As Long = CLng(overlay.Width) * overlay.Height * 4L
+                If size <= MaxLightLayerCacheBytes Then
+                    If cached IsNot Nothing Then
+                        lightLayerCacheBytes -= CLng(cached.Image.Width) * cached.Image.Height * 4L
+                        cached.Image.Dispose()
+                        lightLayerCache.Remove(bulb.ID)
+                    End If
+                    If lightLayerCacheBytes + size > MaxLightLayerCacheBytes Then ClearLightLayerCache()
+                    lightLayerCache(bulb.ID) = New CachedLightLayer With {
+                        .Signature = signature, .BackdropDigest = digest, .Bounds = rectX, .Image = DirectCast(overlay, Bitmap)}
+                    lightLayerCacheBytes += size
+                    retainOverlay = True
+                End If
+            End If
         Finally
-            If overlay IsNot Nothing Then overlay.Dispose()
+            If overlay IsNot Nothing AndAlso Not retainOverlay Then overlay.Dispose()
             If font IsNot Nothing Then font.Dispose()
             If convertedCanvas IsNot Nothing Then convertedCanvas.Dispose()
         End Try
@@ -1556,11 +1545,9 @@ Public Class B2SPictureBox
     Protected Overrides Sub Dispose(ByVal disposing As Boolean)
         If disposing Then
             ClearUnifiedCompositeCache()
-            If lightBlinkTimer IsNot Nothing Then
-                lightBlinkTimer.Stop()
-                RemoveHandler lightBlinkTimer.Tick, AddressOf LightBlinkTimer_Tick
-                lightBlinkTimer.Dispose()
-            End If
+            ClearLightLayerCache()
+            EndDragPreview(False)
+            Illumination.Create.ClearRenderCaches()
         End If
         MyBase.Dispose(disposing)
     End Sub

@@ -500,6 +500,8 @@ Public Class Backglass
 
         Private _isDirty As Boolean = False
         Private _changeVersion As Long = 0
+        ' Session-only revision of the last verified recovery snapshot.
+        Public Property RecoveryChangeVersion As Long = -1
 
         Public Property IsDirty() As Boolean
             Get

@@ -642,6 +642,17 @@ Public Class B2STabPage
         End If
     End Sub
 
+    Public Sub RefreshEditorLighting()
+        ' The unified canvas compositor reads the current model. Do not also
+        ' regenerate the legacy export bitmap for every edit. Keep the legacy
+        ' external-illumination path intact.
+        If BackglassData.IsExternalIlluminationImageSelected Then
+            RefreshIllumination()
+        Else
+            CurrentPictureBox.Invalidate()
+        End If
+    End Sub
+
     Public Function DrawIlluminatedReelImage(ByVal reelimage As Image, ByVal reelintensity As Integer, ByVal reelillulocation As eReelIlluminationLocation) As Image
         Return PictureBox.DrawIlluminatedReelImage(reelimage, reelintensity, reelillulocation)
     End Function

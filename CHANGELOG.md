@@ -2,6 +2,17 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## 1.0.2 / Server 3.0.1 — 2026-09-20
+
+- Reduced light-rendering work with equivalent blur output, bounded image caches, and coalesced Light dialog canvas updates.
+- Kept artwork stationary during light dragging and rotation previews. Removed the Light dialog Reset button while retaining Flasher Reset.
+- Avoided duplicate editor illumination generation and misleading save-progress updates during lighting edits.
+- Skipped unchanged recovery snapshots and deferred recovery during dragging or modal editing. Recovery encoding remains synchronous.
+- Made preview process-exit waiting asynchronous.
+- Retained elapsed physics time across delayed callbacks using bounded fixed steps. Moving-flipper and cross-computer cabinet behavior still require validation.
+- Disposed failed rotation preparations and allowed retry after unavailable parent windows; protected newer preparations from stale completions.
+- Incremented release file and package versions so existing installations can detect the update. Runtime assembly identities and COM identifiers are unchanged.
+
 ## 1.0.1 / Server 3.0.0 update — 2026-09-16
 
 - Both setup programs remember Visual Pinball, Designer, and Server installation paths after successful installation and prefill them on subsequent updates. Server-only updates preserve the saved Designer location.

@@ -31,6 +31,21 @@ Namespace Illumination
         ' before drawing, so the existing rendering result remains unchanged.
         Private Const C_MAX_GLOW_CACHE As Integer = 48
         Private Const C_MAX_SELECTION_CACHE As Integer = 24
+        Private Const MaxGlowCacheBytes As Long = 64L * 1024 * 1024
+        Private Const MaxSelectionCacheBytes As Long = 32L * 1024 * 1024
+        Private Shared glowCacheBytes As Long
+        Private Shared selectionCacheBytes As Long
+        Private Shared ReadOnly reportedMaskErrors As New Generic.HashSet(Of String)()
+
+        Private Shared Sub ReportMaskError(ByVal operation As String, ByVal ex As Exception)
+            Dim key As String = operation & ": " & ex.Message
+            SyncLock renderCacheSync
+                If reportedMaskErrors.Contains(key) Then Return
+                If reportedMaskErrors.Count >= 32 Then reportedMaskErrors.Clear()
+                reportedMaskErrors.Add(key)
+            End SyncLock
+            Diagnostics.Trace.TraceWarning(key)
+        End Sub
         Private Shared ReadOnly renderCacheSync As New Object()
         Private Shared ReadOnly glowTemplateCache As New Generic.Dictionary(Of String, Bitmap)()
         Private Shared ReadOnly glowTemplateOrder As New Generic.Queue(Of String)()
@@ -46,6 +61,9 @@ Namespace Illumination
                 glowTemplateOrder.Clear()
                 selectionAlphaCache.Clear()
                 selectionAlphaOrder.Clear()
+                glowCacheBytes = 0
+                selectionCacheBytes = 0
+                reportedMaskErrors.Clear()
             End SyncLock
             InvalidateGlobalMaskCache()
         End Sub
@@ -110,17 +128,20 @@ Namespace Illumination
             End Using
 
             SyncLock renderCacheSync
-                If width * CLng(height) <= 4000000 AndAlso Not glowTemplateCache.ContainsKey(key) Then
-                    While glowTemplateOrder.Count >= C_MAX_GLOW_CACHE
+                Dim entryBytes As Long = CLng(width) * height * 4L
+                If width * CLng(height) <= 4000000 AndAlso entryBytes <= MaxGlowCacheBytes AndAlso Not glowTemplateCache.ContainsKey(key) Then
+                    While glowTemplateOrder.Count >= C_MAX_GLOW_CACHE OrElse glowCacheBytes + entryBytes > MaxGlowCacheBytes
                         Dim oldest As String = glowTemplateOrder.Dequeue()
                         Dim oldBitmap As Bitmap = Nothing
                         If glowTemplateCache.TryGetValue(oldest, oldBitmap) Then
+                            glowCacheBytes -= CLng(oldBitmap.Width) * oldBitmap.Height * 4L
                             glowTemplateCache.Remove(oldest)
                             oldBitmap.Dispose()
                         End If
                     End While
                     glowTemplateCache.Add(key, DirectCast(created.Clone(), Bitmap))
                     glowTemplateOrder.Enqueue(key)
+                    glowCacheBytes += entryBytes
                 End If
             End SyncLock
             Return created
@@ -173,13 +194,15 @@ Namespace Illumination
             End Using
 
             SyncLock renderCacheSync
-                If Not selectionAlphaCache.ContainsKey(key) Then
-                    While selectionAlphaOrder.Count >= C_MAX_SELECTION_CACHE
+                If alpha.LongLength <= MaxSelectionCacheBytes AndAlso Not selectionAlphaCache.ContainsKey(key) Then
+                    While selectionAlphaOrder.Count >= C_MAX_SELECTION_CACHE OrElse selectionCacheBytes + alpha.LongLength > MaxSelectionCacheBytes
                         Dim oldest As String = selectionAlphaOrder.Dequeue()
+                        selectionCacheBytes -= selectionAlphaCache(oldest).LongLength
                         selectionAlphaCache.Remove(oldest)
                     End While
                     selectionAlphaCache.Add(key, alpha)
                     selectionAlphaOrder.Enqueue(key)
+                    selectionCacheBytes += alpha.LongLength
                 End If
             End SyncLock
             Return alpha
@@ -983,7 +1006,8 @@ Namespace Illumination
                 Finally
                     illuminated.UnlockBits(illuminatedData)
                 End Try
-            Catch
+            Catch ex As Exception
+                ReportMaskError("Global illumination mask was skipped", ex)
                 ' A corrupt optional global mask must not stop normal light rendering.
             End Try
         End Sub
@@ -1020,7 +1044,8 @@ Namespace Illumination
                 Finally
                     illuminated.UnlockBits(data)
                 End Try
-            Catch
+            Catch ex As Exception
+                ReportMaskError("Per-light selection mask was skipped", ex)
                 ' A corrupt optional per-light mask must not stop normal rendering.
             End Try
         End Sub
@@ -1031,38 +1056,53 @@ Namespace Illumination
             Dim h As Integer = bmp.Height
             Dim source(w * h - 1) As Integer
             Dim target(w * h - 1) As Integer
+            Dim data As BitmapData = bmp.LockBits(New Rectangle(0, 0, w, h), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
+            Try
+            Dim rowBytes(w * 4 - 1) As Byte
             For y As Integer = 0 To h - 1
+                Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), rowBytes, 0, rowBytes.Length)
                 For x As Integer = 0 To w - 1
-                    source(y * w + x) = bmp.GetPixel(x, y).A
+                    source(y * w + x) = rowBytes(x * 4 + 3)
                 Next
             Next
             For y As Integer = 0 To h - 1
+                Dim total As Integer = 0
+                For xx As Integer = 0 To Math.Min(w - 1, radius)
+                    total += source(y * w + xx)
+                Next
                 For x As Integer = 0 To w - 1
-                    Dim total As Integer = 0
-                    Dim count As Integer = 0
-                    For xx As Integer = Math.Max(0, x - radius) To Math.Min(w - 1, x + radius)
-                        total += source(y * w + xx) : count += 1
-                    Next
+                    Dim count As Integer = Math.Min(w - 1, x + radius) - Math.Max(0, x - radius) + 1
                     target(y * w + x) = total \ count
+                    If x - radius >= 0 Then total -= source(y * w + x - radius)
+                    If x + radius + 1 < w Then total += source(y * w + x + radius + 1)
                 Next
             Next
             source = CType(target.Clone(), Integer())
-            For y As Integer = 0 To h - 1
-                For x As Integer = 0 To w - 1
-                    Dim total As Integer = 0
-                    Dim count As Integer = 0
-                    For yy As Integer = Math.Max(0, y - radius) To Math.Min(h - 1, y + radius)
-                        total += source(yy * w + x) : count += 1
-                    Next
+            For x As Integer = 0 To w - 1
+                Dim total As Integer = 0
+                For yy As Integer = 0 To Math.Min(h - 1, radius)
+                    total += source(yy * w + x)
+                Next
+                For y As Integer = 0 To h - 1
+                    Dim count As Integer = Math.Min(h - 1, y + radius) - Math.Max(0, y - radius) + 1
                     target(y * w + x) = total \ count
+                    If y - radius >= 0 Then total -= source((y - radius) * w + x)
+                    If y + radius + 1 < h Then total += source((y + radius + 1) * w + x)
                 Next
             Next
             For y As Integer = 0 To h - 1
                 For x As Integer = 0 To w - 1
                     Dim a As Integer = target(y * w + x)
-                    bmp.SetPixel(x, y, Color.FromArgb(a, 255, 255, 255))
+                    rowBytes(x * 4) = 255
+                    rowBytes(x * 4 + 1) = 255
+                    rowBytes(x * 4 + 2) = 255
+                    rowBytes(x * 4 + 3) = CByte(a)
                 Next
+                Marshal.Copy(rowBytes, 0, IntPtr.Add(data.Scan0, y * data.Stride), rowBytes.Length)
             Next
+            Finally
+                bmp.UnlockBits(data)
+            End Try
         End Sub
 
         Public Function CreateImage(ByVal image As Bitmap,

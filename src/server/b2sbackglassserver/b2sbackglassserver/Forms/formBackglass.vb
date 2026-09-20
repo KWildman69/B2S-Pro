@@ -468,6 +468,8 @@ Public Class formBackglass
 
 #Region "painting"
 
+    Private lastPaintError As String = Nothing
+
     Protected Overrides Sub OnPaint(e As System.Windows.Forms.PaintEventArgs)
         'If B2sSettings.HideBackglass Then hide this form
         If B2SSettings.HideB2SBackglass Then
@@ -498,16 +500,16 @@ Public Class formBackglass
         ' draw background and illumination images
         If Me.BackgroundImage IsNot Nothing Then
 
-            On Error Resume Next
-
-            ' generate new clipping region
-            Dim clip As Region = New Region(e.ClipRectangle)
+            Try
+            ' A repaint owns its clip region; release its native handle promptly.
+            Using clip As New Region(e.ClipRectangle)
             For Each ledarea As KeyValuePair(Of String, B2SData.LEDAreaInfo) In B2SData.LEDAreas
                 If Not ledarea.Value.IsOnDMD Then
                     clip.Exclude(ledarea.Value.Rect)
                 End If
             Next
             e.Graphics.SetClip(clip, Drawing2D.CombineMode.Replace)
+            End Using
 
             ' Draw behind-canvas snippets first. The stationary backglass is then
             ' composited over them, so its alpha masks the already-rotated artwork
@@ -564,6 +566,14 @@ Public Class formBackglass
                     leddisplay.Value.Update()
                 End If
             Next
+
+            lastPaintError = Nothing
+            Catch ex As Exception
+                If lastPaintError <> ex.Message Then
+                    lastPaintError = ex.Message
+                    Diagnostics.Trace.TraceError("B2S backglass paint failed: " & ex.ToString())
+                End If
+            End Try
 
         End If
     End Sub

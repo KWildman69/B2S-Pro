@@ -941,6 +941,13 @@ Public Class formDesigner
         If autoSaveInProgress OrElse Backglass.currentData Is Nothing OrElse Not Backglass.currentData.IsDirty Then Return
         If String.IsNullOrWhiteSpace(Backglass.currentData.Name) Then Return
 
+        ' Do not interrupt a drag or a modal settings edit with a full export.
+        If Control.MouseButtons <> MouseButtons.None OrElse
+           Application.OpenForms.Cast(Of Form)().Any(Function(openForm) openForm.Modal) Then Return
+        If Backglass.currentData.RecoveryChangeVersion = Backglass.currentData.ChangeVersion AndAlso
+           Not String.IsNullOrEmpty(Backglass.currentData.RecoverySourceFilePath) AndAlso
+           IO.File.Exists(Backglass.currentData.RecoverySourceFilePath) Then Return
+
         autoSaveInProgress = True
         Dim data As Backglass.Data = Backglass.currentData
         Dim wasDirty As Boolean = data.IsDirty
@@ -954,6 +961,7 @@ Public Class formDesigner
                IO.File.Exists(recoveryFile) AndAlso
                IO.File.GetLastWriteTimeUtc(recoveryFile) >= saveStartedUtc.AddSeconds(-2) Then
                 data.RecoverySourceFilePath = IO.Path.GetFullPath(recoveryFile)
+                data.RecoveryChangeVersion = data.ChangeVersion
                 ShowStatus("Auto-recovery copy saved at " & DateTime.Now.ToShortTimeString())
             Else
                 ShowStatus("Auto-recovery was not saved; please save your backglass manually")
@@ -962,7 +970,7 @@ Public Class formDesigner
             Debug.WriteLine("Auto-recovery failed: " & ex.Message)
             ShowStatus("Auto-recovery failed; please save your backglass manually")
         Finally
-            data.IsDirty = wasDirty
+            If data.IsDirty <> wasDirty Then data.IsDirty = wasDirty
             autoSaveInProgress = False
         End Try
     End Sub
@@ -1429,7 +1437,8 @@ Public Class formDesigner
     End Sub
 
     Private Sub B2STab_LightsReportProgress(sender As Object, e As Illumination.Lights.LightsProgressEventArgs) Handles B2STab.LightsReportProgress
-        ShowProgress(e.Progress)
+        ' Rendering is not a save. Only Coding_ReportProgress drives the
+        ' save/export bar; normal editing must not flash a misleading save bar.
     End Sub
 
     Private Sub B2STab_SelectedIndexChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles B2STab.SelectedIndexChanged
@@ -1522,7 +1531,7 @@ Public Class formDesigner
 
     Private Sub B2STab_SelectedBulbMoved(sender As Object, e As System.Windows.Forms.MouseEventArgs) Handles B2STab.SelectedBulbMoved
         If Backglass.currentTabPage IsNot Nothing AndAlso Backglass.currentTabPage.ShowIllumination Then
-            Backglass.currentTabPage.RefreshIllumination()
+            Backglass.currentTabPage.RefreshEditorLighting()
         End If
     End Sub
     Private Sub B2STab_SelectedBulbEdited(sender As Object, e As System.EventArgs) Handles B2STab.SelectedBulbEdited

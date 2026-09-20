@@ -1435,6 +1435,8 @@ Public Class B2SData
         Private ReadOnly authoredBallCenter As PointF
         Private ReadOnly timer As New Windows.Forms.Timer() With {.Interval = 16}
         Private ReadOnly clock As New Diagnostics.Stopwatch()
+        Private pendingPhysicsSeconds As Double
+        Private Const MaxPhysicsStepsPerTick As Integer = 250
         Private velocity As PointF = PointF.Empty
         Private lastFlipperAngle As Single
         Private hasLastFlipperAngle As Boolean
@@ -1519,14 +1521,21 @@ Public Class B2SData
 
         Public Sub Start()
             ball.Visible = True
+            pendingPhysicsSeconds = 0.0R
             clock.Restart()
             timer.Start()
         End Sub
 
         Private Sub Tick(ByVal sender As Object, ByVal e As EventArgs)
-            Dim elapsed As Single = CSng(Math.Min(0.04, Math.Max(0.001, clock.Elapsed.TotalSeconds)))
+            Dim elapsed As Double = clock.Elapsed.TotalSeconds
             clock.Restart()
             If ball.RectangleF.Width <= 0.0F OrElse ball.RectangleF.Height <= 0.0F Then Return
+            AdvancePhysics(elapsed)
+        End Sub
+
+        Private Sub AdvancePhysics(ByVal elapsed As Double)
+            If elapsed <= 0.0R OrElse Double.IsNaN(elapsed) OrElse Double.IsInfinity(elapsed) Then Return
+            pendingPhysicsSeconds += elapsed
             Dim flipper As B2SPictureBox = FindPivotPicture(flipperName)
             Dim angularVelocity As Single = 0.0F
             If flipper IsNot Nothing Then
@@ -1534,11 +1543,15 @@ Public Class B2SData
                 lastFlipperAngle = flipper.RotationAngle
                 hasLastFlipperAngle = True
             End If
-            Dim steps As Integer = Math.Max(1, CInt(Math.Ceiling(elapsed / PhysicsSubstepSeconds)))
-            Dim stepTime As Single = elapsed / steps
+            ' Use the same integration step on fast and slow PCs. Retain elapsed
+            ' time rather than dropping everything beyond 40 ms. Cap work per
+            ' callback so a delayed window cannot monopolize the message loop.
+            Dim steps As Integer = CInt(Math.Min(MaxPhysicsStepsPerTick,
+                                                Math.Floor((pendingPhysicsSeconds + 0.000000001R) / 0.001R)))
             For index As Integer = 1 To steps
-                StepPhysics(stepTime, flipper, angularVelocity)
+                StepPhysics(PhysicsSubstepSeconds, flipper, angularVelocity)
             Next
+            pendingPhysicsSeconds = Math.Max(0.0R, pendingPhysicsSeconds - steps * 0.001R)
         End Sub
 
         Private Sub StepPhysics(ByVal elapsed As Single, ByVal flipper As B2SPictureBox, ByVal angularVelocity As Single)

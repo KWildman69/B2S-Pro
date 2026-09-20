@@ -145,7 +145,6 @@
     <Compile Include="Classes\Dream7\SegmentNumber.vb" />
     <Compile Include="Classes\Illumination\LightsCreation.vb" />
     <Compile Include="Classes\Illumination\ArtworkFlasherRenderer.vb" />
-    <Compile Include="Classes\Illumination\FlasherImageGenerator.vb" />
     <Compile Include="Classes\Base classes\HelperBase.vb" />
     <Compile Include="Classes\B2S\BackglassData.vb" />
     <Compile Include="Classes\Base classes\InfoBase.vb" />

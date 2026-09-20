@@ -1,6 +1,7 @@
 ﻿Imports System
 Imports Microsoft.Win32
 Imports System.Text
+Imports System.Threading.Tasks
 
 Public Class formVPM
 
@@ -9,14 +10,32 @@ Public Class formVPM
     Private b2sPreviewStartedAt As DateTime = DateTime.MaxValue
     Private b2sPreviewExistingProcessIds As New Generic.HashSet(Of Integer)()
 
-    Private Sub StopAndReleaseBackglassServer()
+    Private shutdownTask As Task
+    Private closingPreview As Boolean
+    Private closeAfterShutdown As Boolean
+
+    Private Shared Async Function WaitForPreviewExitAsync(ByVal process As Process, ByVal timeoutMs As Integer) As Task(Of Boolean)
+        Dim clock As Diagnostics.Stopwatch = Diagnostics.Stopwatch.StartNew()
+        While Not process.HasExited
+            If clock.ElapsedMilliseconds >= timeoutMs Then Return False
+            Await Task.Delay(25)
+        End While
+        Return True
+    End Function
+
+    Private Function StopAndReleaseBackglassServerAsync() As Task
+        If shutdownTask Is Nothing OrElse shutdownTask.IsCompleted Then shutdownTask = StopAndReleaseBackglassServerCoreAsync()
+        Return shutdownTask
+    End Function
+
+    Private Async Function StopAndReleaseBackglassServerCoreAsync() As Task
         If b2sPreviewProcess IsNot Nothing Then
             Try
                 If Not b2sPreviewProcess.HasExited Then
                     b2sPreviewProcess.CloseMainWindow()
-                    If Not b2sPreviewProcess.WaitForExit(750) Then
+                    If Not Await WaitForPreviewExitAsync(b2sPreviewProcess, 750) Then
                         b2sPreviewProcess.Kill()
-                        b2sPreviewProcess.WaitForExit(1000)
+                        Await WaitForPreviewExitAsync(b2sPreviewProcess, 1000)
                     End If
                 End If
             Catch
@@ -34,9 +53,9 @@ Public Class formVPM
                     If Not b2sPreviewExistingProcessIds.Contains(previewProcess.Id) AndAlso
                        previewProcess.StartTime >= b2sPreviewStartedAt.AddSeconds(-1) Then
                         previewProcess.CloseMainWindow()
-                        If Not previewProcess.WaitForExit(500) Then
+                        If Not Await WaitForPreviewExitAsync(previewProcess, 500) Then
                             previewProcess.Kill()
-                            previewProcess.WaitForExit(1000)
+                            Await WaitForPreviewExitAsync(previewProcess, 1000)
                         End If
                     End If
                 Catch
@@ -60,7 +79,7 @@ Public Class formVPM
         Finally
             b2sserver = Nothing
         End Try
-    End Sub
+    End Function
 
     Private Function B2SServerExecutablePath() As String
         Try
@@ -140,7 +159,19 @@ Public Class formVPM
         End If
 
     End Sub
-    Private Sub formVPM_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs) Handles Me.FormClosing
+    Private Async Sub formVPM_FormClosing(sender As Object, e As System.Windows.Forms.FormClosingEventArgs) Handles Me.FormClosing
+
+        If Not isVPinMAMEBackglass Then
+            TimerInfos.Stop()
+            If closeAfterShutdown Then Return
+            e.Cancel = True
+            If closingPreview Then Return
+            closingPreview = True
+            Await StopAndReleaseBackglassServerAsync()
+            closeAfterShutdown = True
+            Close()
+            Return
+        End If
 
         TimerInfos.Stop()
 
@@ -269,12 +300,20 @@ Public Class formVPM
             controller = Nothing
         End If
     End Sub
-    Private Sub Start_Click(sender As System.Object, e As System.EventArgs) Handles btnStart.Click
+    Private Async Sub Start_Click(sender As System.Object, e As System.EventArgs) Handles btnStart.Click
 
         ' Never reuse a preview COM instance. B2S Server can otherwise retain
         ' controls from the preceding DirectB2S load while showing the newly
         ' exported background, which makes score displays appear displaced.
-        If Not isVPinMAMEBackglass Then StopAndReleaseBackglassServer()
+        If Not isVPinMAMEBackglass Then
+            Enabled = False
+            Try
+                Await StopAndReleaseBackglassServerAsync()
+            Finally
+                If Not IsDisposed Then Enabled = True
+            End Try
+            If closingPreview OrElse IsDisposed Then Return
+        End If
 
         If isVPinMAMEBackglass AndAlso String.IsNullOrEmpty(cmbROMName.Text) Then
 
@@ -401,7 +440,7 @@ Public Class formVPM
         End If
 
     End Sub
-    Private Sub Stop_Click(sender As System.Object, e As System.EventArgs) Handles btnStop.Click
+    Private Async Sub Stop_Click(sender As System.Object, e As System.EventArgs) Handles btnStop.Click
 
         If isVPinMAMEBackglass Then
 
@@ -410,7 +449,13 @@ Public Class formVPM
             End Using
 
         Else
-            StopAndReleaseBackglassServer()
+            Enabled = False
+            Try
+                Await StopAndReleaseBackglassServerAsync()
+            Finally
+                If Not IsDisposed Then Enabled = True
+            End Try
+            If closingPreview OrElse IsDisposed Then Return
 
         End If
 
