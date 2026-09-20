@@ -1015,9 +1015,13 @@ namespace B2SPro.Setup
                 }
 
                 string fileAssociationError = null;
-                if (registerFileAssociations)
+                if (registerFileAssociations || registerServer)
                 {
-                    try { FileAssociationManager.Register(_designer); }
+                    try
+                    {
+                        if (registerFileAssociations) FileAssociationManager.Register(_designer, _server);
+                        FileAssociationManager.RegisterIcons(_server);
+                    }
                     catch (Exception ex) { fileAssociationError = ex.Message; }
                 }
 
@@ -1029,13 +1033,13 @@ namespace B2SPro.Setup
                 }
 
                 string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
-                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; retired " + retired + " obsolete files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
+                File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; retired " + retired + " obsolete files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + ((registerFileAssociations || registerServer) ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
                 ApplyVisibility(log, _installDesigner);
                 if (_installDesigner) ApplyVisibility(Path.Combine(_server, "B2SServer-Install.log"), false);
                 if (_installDesigner) MakeBackupVisible(Path.Combine(_designer, "B2SPro-Backups"));
                 MakeBackupVisible(Path.Combine(_server, "B2SPro-Backups"));
                 bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
-                return new InstallResult(_designer, _server, installed, preserved, retired, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
+                return new InstallResult(_designer, _server, installed, preserved, retired, backupCreated ? stamp : null, _freshServer, registerServer, registrationError, registerFileAssociations || registerServer, fileAssociationError, createShortcuts, shortcutError, _installDesigner);
             }
             catch
             {
@@ -1224,7 +1228,8 @@ namespace B2SPro.Setup
             else text.AppendLine("Server registration was skipped for this sandbox test.");
             if (_fileAssociationsAttempted && _fileAssociationError == null)
             {
-                text.AppendLine(".B2SPro and .directB2S files were associated with the B2S Pro editor.");
+                if (_installedDesigner) text.AppendLine(".B2SPro and .directB2S files were associated with the B2S Pro editor.");
+                text.AppendLine(".B2SPro files use the Pro icon; .directB2S files use the legacy B2S icon.");
             }
             else if (_fileAssociationsAttempted)
             {
@@ -1252,7 +1257,7 @@ namespace B2SPro.Setup
         [DllImport("shell32.dll")]
         private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
 
-        public static void Register(string designerFolder)
+        public static void Register(string designerFolder, string serverFolder)
         {
             string editor = GetEditorPath(designerFolder);
             if (!File.Exists(editor)) throw new FileNotFoundException("B2SPro.exe was not found for file association registration.", editor);
@@ -1263,7 +1268,23 @@ namespace B2SPro.Setup
                 legacyExtension.SetValue("", LegacyProgId);
 
             RegisterFileType(B2SProProgId, ".B2SPro", editor, designerFolder);
-            RegisterFileType(LegacyProgId, ".directB2S", editor, designerFolder);
+            RegisterFileType(LegacyProgId, ".directB2S", Path.Combine(serverFolder, "B2SBackglassServerEXE.exe"), designerFolder);
+            SHChangeNotify(AssociationChanged, IdList, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        // Extension-level icons remain independent of the user's opening application.
+        // Both icon resources are installed with the server, including server-only setup.
+        public static void RegisterIcons(string serverFolder)
+        {
+            string proIcon = Path.Combine(Path.GetFullPath(serverFolder), "B2SUpdateChecker.exe");
+            string legacyIcon = Path.Combine(Path.GetFullPath(serverFolder), "B2SBackglassServerEXE.exe");
+            if (!File.Exists(proIcon)) throw new FileNotFoundException("B2S Pro icon resource was not installed.", proIcon);
+            if (!File.Exists(legacyIcon)) throw new FileNotFoundException("Legacy B2S icon resource was not installed.", legacyIcon);
+
+            using (RegistryKey icon = Registry.ClassesRoot.CreateSubKey(".B2SPro\\DefaultIcon"))
+                icon.SetValue("", Quote(proIcon) + ",0");
+            using (RegistryKey icon = Registry.ClassesRoot.CreateSubKey(".directb2s\\DefaultIcon"))
+                icon.SetValue("", Quote(legacyIcon) + ",0");
             SHChangeNotify(AssociationChanged, IdList, IntPtr.Zero, IntPtr.Zero);
         }
 
