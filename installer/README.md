@@ -33,10 +33,14 @@ The same tested installation engine produces two separate setup programs:
 - Every replaced program file is copied to a dated backup first.
 - `ScreenRes.txt`, `B2STableSettings.xml`, the `Plugins` and `Plugins64`
   folders, projects, tables, backglasses, and unrelated files are preserved.
-- Runtime DLLs, helper executables, `.config` files, installer logs, and backup
-  folders remain visible. Updates clear Hidden/System attributes previously
-  applied to installer-managed program files and backups. Unrelated user files
-  and display settings are preserved.
+- Setup hides the Designer's `B2SPro.exe.config`, `B2SVPinMAMEStarter.exe.config`,
+  `B2SUpdateChecker.exe`, and `B2SPro-Install.log`. In the Server folder it hides
+  `B2S_ScreenResIdentifier.exe.config`, `B2S_SetUp.exe.config`,
+  `B2SBackglassServerEXE.exe.config`, `B2SUpdateChecker.exe`, and
+  `B2SServer-Install.log`. These files remain installed and usable. Only the
+  Hidden attribute is applied; Explorer can show them when hidden items are enabled.
+- Other installed programs, DLLs, tools, and backup folders remain visible.
+  Unrelated user files and display settings are preserved.
 - The complete setup creates a `B2S Pro` shortcut on the current user's desktop and in a
   `B2S Pro` Start Menu folder. Reinstalling refreshes both shortcuts without
   changing the original Designer's shortcuts. Server-only setup creates no

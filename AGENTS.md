@@ -45,3 +45,4 @@ The project owner adopted these standing programming rules on September 20, 2026
 30. After a test passes, establish the next test's purpose before making additional changes.
 31. Report what passed, what failed, what remains untested, and what the next isolated test will prove. If evidence is incomplete, continue tracing or ask for the missing test result; never substitute assumptions.
 32. Stop immediately when requested. Do not continue editing, building, installing, or changing files after the user says to stop.
+33. Every release-version change must appear automatically in the Designer About window and Server version display. Derive those labels from release metadata, not hard-coded text or compatibility/COM assembly versions; verify the displayed versions before publishing.

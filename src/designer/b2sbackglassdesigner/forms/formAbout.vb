@@ -8,6 +8,8 @@ Imports System.Windows.Forms
 Public Class formAbout
     Inherits B2SThemedForm
 
+    Private Shared ReadOnly releaseVersion As String = Diagnostics.FileVersionInfo.GetVersionInfo(GetType(formAbout).Assembly.Location).ProductVersion
+
     Private aboutContent As AboutSurface
     Private logoImage As Image
     Private avatarImage As Image
@@ -215,7 +217,7 @@ Public Class formAbout
                                                           LinearGradientMode.Horizontal)
                 graphics.FillRectangle(accentBrush, accentBounds)
             End Using
-            Dim versionText As String = "Version 1.0.1"
+            Dim versionText As String = "Version " & releaseVersion
             Dim versionSize As SizeF = graphics.MeasureString(versionText, versionFont)
             Using versionBrush As New SolidBrush(Color.FromArgb(83, 212, 255))
                 graphics.DrawString(versionText, versionFont, versionBrush,

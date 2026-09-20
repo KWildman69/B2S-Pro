@@ -1030,7 +1030,8 @@ namespace B2SPro.Setup
 
                 string log = Path.Combine(_installDesigner ? _designer : _server, _installDesigner ? "B2SPro-Install.log" : "B2SServer-Install.log");
                 File.AppendAllText(log, DateTime.Now.ToString("s") + " Installed " + installed + " files; preserved " + preserved + " protected files; retired " + retired + " obsolete files; architecture " + _arch + "; registration " + (registerServer ? (registrationError == null ? "successful" : "failed: " + registrationError) : "skipped for test") + "; file associations " + (registerFileAssociations ? (fileAssociationError == null ? "successful" : "failed: " + fileAssociationError) : "skipped") + "; shortcuts " + (createShortcuts ? (shortcutError == null ? "successful" : "failed: " + shortcutError) : "skipped for test") + Environment.NewLine);
-                MakeVisible(log);
+                ApplyVisibility(log, _installDesigner);
+                if (_installDesigner) ApplyVisibility(Path.Combine(_server, "B2SServer-Install.log"), false);
                 if (_installDesigner) MakeBackupVisible(Path.Combine(_designer, "B2SPro-Backups"));
                 MakeBackupVisible(Path.Combine(_server, "B2SPro-Backups"));
                 bool backupCreated = (_installDesigner && Directory.Exists(designerBackup)) || Directory.Exists(serverBackup);
@@ -1072,7 +1073,19 @@ namespace B2SPro.Setup
 
         private static void ApplyVisibility(string path, bool isDesigner)
         {
-            MakeVisible(path);
+            if (!File.Exists(path)) return;
+            string name = Path.GetFileName(path);
+            bool hidden = String.Equals(name, "B2SUpdateChecker.exe", StringComparison.OrdinalIgnoreCase) ||
+                (isDesigner
+                    ? String.Equals(name, "B2SPro.exe.config", StringComparison.OrdinalIgnoreCase) ||
+                      String.Equals(name, "B2SVPinMAMEStarter.exe.config", StringComparison.OrdinalIgnoreCase) ||
+                      String.Equals(name, "B2SPro-Install.log", StringComparison.OrdinalIgnoreCase)
+                    : String.Equals(name, "B2S_ScreenResIdentifier.exe.config", StringComparison.OrdinalIgnoreCase) ||
+                      String.Equals(name, "B2S_SetUp.exe.config", StringComparison.OrdinalIgnoreCase) ||
+                      String.Equals(name, "B2SBackglassServerEXE.exe.config", StringComparison.OrdinalIgnoreCase) ||
+                      String.Equals(name, "B2SServer-Install.log", StringComparison.OrdinalIgnoreCase));
+            FileAttributes attributes = File.GetAttributes(path) & ~FileAttributes.Hidden & ~FileAttributes.System;
+            File.SetAttributes(path, hidden ? attributes | FileAttributes.Hidden : attributes);
         }
 
         private static void MakeVisible(string path)
@@ -1462,14 +1475,14 @@ namespace B2SPro.Setup
                             if (Directory.GetFiles(Path.Combine(server, "B2SPro-Backups"), name, SearchOption.AllDirectories).Length != 1) throw new Exception(arch + " obsolete Server file was not backed up: " + name);
                         }
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " main Designer executable was hidden.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " Designer config was hidden.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.Hidden) == 0) throw new Exception(arch + " Designer config was not hidden.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro.exe.config")) & FileAttributes.System) != 0) throw new Exception(arch + " Designer config was marked as a system file.");
                         if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " Server DLL was hidden.");
                         if ((File.GetAttributes(Path.Combine(server, "B2SBackglassServer.dll")) & FileAttributes.System) != 0) throw new Exception(arch + " Server DLL was marked as a system file.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Designer update checker was hidden or marked as a system file.");
-                        if ((File.GetAttributes(Path.Combine(server, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Server update checker was hidden or marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != FileAttributes.Hidden) throw new Exception(arch + " Designer update checker visibility was incorrect.");
+                        if ((File.GetAttributes(Path.Combine(server, "B2SUpdateChecker.exe")) & (FileAttributes.Hidden | FileAttributes.System)) != FileAttributes.Hidden) throw new Exception(arch + " Server update checker visibility was incorrect.");
                         if ((File.GetAttributes(Path.Combine(server, "ScreenRes.txt")) & FileAttributes.Hidden) != 0) throw new Exception(arch + " ScreenRes.txt was hidden.");
-                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Install.log")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " install log was hidden or marked as a system file.");
+                        if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Install.log")) & (FileAttributes.Hidden | FileAttributes.System)) != FileAttributes.Hidden) throw new Exception(arch + " install log visibility was incorrect.");
                         if ((File.GetAttributes(Path.Combine(designer, "B2SPro-Backups")) & (FileAttributes.Hidden | FileAttributes.System)) != 0) throw new Exception(arch + " Designer backup folder was hidden or marked as a system file.");
                     }
                 }

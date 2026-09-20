@@ -4,6 +4,8 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.2 / Server 3.0.1 — 2026-09-20
 
+- Setup hides only the designated runtime configuration files, update checker, and installation log in each product folder. Files remain installed; applications, DLLs, tools, and backups remain visible.
+- Designer About and the Server settings version display now read release metadata automatically, keeping their displayed versions aligned with future releases.
 - Reduced light-rendering work with equivalent blur output, bounded image caches, and coalesced Light dialog canvas updates.
 - Kept artwork stationary during light dragging and rotation previews. Removed the Light dialog Reset button while retaining Flasher Reset.
 - Avoided duplicate editor illumination generation and misleading save-progress updates during lighting edits.

@@ -8,6 +8,8 @@ Imports Microsoft.Win32
 
 Public Class formSettings
 
+    Private Shared ReadOnly releaseVersion As String = Diagnostics.FileVersionInfo.GetVersionInfo(GetType(formSettings).Assembly.Location).ProductVersion
+
     Public B2SScreen As B2SScreen = Nothing
     Public B2SAnimation As B2SAnimation = Nothing
     Public Shared formBackglass As formBackglass = Nothing
@@ -55,7 +57,7 @@ Public Class formSettings
 #Else
         lblCopyright.Text = String.Format(lblCopyright.Text, "B2S.Server.EXE", My.Application.Info.Copyright.ToString)
 #End If
-        lblVersion.Text = String.Format("Server version {0} {1}, backglass file version {2}", B2SVersionInfo.B2S_BUILD_STRING_HASH, If(Environment.Is64BitProcess, "x64", "x86"), B2SSettings.BackglassFileVersion)
+        lblVersion.Text = String.Format("Server version {0} {1}, backglass file version {2}", releaseVersion, If(Environment.Is64BitProcess, "x64", "x86"), B2SSettings.BackglassFileVersion)
 
         ' get more data
 
