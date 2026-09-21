@@ -1954,10 +1954,10 @@ Public Class B2SPictureBox
             Lights.DrawImage(GetFirstOnImage())
             ' do the overlay of the images
             Dim newimage As Bitmap = New Bitmap(ExportCanvasImage())
-            Dim lightimage As Bitmap = New Bitmap(Lights.Image)
+            Dim lightimage As Bitmap = If(Lights.Image IsNot Nothing, New Bitmap(Lights.Image), Nothing)
             'lightimage.MakeTransparent(Color.White)
             Using gr As Graphics = Graphics.FromImage(newimage)
-                gr.DrawImage(lightimage, 0, 0)
+                If lightimage IsNot Nothing Then gr.DrawImage(lightimage, 0, 0)
                 For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
                     If bulb.IsImageSnippit AndAlso bulb.Image IsNot Nothing Then
                         Dim brightness As Single = CSng(Math.Max(0, Math.Min(200, bulb.SnippitInfo.Brightness)) / 100.0R)
@@ -1999,7 +1999,7 @@ Public Class B2SPictureBox
                     End With
                 Next
             End Using
-            lightimage.Dispose()
+            If lightimage IsNot Nothing Then lightimage.Dispose()
             ' that's it
             Return newimage
         End Get
@@ -2092,7 +2092,7 @@ Public Class B2SPictureBox
         ' backglass On image from the shared resource collection.
         If IsDMDPictureBox Then Return Me.Image
 
-        Dim ret As Image = MyBase.Image
+        Dim ret As Image = ExportCanvasImage()
         For Each item As Images.ImageInfo In Backglass.currentData.Images
             If item.Type = Images.eImageInfoType.BackgroundImage AndAlso item.BackgroundImageType = Images.eBackgroundImageType.On Then
                 ret = item.Image
@@ -2103,10 +2103,10 @@ Public Class B2SPictureBox
     End Function
 
     Private Function ExportCanvasImage() As Image
-        ' Keep the proven backglass export path unchanged. Only the DMD canvas
-        ' needs the shadowed renderer image because its base PictureBox image is
-        ' intentionally empty when the DMD tab is not active.
-        Return If(IsDMDPictureBox, Me.Image, MyBase.Image)
+        ' The shared renderer retains artwork in Me.Image and clears MyBase.Image.
+        ' Preserve a selected legacy base image when present; otherwise export
+        ' the retained artwork. DMD always uses its own retained canvas.
+        Return If(IsDMDPictureBox, Me.Image, If(MyBase.Image, Me.Image))
     End Function
     Private Function GetOnImageRomID() As Integer
         Dim ret As Integer = 0
