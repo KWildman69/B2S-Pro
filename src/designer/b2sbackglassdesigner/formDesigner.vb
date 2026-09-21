@@ -469,7 +469,7 @@ Public Class formDesigner
             .RowCount = 2,
             .ColumnCount = 3,
             .Margin = Padding.Empty,
-            .Padding = Padding.Empty,
+            .Padding = New Padding(0, 0, 0, 1),
             .BackColor = Color.FromArgb(13, 16, 27)
         }
         b2sProHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 240.0F))
@@ -553,7 +553,18 @@ Public Class formDesigner
 
         Me.Controls.Add(b2sProHeader)
         b2sProHeader.BringToFront()
+        ' Dock Fill must be laid out after the fixed header and status bar.
+        ' Otherwise the canvas begins behind the header and its top is unreachable.
+        B2STab.BringToFront()
+        AddHandler b2sProHeader.Paint, AddressOf PaintCanvasBoundary
         Me.MainMenuStrip = msB2SDesigner
+    End Sub
+
+    Private Sub PaintCanvasBoundary(sender As Object, e As PaintEventArgs)
+        Using divider As New Pen(Color.FromArgb(55, 110, 145))
+            e.Graphics.DrawLine(divider, 0, b2sProHeader.ClientSize.Height - 1,
+                                b2sProHeader.ClientSize.Width - 1, b2sProHeader.ClientSize.Height - 1)
+        End Using
     End Sub
 
     Private Function CreateLogoFileButton(caption As String, icon As Image, handler As EventHandler) As Button
