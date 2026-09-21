@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.Drawing
 Imports System.Drawing.Imaging
 Imports System.IO
@@ -178,7 +178,7 @@ Public Class formQuickSelection
             .Dock = DockStyle.Fill, .Height = 30, .TextAlign = ContentAlignment.MiddleLeft, .AutoEllipsis = True}
         tools.Controls.Add(helpLabel, 0, 2)
         tools.SetColumnSpan(helpLabel, 2)
-        preview = New PictureBox With {.Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Normal, .BackColor = Color.DimGray, .TabStop = True}
+        preview = New EditorPreviewPictureBox With {.Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Normal, .BackColor = Color.DimGray, .TabStop = True}
         AddHandler preview.Paint, AddressOf PreviewPaint
         AddHandler preview.MouseDown, AddressOf PreviewMouseDown
         AddHandler preview.MouseMove, AddressOf PreviewMouseMove

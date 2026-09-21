@@ -23,6 +23,7 @@ Public Class B2SThemedForm
 
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
+        EditorWindowZoom.Attach(Me)
 
         ' Most B2S editors are modal, so the application-wide open-form scan
         ' deliberately does not see them. Attach every themed editor here after

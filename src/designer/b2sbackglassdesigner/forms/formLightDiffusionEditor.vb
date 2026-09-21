@@ -1,4 +1,4 @@
-﻿'=== Phase 2 Sprint 1 ===
+'=== Phase 2 Sprint 1 ===
 Imports System
 Imports System.Drawing
 Imports System.Drawing.Imaging
@@ -405,7 +405,7 @@ Public Class formLightDiffusionEditor
             .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
         })
 
-        livePreviewFlashed = New PictureBox With {
+        livePreviewFlashed = New EditorPreviewPictureBox With {
             .Left = 14, .Top = 57, .Width = 665, .Height = previewImageHeight,
             .BackColor = Color.FromArgb(11, 12, 13), .BorderStyle = BorderStyle.FixedSingle,
             .SizeMode = PictureBoxSizeMode.Normal,

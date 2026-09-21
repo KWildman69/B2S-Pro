@@ -312,6 +312,11 @@ Public Class formPivotAnimation
                              pan.Y + center.Y - (after.Y + authoredY * after.Height / BackglassImage.Height))
             Invalidate()
         End Sub
+        Protected Overrides Sub OnMouseEnter(e As EventArgs)
+            MyBase.OnMouseEnter(e)
+            Focus()
+        End Sub
+
         Protected Overrides Sub OnMouseWheel(ByVal e As MouseEventArgs)
             MyBase.OnMouseWheel(e)
             If e.Delta <> 0 Then ZoomAt(CSng(Math.Pow(1.2R, e.Delta / 120.0R)), e.Location)
@@ -319,7 +324,7 @@ Public Class formPivotAnimation
         Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
             MyBase.OnMouseDown(e)
             Focus()
-            If e.Button = MouseButtons.Right OrElse e.Button = MouseButtons.Middle Then
+            If e.Button = MouseButtons.Right OrElse e.Button = MouseButtons.Middle OrElse (e.Button = MouseButtons.Left AndAlso EditorZoomCanvas.IsSpaceHeld()) Then
                 panning = True
                 lastPanPoint = e.Location
                 Capture = True

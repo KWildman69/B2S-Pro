@@ -717,7 +717,7 @@ Public Class formPhysicsEditor
     End Class
 
     Private Class PhysicsCanvas
-        Inherits Control
+        Inherits EditorZoomCanvas
 
         Public BackglassImage As Image
         Public AuthoredSize As Size
@@ -741,6 +741,9 @@ Public Class formPhysicsEditor
         Private dragging As Boolean
         Private selectedObstacle As Integer = -1
         Private resizingObstacle As Boolean
+        Private objectDragOffset As PointF
+        Private lastBumperDiameter As Single
+        Private lastSwitchSize As SizeF
         Private selectedSwitch As Integer = -1
         Private resizingSwitch As Boolean
         Private rotatingSwitch As Boolean
@@ -846,8 +849,15 @@ Public Class formPhysicsEditor
 
         Public Sub AddObstacle()
             Dim diameter As Single = Math.Max(30.0F, Math.Min(AuthoredSize.Width, AuthoredSize.Height) * 0.08F)
+            If lastBumperDiameter > 0 Then
+                diameter = lastBumperDiameter
+            ElseIf Obstacles.Count > 0 Then
+                diameter = Obstacles(Obstacles.Count - 1).Width
+            End If
+            lastBumperDiameter = diameter
             Obstacles.Add(New RectangleF((AuthoredSize.Width - diameter) / 2.0F, (AuthoredSize.Height - diameter) / 2.0F, diameter, diameter))
             selectedObstacle = Obstacles.Count - 1
+            selectedSwitch = -1
             selectedIndex = -1
             selectedSegment = -1
             Invalidate()
@@ -865,6 +875,14 @@ Public Class formPhysicsEditor
         Public Sub AddSwitchZone(ByVal switchID As Integer)
             Dim width As Single = Math.Max(60.0F, AuthoredSize.Width * 0.12F)
             Dim height As Single = Math.Max(40.0F, AuthoredSize.Height * 0.1F)
+            If Not lastSwitchSize.IsEmpty Then
+                width = lastSwitchSize.Width
+                height = lastSwitchSize.Height
+            ElseIf SwitchZones.Count > 0 Then
+                width = SwitchZones(SwitchZones.Count - 1).Width
+                height = SwitchZones(SwitchZones.Count - 1).Height
+            End If
+            lastSwitchSize = New SizeF(width, height)
             SwitchZones.Add(New RectangleF((AuthoredSize.Width - width) / 2.0F, (AuthoredSize.Height - height) / 2.0F, width, height))
             SwitchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
             SwitchAngles.Add(0.0F)
@@ -1071,6 +1089,7 @@ Public Class formPhysicsEditor
         End Sub
 
         Protected Overrides Sub OnMouseDown(ByVal e As MouseEventArgs)
+            If BeginNavigation(e) Then Return
             MyBase.OnMouseDown(e)
             Focus()
             Dim authored As PointF = ClientToAuthored(e.Location)
@@ -1117,7 +1136,9 @@ Public Class formPhysicsEditor
                 selectedIndex = -1
                 selectedSegment = -1
                 rotatingSwitch = False
-                resizingSwitch = HitSwitchHandle(authored, SwitchZones(switchHit), SwitchAngle(switchHit))
+                resizingSwitch = False
+                Dim zone As RectangleF = SwitchZones(switchHit)
+                objectDragOffset = New PointF(zone.X + zone.Width / 2.0F - authored.X, zone.Y + zone.Height / 2.0F - authored.Y)
                 dragging = True
                 Capture = True
                 Invalidate()
@@ -1126,12 +1147,15 @@ Public Class formPhysicsEditor
             End If
             Dim obstacleHit As Integer = HitObstacle(authored)
             If e.Button = MouseButtons.Left AndAlso obstacleHit >= 0 Then
+                resizingObstacle = (selectedObstacle = obstacleHit AndAlso HitObstacleHandle(authored, Obstacles(obstacleHit)))
                 selectedObstacle = obstacleHit
                 selectedSwitch = -1
                 selectedIndex = -1
                 selectedSegment = -1
-                resizingObstacle = HitObstacleHandle(authored, Obstacles(obstacleHit))
+                Dim obstacle As RectangleF = Obstacles(obstacleHit)
+                objectDragOffset = New PointF(obstacle.X + obstacle.Width / 2.0F - authored.X, obstacle.Y + obstacle.Height / 2.0F - authored.Y)
                 dragging = True
+                Capture = True
                 Invalidate()
                 RaiseEvent SelectionChanged(Me, EventArgs.Empty)
                 Return
@@ -1184,6 +1208,7 @@ Public Class formPhysicsEditor
         End Sub
 
         Protected Overrides Sub OnMouseMove(ByVal e As MouseEventArgs)
+            If MoveNavigation(e) Then Return
             MyBase.OnMouseMove(e)
             If draggingLauncherOrigin Then
                 Dim point As PointF = ClientToAuthored(e.Location)
@@ -1224,13 +1249,14 @@ Public Class formPhysicsEditor
                                                     fixedCorner.Y + axisX.Y * width / 2.0F + axisY.Y * height / 2.0F)
                     SwitchZones(selectedSwitch) = New RectangleF(resizedCenter.X - width / 2.0F, resizedCenter.Y - height / 2.0F,
                                                                   width, height)
+                    lastSwitchSize = New SizeF(width, height)
                 Else
                     Dim radians As Double = angle * Math.PI / 180.0R
                     Dim halfWidth As Single = zone.Width / 2.0F, halfHeight As Single = zone.Height / 2.0F
                     Dim extentX As Single = CSng(Math.Abs(Math.Cos(radians)) * halfWidth + Math.Abs(Math.Sin(radians)) * halfHeight)
                     Dim extentY As Single = CSng(Math.Abs(Math.Sin(radians)) * halfWidth + Math.Abs(Math.Cos(radians)) * halfHeight)
-                    Dim centerX As Single = Math.Max(extentX, Math.Min(AuthoredSize.Width - extentX, authored.X))
-                    Dim centerY As Single = Math.Max(extentY, Math.Min(AuthoredSize.Height - extentY, authored.Y))
+                    Dim centerX As Single = Math.Max(extentX, Math.Min(AuthoredSize.Width - extentX, authored.X + objectDragOffset.X))
+                    Dim centerY As Single = Math.Max(extentY, Math.Min(AuthoredSize.Height - extentY, authored.Y + objectDragOffset.Y))
                     SwitchZones(selectedSwitch) = New RectangleF(centerX - halfWidth, centerY - halfHeight, zone.Width, zone.Height)
                 End If
                 Invalidate()
@@ -1244,8 +1270,9 @@ Public Class formPhysicsEditor
                     Dim centerY As Single = obstacle.Y + obstacle.Height / 2.0F
                     Dim radius As Single = Math.Max(8.0F, CSng(Math.Sqrt((authored.X - centerX) ^ 2 + (authored.Y - centerY) ^ 2)))
                     Obstacles(selectedObstacle) = New RectangleF(centerX - radius, centerY - radius, radius * 2.0F, radius * 2.0F)
+                    lastBumperDiameter = radius * 2.0F
                 Else
-                    Obstacles(selectedObstacle) = New RectangleF(authored.X - obstacle.Width / 2.0F, authored.Y - obstacle.Height / 2.0F,
+                    Obstacles(selectedObstacle) = New RectangleF(authored.X + objectDragOffset.X - obstacle.Width / 2.0F, authored.Y + objectDragOffset.Y - obstacle.Height / 2.0F,
                                                                  obstacle.Width, obstacle.Height)
                 End If
                 Invalidate()
@@ -1259,6 +1286,7 @@ Public Class formPhysicsEditor
         End Sub
 
         Protected Overrides Sub OnMouseUp(ByVal e As MouseEventArgs)
+            If EndNavigation() Then Return
             If draggingLauncherAngle OrElse draggingLauncherOrigin Then
                 draggingLauncherAngle = False
                 draggingLauncherOrigin = False
@@ -1296,7 +1324,7 @@ Public Class formPhysicsEditor
             Dim center As New PointF(zone.Left + zone.Width / 2.0F, zone.Top + zone.Height / 2.0F)
             Dim handle As PointF = RotateAround(New PointF(zone.Right, zone.Bottom), center, angle)
             Dim scale As Single = Math.Max(0.01F, ImageView().Width / AuthoredSize.Width)
-            Dim tolerance As Single = 15.0F / scale
+            Dim tolerance As Single = Math.Min(6.0F / scale, Math.Min(zone.Width, zone.Height) / 4.0F)
             Return Math.Abs(point.X - handle.X) <= tolerance AndAlso Math.Abs(point.Y - handle.Y) <= tolerance
         End Function
 
@@ -1347,7 +1375,9 @@ Public Class formPhysicsEditor
         Private Function HitObstacleHandle(ByVal point As PointF, ByVal obstacle As RectangleF) As Boolean
             Dim dx As Single = point.X - obstacle.Right
             Dim dy As Single = point.Y - (obstacle.Top + obstacle.Height / 2.0F)
-            Return dx * dx + dy * dy <= 225.0F
+            Dim scale As Single = Math.Max(0.01F, ImageView().Width / AuthoredSize.Width)
+            Dim radius As Single = Math.Min(7.0F / scale, obstacle.Width / 4.0F)
+            Return dx * dx + dy * dy <= radius * radius
         End Function
 
         Protected Overrides Sub OnKeyDown(ByVal e As KeyEventArgs)
@@ -1359,6 +1389,10 @@ Public Class formPhysicsEditor
         End Sub
 
         Private Function ImageView() As RectangleF
+            Return ZoomedImageView()
+        End Function
+
+        Protected Overrides Function BaseImageView() As RectangleF
             Dim scale As Single = Math.Min(ClientSize.Width / CSng(AuthoredSize.Width), ClientSize.Height / CSng(AuthoredSize.Height))
             Dim width As Single = AuthoredSize.Width * scale
             Dim height As Single = AuthoredSize.Height * scale

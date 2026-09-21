@@ -417,7 +417,7 @@ Public Class formMotionPathTest
     End Sub
 
     Private Class MotionPathCanvas
-        Inherits Control
+        Inherits EditorZoomCanvas
 
         Public BackglassImage As Image
         Public SnippetImage As Image
@@ -606,6 +606,7 @@ Public Class formMotionPathTest
         End Function
 
         Protected Overrides Sub OnMouseDown(ByVal e As MouseEventArgs)
+            If BeginNavigation(e) Then Return
             MyBase.OnMouseDown(e)
             If previewing Then Return
             Dim imagePoint As PointF = ClientToImage(e.Location)
@@ -632,6 +633,7 @@ Public Class formMotionPathTest
         End Sub
 
         Protected Overrides Sub OnMouseMove(ByVal e As MouseEventArgs)
+            If MoveNavigation(e) Then Return
             MyBase.OnMouseMove(e)
             If draggingRespawn Then
                 Dim respawn As PointF = ClientToImage(e.Location)
@@ -650,6 +652,7 @@ Public Class formMotionPathTest
         End Sub
 
         Protected Overrides Sub OnMouseUp(ByVal e As MouseEventArgs)
+            If EndNavigation() Then Return
             MyBase.OnMouseUp(e)
             draggingIndex = -1
             draggingRespawn = False
@@ -685,6 +688,10 @@ Public Class formMotionPathTest
         End Function
 
         Private Function ImageView() As RectangleF
+            Return ZoomedImageView()
+        End Function
+
+        Protected Overrides Function BaseImageView() As RectangleF
             If BackglassImage Is Nothing OrElse Width <= 0 OrElse Height <= 0 Then Return RectangleF.Empty
             Dim scale As Single = Math.Min(Width / CSng(BackglassImage.Width), Height / CSng(BackglassImage.Height))
             Dim size As New SizeF(BackglassImage.Width * scale, BackglassImage.Height * scale)
@@ -1221,7 +1228,7 @@ Public Class formTroughWizard
     End Sub
 
     Private Class TroughSlotCanvas
-        Inherits Control
+        Inherits EditorZoomCanvas
         Public BackglassImage As Image, SnippetImage As Image, SnippetSize As Size
         Public BallImages As IList(Of Image)
         Private _firstCenter As PointF
@@ -1235,6 +1242,10 @@ Public Class formTroughWizard
             BackColor = Color.Black
         End Sub
         Private Function ViewRect() As RectangleF
+            Return ZoomedImageView()
+        End Function
+
+        Protected Overrides Function BaseImageView() As RectangleF
             If BackglassImage Is Nothing Then Return ClientRectangle
             Dim scale As Single = Math.Min(ClientSize.Width / CSng(BackglassImage.Width), ClientSize.Height / CSng(BackglassImage.Height))
             Return New RectangleF((ClientSize.Width - BackglassImage.Width * scale) / 2.0F, (ClientSize.Height - BackglassImage.Height * scale) / 2.0F, BackglassImage.Width * scale, BackglassImage.Height * scale)
@@ -1293,6 +1304,7 @@ Public Class formTroughWizard
             Next
         End Sub
         Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
+            If BeginNavigation(e) Then Return
             Dim nearestIndex As Integer = -1
             Dim nearestDistance As Double = Double.MaxValue
             For index As Integer = 0 To SlotCount - 1
@@ -1318,11 +1330,13 @@ Public Class formTroughWizard
             End If
         End Sub
         Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
+            If MoveNavigation(e) Then Return
             If dragIndex<0 Then Return
             If dragIndex=0 Then FirstCenter=ToImage(e.Location) Else LastCenter=ToImage(e.Location)
             Invalidate()
         End Sub
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
+            If EndNavigation() Then Return
             dragIndex=-1
         End Sub
         Private Function Distance(a As PointF,b As PointF) As Double
