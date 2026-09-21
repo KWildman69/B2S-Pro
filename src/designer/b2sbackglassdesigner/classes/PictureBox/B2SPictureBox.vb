@@ -5,6 +5,63 @@ Public Class B2SPictureBox
 
     Inherits PictureBox
 
+    <Runtime.InteropServices.DllImport("user32.dll")>
+    Private Shared Function GetAsyncKeyState(ByVal key As Integer) As Short
+    End Function
+
+    Private canvasPanParent As ScrollableControl = Nothing
+    Private canvasPanStart As Point
+    Private canvasPanScroll As Point
+    Private canvasPanCursor As Cursor
+
+    Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
+        If e.Button = MouseButtons.Left AndAlso (CInt(GetAsyncKeyState(CInt(Keys.Space))) And &H8000) <> 0 Then
+            Dim viewport As ScrollableControl = TryCast(Parent, ScrollableControl)
+            If viewport IsNot Nothing AndAlso viewport.AutoScroll Then
+                canvasPanParent = viewport
+                canvasPanStart = PointToScreen(e.Location)
+                canvasPanScroll = viewport.AutoScrollPosition
+                canvasPanCursor = Cursor
+                Cursor = Cursors.Hand
+                Capture = True
+                Return
+            End If
+        End If
+        MyBase.OnMouseDown(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
+        If canvasPanParent IsNot Nothing Then
+            ' Screen coordinates stay stable while scrolling moves this control.
+            Dim current As Point = PointToScreen(e.Location)
+            canvasPanParent.AutoScrollPosition = New Point(
+                Math.Max(0, -canvasPanScroll.X - (current.X - canvasPanStart.X)),
+                Math.Max(0, -canvasPanScroll.Y - (current.Y - canvasPanStart.Y)))
+            Return
+        End If
+        MyBase.OnMouseMove(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
+        If canvasPanParent IsNot Nothing Then
+            If e.Button = MouseButtons.Left Then EndCanvasPan()
+            Return
+        End If
+        MyBase.OnMouseUp(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseCaptureChanged(e As EventArgs)
+        If Not Capture Then EndCanvasPan()
+        MyBase.OnMouseCaptureChanged(e)
+    End Sub
+
+    Private Sub EndCanvasPan()
+        If canvasPanParent Is Nothing Then Return
+        canvasPanParent = Nothing
+        Cursor = canvasPanCursor
+        Capture = False
+    End Sub
+
     ' A transparent backglass pixel is an opening in the printed canvas. Show
     ' that opening over a neutral mid-gray backing in the editor. This leaves
     ' visible headroom for behind-canvas brightness, highlights, color and light

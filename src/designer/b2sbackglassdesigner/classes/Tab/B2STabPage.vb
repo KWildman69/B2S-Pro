@@ -303,11 +303,12 @@ Public Class B2STabPage
     End Sub
 
     Private Sub PictureBox_LocationChanged(sender As Object, e As EventArgs)
-        Me.Invalidate()
+        ' A scroll changes location mid-layout; repaint without recentering it.
+        MyBase.Invalidate()
         RaiseEvent Scrolled(Me, New B2STabPageScrollEventArgs(PictureBox.Location))
     End Sub
     Private Sub DMDPictureBox_LocationChanged(sender As Object, e As EventArgs)
-        Me.Invalidate()
+        MyBase.Invalidate()
         RaiseEvent Scrolled(Me, New B2STabPageScrollEventArgs(DMDPictureBox.Location))
     End Sub
     Private Sub PictureBox_MyMouseDown(sender As Object, e As System.Windows.Forms.MouseEventArgs)
