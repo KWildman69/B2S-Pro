@@ -1,9 +1,9 @@
-Imports System.Drawing.Drawing2D
+﻿Imports System.Drawing.Drawing2D
 Imports System.Globalization
 Imports System.Linq
 Imports System.Windows.Forms
 
-Public Class formPhysicsEditor
+Public Partial Class formPhysicsEditor
     Inherits B2SThemedForm
 
     Private ReadOnly sourceBall As Illumination.BulbInfo
@@ -38,6 +38,9 @@ Public Class formPhysicsEditor
     Private ReadOnly flipperBox As New ComboBox()
     Private ReadOnly gravityBox As New NumericUpDown()
     Private ReadOnly strengthBox As New NumericUpDown()
+    Private ReadOnly bumperBounceBox As New NumericUpDown()
+    Private ReadOnly bumperDefaultCheck As New CheckBox()
+    Private updatingBumperBounce As Boolean
     Private ReadOnly bounceBox As New NumericUpDown()
     Private ReadOnly segmentUseDefaultCheck As New CheckBox()
     Private ReadOnly segmentBounceBox As New NumericUpDown()
@@ -47,6 +50,7 @@ Public Class formPhysicsEditor
                    ByVal backglassImage As Image,
                    ByVal snippets As IEnumerable(Of Illumination.BulbInfo))
         sourceBall = ball
+        physicsSnippets = snippets.ToList()
         Text = "Physics Boundary Editor — " & If(String.IsNullOrWhiteSpace(ball.Name), "Ball", ball.Name)
         StartPosition = FormStartPosition.CenterParent
         Width = 1120
@@ -157,6 +161,16 @@ Public Class formPhysicsEditor
         strengthBox.Width = 62
         strengthBox.Margin = New Padding(0, 3, 8, 0)
 
+        bumperDefaultCheck.Text = "Use normal boundary bounce"
+        bumperDefaultCheck.AutoSize = True
+        bumperDefaultCheck.Checked = True
+        bumperBounceBox.Minimum = 0D
+        bumperBounceBox.Maximum = 3D
+        bumperBounceBox.DecimalPlaces = 2
+        bumperBounceBox.Increment = 0.05D
+        bumperBounceBox.Width = 80
+        AddHandler bumperDefaultCheck.CheckedChanged, AddressOf BumperBounceChanged
+        AddHandler bumperBounceBox.ValueChanged, AddressOf BumperBounceChanged
         Dim bounceLabel As Label = ToolbarLabel("Boundary bounce:")
         bounceBox.Minimum = 0D
         bounceBox.Maximum = 1D
@@ -194,6 +208,7 @@ Public Class formPhysicsEditor
                                                      renameBoundaryButton, spliceBoundaryButton, deleteBoundaryButton,
                                                      clearButton,
                                                      SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
+                                                     ToolbarLabel("Selected bumper bounce (0.00–3.00):"), bumperDefaultCheck, bumperBounceBox,
                                                     SidebarHeader("SWITCH ZONES"), addSwitchButton, deleteSwitchButton,
                                                     switchIDLabel, switchIDBox})
         AddPageControls(launcherPage, New Control() {launcherEnabledCheck, launcherFollowPivotCheck, ToolbarLabel("Trigger type:"), launcherTypeBox,
@@ -210,7 +225,7 @@ Public Class formPhysicsEditor
         saveButton.Dock = DockStyle.Fill : closeButton.Dock = DockStyle.Fill
         saveButton.Margin = New Padding(0, 0, 4, 0) : closeButton.Margin = New Padding(4, 0, 0, 0)
         actions.Controls.Add(saveButton, 0, 0) : actions.Controls.Add(closeButton, 1, 0)
-        sidebar.Controls.Add(tabs) : sidebar.Controls.Add(actions)
+        sidebar.Controls.Add(tabs) : sidebar.Controls.Add(CreatePhysicsTestControls()) : sidebar.Controls.Add(actions)
 
         Dim help As New Label With {
             .Dock = DockStyle.Bottom, .Height = 30, .TextAlign = ContentAlignment.MiddleCenter,
@@ -221,7 +236,9 @@ Public Class formPhysicsEditor
         canvas.Dock = DockStyle.Fill
         canvas.BackglassImage = New Bitmap(backglassImage)
         canvas.AuthoredSize = backglassImage.Size
-        For Each snippet As Illumination.BulbInfo In snippets.OrderBy(Function(item) item.ZOrder)
+        ' Equal-Z snippets are stored front first, as in the main canvas.
+        ' Paint them back first so foreground artwork stays visible here too.
+        For Each snippet As Illumination.BulbInfo In snippets.Reverse().OrderBy(Function(item) item.ZOrder)
             If snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing Then
                 canvas.Scene.Add(New SceneItem(snippet.Name, snippet.Image,
                                                New RectangleF(snippet.Location.X, snippet.Location.Y,
@@ -249,6 +266,9 @@ Public Class formPhysicsEditor
             canvas.BoundarySegmentBounces.Add(savedSegmentBounces)
         Next
         canvas.Obstacles.AddRange(ball.SnippitInfo.PhysicsObstacles)
+        For index As Integer = 0 To canvas.Obstacles.Count - 1
+            canvas.ObstacleBounces.Add(If(index < ball.SnippitInfo.PhysicsObstacleBounces.Count, ball.SnippitInfo.PhysicsObstacleBounces(index), -1.0F))
+        Next
         canvas.SwitchZones.AddRange(ball.SnippitInfo.PhysicsSwitchZones)
         canvas.SwitchIDs.AddRange(ball.SnippitInfo.PhysicsSwitchIDs)
         canvas.SwitchAngles.AddRange(ball.SnippitInfo.PhysicsSwitchAngles)
@@ -363,6 +383,12 @@ Public Class formPhysicsEditor
                 End If
             Next
             Return result
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultObstacleBounces As List(Of Single)
+        Get
+            Return New List(Of Single)(canvas.ObstacleBounces)
         End Get
     End Property
 
@@ -539,6 +565,15 @@ Public Class formPhysicsEditor
     End Sub
 
     Private Sub CanvasSelectionChanged(ByVal sender As Object, ByVal e As EventArgs)
+        updatingBumperBounce = True
+        Dim hasBumper As Boolean = canvas.SelectedObstacleIndex >= 0
+        Dim bumperValue As Single = canvas.SelectedObstacleBounce
+        bumperDefaultCheck.Enabled = hasBumper
+        bumperDefaultCheck.Checked = Not hasBumper OrElse bumperValue < 0.0F
+        bumperBounceBox.Value = CDec(Math.Max(0.0F, Math.Min(3.0F, If(bumperValue < 0.0F, CSng(bounceBox.Value), bumperValue))))
+        bumperBounceBox.Enabled = hasBumper AndAlso Not bumperDefaultCheck.Checked
+        deleteObstacleButton.Enabled = hasBumper
+        updatingBumperBounce = False
         Dim boundaryEditable As Boolean = Not canvas.IsActiveBoundaryLocked
         Dim switchID As Nullable(Of Integer) = canvas.SelectedSwitchID
         switchIDBox.Enabled = switchID.HasValue
@@ -556,6 +591,12 @@ Public Class formPhysicsEditor
         End If
         segmentBounceBox.Enabled = hasSegment AndAlso boundaryEditable AndAlso Not segmentUseDefaultCheck.Checked
         updatingSegmentBounce = False
+    End Sub
+
+    Private Sub BumperBounceChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If updatingBumperBounce OrElse canvas.SelectedObstacleIndex < 0 Then Return
+        bumperBounceBox.Enabled = Not bumperDefaultCheck.Checked
+        canvas.SetSelectedObstacleBounce(If(bumperDefaultCheck.Checked, -1.0F, CSng(bumperBounceBox.Value)))
     End Sub
 
     Private Sub SegmentBounceChanged(ByVal sender As Object, ByVal e As EventArgs)
@@ -696,6 +737,7 @@ Public Class formPhysicsEditor
     End Sub
 
     Protected Overrides Sub Dispose(ByVal disposing As Boolean)
+        If disposing Then DisposePhysicsTest()
         If disposing AndAlso canvas.BackglassImage IsNot Nothing Then canvas.BackglassImage.Dispose()
         MyBase.Dispose(disposing)
     End Sub
@@ -721,12 +763,36 @@ Public Class formPhysicsEditor
 
         Public BackglassImage As Image
         Public AuthoredSize As Size
+        Public PreviewBallBounds As Nullable(Of RectangleF)
+        Public PreviewBallAngle As Single
+        Public PreviewPivot As PhysicsPreview.B2SPictureBox
+        Public PreviewPivotName As String
+        Public ReadOnly PreviewSwitchHits As New Dictionary(Of Integer, DateTime)()
         Public ReadOnly Scene As New List(Of SceneItem)()
         Public ReadOnly Paths As New List(Of List(Of PointF))()
         Public ReadOnly BoundaryNames As New List(Of String)()
         Public ReadOnly BoundaryLocks As New List(Of Boolean)()
         Public ReadOnly BoundarySegmentBounces As New List(Of List(Of Single))()
         Public ReadOnly Obstacles As New List(Of RectangleF)()
+        Public ReadOnly ObstacleBounces As New List(Of Single)()
+        Public ReadOnly Property SelectedObstacleIndex As Integer
+            Get
+                Return selectedObstacle
+            End Get
+        End Property
+        Public ReadOnly Property SelectedObstacleBounce As Single
+            Get
+                If selectedObstacle < 0 OrElse selectedObstacle >= ObstacleBounces.Count Then Return -1.0F
+                Return ObstacleBounces(selectedObstacle)
+            End Get
+        End Property
+        Public Sub SetSelectedObstacleBounce(ByVal value As Single)
+            If selectedObstacle < 0 OrElse selectedObstacle >= Obstacles.Count Then Return
+            While ObstacleBounces.Count < Obstacles.Count
+                ObstacleBounces.Add(-1.0F)
+            End While
+            ObstacleBounces(selectedObstacle) = value
+        End Sub
         Public ReadOnly SwitchZones As New List(Of RectangleF)()
         Public ReadOnly SwitchIDs As New List(Of Integer)()
         Public ReadOnly SwitchAngles As New List(Of Single)()
@@ -751,6 +817,78 @@ Public Class formPhysicsEditor
         Private draggingLauncherAngle As Boolean
         Private draggingLauncherOrigin As Boolean
         Private launcherOriginDragOffset As PointF
+        Private ReadOnly staticSceneLayers As New Dictionary(Of Integer, Bitmap)()
+        Private cachedView As RectangleF
+        Private cachedClientSize As Size
+        Private cachedPivotName As String
+        Private cachedSceneCount As Integer = -1
+
+        Private Function IsMovingArtwork(ByVal item As SceneItem) As Boolean
+            Return item.IsBall OrElse (PreviewPivot IsNot Nothing AndAlso item.Name = PreviewPivotName)
+        End Function
+
+        Private Shared Function BallRollDestinationPoints(ByVal bounds As RectangleF, ByVal angle As Single) As PointF()
+            ' Match the server and Motion Path Test: roll in normalized ball
+            ' coordinates, then restore the placement's width and height.
+            Dim radians As Double = angle * Math.PI / 180.0R
+            Dim cosine As Double = Math.Cos(radians), sine As Double = Math.Sin(radians)
+            Dim centerX As Single = bounds.X + bounds.Width / 2.0F
+            Dim centerY As Single = bounds.Y + bounds.Height / 2.0F
+            Dim points As PointF() = {New PointF(-0.5F, -0.5F), New PointF(0.5F, -0.5F), New PointF(-0.5F, 0.5F)}
+            For index As Integer = 0 To points.Length - 1
+                Dim x As Single = points(index).X, y As Single = points(index).Y
+                points(index) = New PointF(CSng(centerX + bounds.Width * (x * cosine - y * sine)),
+                                          CSng(centerY + bounds.Height * (x * sine + y * cosine)))
+            Next
+            Return points
+        End Function
+
+        Private Sub ClearSceneCache()
+            For Each layer As Bitmap In staticSceneLayers.Values
+                layer.Dispose()
+            Next
+            staticSceneLayers.Clear()
+            cachedSceneCount = -1
+        End Sub
+
+        Private Sub EnsureSceneCache(ByVal view As RectangleF)
+            Dim pivotName As String = If(PreviewPivot Is Nothing, Nothing, PreviewPivotName)
+            If cachedView = view AndAlso cachedClientSize = ClientSize AndAlso
+               cachedPivotName = pivotName AndAlso cachedSceneCount = Scene.Count Then Return
+            ClearSceneCache()
+            Dim scale As Single = view.Width / AuthoredSize.Width
+            Dim first As Integer = 0
+            Try
+                For index As Integer = 0 To Scene.Count
+                    If index < Scene.Count AndAlso Not IsMovingArtwork(Scene(index)) Then Continue For
+                    ' Keep separate stationary layers on either side of moving artwork.
+                    ' Viewport-sized caches retain stacking and bound memory even when zoomed in.
+                    Dim layer As New Bitmap(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height), Imaging.PixelFormat.Format32bppPArgb)
+                    staticSceneLayers.Add(index, layer)
+                    Using graphics As Graphics = Graphics.FromImage(layer)
+                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+                        If first = 0 Then graphics.DrawImage(BackglassImage, view)
+                        graphics.TranslateTransform(view.X, view.Y)
+                        graphics.ScaleTransform(scale, scale)
+                        For itemIndex As Integer = first To index - 1
+                            Dim item As SceneItem = Scene(itemIndex)
+                            graphics.DrawImage(item.Image, item.Bounds)
+                        Next
+                    End Using
+                    first = index + 1
+                Next
+                cachedView = view : cachedClientSize = ClientSize
+                cachedPivotName = pivotName : cachedSceneCount = Scene.Count
+            Catch
+                ClearSceneCache()
+                Throw
+            End Try
+        End Sub
+
+        Protected Overrides Sub Dispose(ByVal disposing As Boolean)
+            If disposing Then ClearSceneCache()
+            MyBase.Dispose(disposing)
+        End Sub
 
         Public Event SelectionChanged As EventHandler
         Public Event BoundaryStructureChanged As EventHandler
@@ -856,6 +994,7 @@ Public Class formPhysicsEditor
             End If
             lastBumperDiameter = diameter
             Obstacles.Add(New RectangleF((AuthoredSize.Width - diameter) / 2.0F, (AuthoredSize.Height - diameter) / 2.0F, diameter, diameter))
+            ObstacleBounces.Add(-1.0F)
             selectedObstacle = Obstacles.Count - 1
             selectedSwitch = -1
             selectedIndex = -1
@@ -867,6 +1006,7 @@ Public Class formPhysicsEditor
         Public Sub DeleteSelectedObstacle()
             If selectedObstacle < 0 OrElse selectedObstacle >= Obstacles.Count Then Return
             Obstacles.RemoveAt(selectedObstacle)
+            If selectedObstacle < ObstacleBounces.Count Then ObstacleBounces.RemoveAt(selectedObstacle)
             selectedObstacle = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -959,17 +1099,42 @@ Public Class formPhysicsEditor
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
             e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
             Dim view As RectangleF = ImageView()
-            e.Graphics.DrawImage(BackglassImage, view)
+            EnsureSceneCache(view)
             Dim scale As Single = view.Width / AuthoredSize.Width
             Dim state As GraphicsState = e.Graphics.Save()
             e.Graphics.TranslateTransform(view.X, view.Y)
             e.Graphics.ScaleTransform(scale, scale)
 
-            For Each item As SceneItem In Scene
-                e.Graphics.DrawImage(item.Image, item.Bounds)
+            For sceneIndex As Integer = 0 To Scene.Count
+                Dim layer As Bitmap = Nothing
+                If staticSceneLayers.TryGetValue(sceneIndex, layer) Then
+                    Dim layerState As GraphicsState = e.Graphics.Save()
+                    e.Graphics.ResetTransform()
+                    e.Graphics.DrawImageUnscaled(layer, 0, 0)
+                    e.Graphics.Restore(layerState)
+                End If
+                If sceneIndex = Scene.Count Then Exit For
+                Dim item As SceneItem = Scene(sceneIndex)
+                If Not IsMovingArtwork(item) Then Continue For
+                Dim drawBounds As RectangleF = If(item.IsBall AndAlso PreviewBallBounds.HasValue, PreviewBallBounds.GetValueOrDefault(), item.Bounds)
+                Dim drawState As GraphicsState = e.Graphics.Save()
+                If item.IsBall AndAlso PreviewBallBounds.HasValue Then
+                    e.Graphics.DrawImage(item.Image, BallRollDestinationPoints(drawBounds, PreviewBallAngle),
+                                         New RectangleF(0, 0, item.Image.Width, item.Image.Height), GraphicsUnit.Pixel)
+                ElseIf PreviewPivot IsNot Nothing AndAlso item.Name = PreviewPivotName Then
+                    Dim hinge As New PointF(drawBounds.X + drawBounds.Width * PreviewPivot.RotationPivotX,
+                                           drawBounds.Y + drawBounds.Height * PreviewPivot.RotationPivotY)
+                    e.Graphics.TranslateTransform(hinge.X, hinge.Y)
+                    e.Graphics.RotateTransform(PreviewPivot.RotationAngle)
+                    e.Graphics.TranslateTransform(-hinge.X, -hinge.Y)
+                    e.Graphics.DrawImage(item.Image, drawBounds)
+                Else
+                    e.Graphics.DrawImage(item.Image, drawBounds)
+                End If
+                e.Graphics.Restore(drawState)
                 If item.IsBall Then
                     Using ballPen As New Pen(Color.Lime, 2.0F / scale)
-                        e.Graphics.DrawRectangle(ballPen, item.Bounds.X, item.Bounds.Y, item.Bounds.Width, item.Bounds.Height)
+                        e.Graphics.DrawRectangle(ballPen, drawBounds.X, drawBounds.Y, drawBounds.Width, drawBounds.Height)
                     End Using
                 End If
             Next
@@ -1024,7 +1189,8 @@ Public Class formPhysicsEditor
                 e.Graphics.TranslateTransform(center.X, center.Y)
                 e.Graphics.RotateTransform(angle)
                 e.Graphics.TranslateTransform(-center.X, -center.Y)
-                Using fill As New SolidBrush(Color.FromArgb(45, 0, 255, 90)),
+                Dim hit As Boolean = PreviewSwitchHits.ContainsKey(SwitchIDs(switchIndex)) AndAlso PreviewSwitchHits(SwitchIDs(switchIndex)) > DateTime.UtcNow
+                Using fill As New SolidBrush(If(hit, Color.FromArgb(180, 255, 180, 0), Color.FromArgb(45, 0, 255, 90))),
                       outline As New Pen(If(switchIndex = selectedSwitch, Color.Yellow, Color.Lime), 3.0F / scale),
                       labelFont As New Font(Font.FontFamily, Math.Max(8.0F, 12.0F / scale), FontStyle.Bold)
                     e.Graphics.FillRectangle(fill, zone)

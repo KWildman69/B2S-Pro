@@ -115,6 +115,12 @@ Public Class Mouse
         For Each item As InfoBase In resizeItems
             Dim bulb As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
             If bulb Is Nothing OrElse bulb.Image Is Nothing OrElse bulb.Size.Width <= 0 OrElse bulb.Size.Height <= 0 Then Continue For
+            ' A standard snippet's Size is its placement, not its source resolution.
+            ' Keep original pixels so shrinking and enlarging is reversible.
+            If bulb.SnippitInfo.SnippitType = eSnippitType.StandardImage Then
+                bulb.IsIlluminatedImageDirty = True
+                Continue For
+            End If
             If bulb.Image.Size.Equals(bulb.Size) Then Continue For
             Dim oldImage As Image = bulb.Image
             Dim optimized As Image = oldImage.Resized(bulb.Size)

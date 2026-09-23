@@ -26,6 +26,30 @@ Public Class Coding
         End Get
     End Property
 
+    Public Shared Function CreateFullResolutionSnippet(ByVal bulb As Illumination.BulbInfo, ByVal canvas As Image) As Image
+        Dim result As Image = Illumination.Lights.CreateBrightnessAdjustedSnippet(bulb.Image, bulb.SnippitInfo.Brightness)
+        If Object.ReferenceEquals(result, bulb.Image) Then result = New Bitmap(bulb.Image)
+        Try
+            Dim rect As New Rectangle(bulb.Location, bulb.Size)
+            If Not String.IsNullOrEmpty(bulb.SelectionMaskData) Then
+                Dim masked As Image = Illumination.Lights.CreateSelectionMaskedSnippet(result, bulb.SelectionMaskData, rect, True)
+                If masked Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet selection mask.")
+                result.Dispose()
+                result = masked
+            End If
+            If bulb.SnippitInfo.BehindCanvas Then
+                Dim clipped As Image = Illumination.Lights.CreateCanvasClippedSnippet(result, canvas, rect, True)
+                If clipped Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet canvas mask.")
+                result.Dispose()
+                result = clipped
+            End If
+            Return result
+        Catch
+            result.Dispose()
+            Throw
+        End Try
+    End Function
+
     Private Const DirectB2SVersion As String = "1.27"
     Private Const DirectB2SVersionMaybeWithDataLost As String = "1.3"
     Private Const DirectB2SVersionWithImportFeature As String = "0.85" ' nicht ändern
@@ -698,6 +722,7 @@ Public Class Coding
                                             nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
                                         End If
                                     If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
+                                    If .SnippitInfo.PhysicsObstacleBounces.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacleBounces", String.Join(",", .SnippitInfo.PhysicsObstacleBounces.Select(Function(value) value.ToString("R", Globalization.CultureInfo.InvariantCulture)).ToArray()))
                                     If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then
                                         nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
                                         If .SnippitInfo.PhysicsSwitchAngles.Any(Function(angle) Math.Abs(angle) >= 0.001F) Then
@@ -761,6 +786,20 @@ Public Class Coding
                             End If
                             ' image and maybe off image
                             nodeBulb.SetAttribute("Image", If(imageinfo.Image IsNot Nothing, ImageToBase64(imageinfo.Image), ""))
+                            If .IsImageSnippit AndAlso .Image IsNot Nothing AndAlso
+                               .SnippitInfo.SnippitType = eSnippitType.StandardImage AndAlso
+                               Not .SnippitInfo.AutomaticRotationEnabled AndAlso Not .SnippitInfo.PivotAnimationEnabled Then
+                                ' Embedded designer data already stores the untouched source.
+                                ' Older servers continue to use the existing Image fallback.
+                                If imageinfo.Image IsNot Nothing AndAlso imageinfo.Image.Size <> .Size Then
+                                    Using fallback As Image = imageinfo.Image.Resized(.Size)
+                                        nodeBulb.SetAttribute("Image", ImageToBase64(fallback))
+                                    End Using
+                                End If
+                                Using fullResolution As Image = CreateFullResolutionSnippet(bulb.Value, If(.ParentForm = eParentForm.DMD, dmdimage, image))
+                                    nodeBulb.SetAttribute("RuntimeSnippitImage", ImageToBase64(fullResolution))
+                                End Using
+                            End If
                             If imageinfo.OffImage IsNot Nothing Then
                                 nodeBulb.SetAttribute("OffImage", ImageToBase64(imageinfo.OffImage))
                             End If
@@ -1378,6 +1417,7 @@ Public Class Coding
                                 bulb.SnippitInfo.PhysicsBoundarySegmentBounces.AddRange(ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText))
                             End If
                             If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
+                            If innerNode.Attributes("PhysicsObstacleBounces") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacleBounces.AddRange(ParsePhysicsObstacleBounces(innerNode.Attributes("PhysicsObstacleBounces").InnerText))
                             If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
                             If innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then ParsePhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, bulb.SnippitInfo.PhysicsSwitchAngles)
                             While bulb.SnippitInfo.PhysicsSwitchAngles.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count
@@ -3259,6 +3299,21 @@ Public Class Coding
             paths.Add(segments)
         Next
         Return paths
+    End Function
+
+    Private Shared Function ParsePhysicsObstacleBounces(ByVal value As String) As List(Of Single)
+        Dim result As New List(Of Single)()
+        If String.IsNullOrWhiteSpace(value) Then Return result
+        For Each encoded As String In value.Split(","c)
+            Dim parsed As Single
+            If Not Single.TryParse(encoded, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) OrElse
+                Single.IsNaN(parsed) OrElse Single.IsInfinity(parsed) OrElse parsed < 0.0F Then
+                result.Add(-1.0F)
+            Else
+                result.Add(Math.Min(3.0F, parsed))
+            End If
+        Next
+        Return result
     End Function
 
     Private Shared Function SerializePhysicsObstacles(ByVal obstacles As IEnumerable(Of RectangleF)) As String

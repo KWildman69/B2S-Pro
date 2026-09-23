@@ -456,6 +456,7 @@ Public Class Save
                             bulb.SnippitInfo.PhysicsBoundarySegmentBounces.AddRange(ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText))
                         End If
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacles.AddRange(ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText))
+                            If innerNode.Attributes("PhysicsObstacleBounces") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacleBounces.AddRange(ParsePhysicsObstacleBounces(innerNode.Attributes("PhysicsObstacleBounces").InnerText))
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
                         If innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then ParsePhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, bulb.SnippitInfo.PhysicsSwitchAngles)
                         While bulb.SnippitInfo.PhysicsSwitchAngles.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count
@@ -883,6 +884,7 @@ Public Class Save
                                         nodeBulb.SetAttribute("PhysicsBoundarySegmentBounces", SerializePhysicsBoundarySegmentBounces(.SnippitInfo.PhysicsBoundaryPaths, .SnippitInfo.PhysicsBoundarySegmentBounces))
                                     End If
                                     If .SnippitInfo.PhysicsObstacles.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacles", SerializePhysicsObstacles(.SnippitInfo.PhysicsObstacles))
+                                    If .SnippitInfo.PhysicsObstacleBounces.Count > 0 Then nodeBulb.SetAttribute("PhysicsObstacleBounces", String.Join(",", .SnippitInfo.PhysicsObstacleBounces.Select(Function(value) value.ToString("R", Globalization.CultureInfo.InvariantCulture)).ToArray()))
                                 If .SnippitInfo.PhysicsSwitchZones.Count > 0 Then
                                     nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
                                     If .SnippitInfo.PhysicsSwitchAngles.Any(Function(angle) Math.Abs(angle) >= 0.001F) Then
@@ -1119,6 +1121,21 @@ Public Class Save
             paths.Add(segments)
         Next
         Return paths
+    End Function
+
+    Private Shared Function ParsePhysicsObstacleBounces(ByVal value As String) As List(Of Single)
+        Dim result As New List(Of Single)()
+        If String.IsNullOrWhiteSpace(value) Then Return result
+        For Each encoded As String In value.Split(","c)
+            Dim parsed As Single
+            If Not Single.TryParse(encoded, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) OrElse
+                Single.IsNaN(parsed) OrElse Single.IsInfinity(parsed) OrElse parsed < 0.0F Then
+                result.Add(-1.0F)
+            Else
+                result.Add(Math.Min(3.0F, parsed))
+            End If
+        Next
+        Return result
     End Function
 
     Private Shared Function SerializePhysicsObstacles(ByVal obstacles As IEnumerable(Of RectangleF)) As String

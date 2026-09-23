@@ -1,4 +1,4 @@
-#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
+﻿#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
 Imports System.Drawing
 Imports System.Drawing.Imaging
 Imports System.IO
@@ -699,6 +699,12 @@ Public Class formBackglass
                                              GraphicsUnit.Pixel)
                         e.Graphics.Restore(state)
                     End If
+                ElseIf drawImage IsNot Nothing AndAlso picbox.HasFullResolutionSnippet Then
+                    Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+                    e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                    e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                    e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
+                    e.Graphics.Restore(state)
                 ElseIf drawImage IsNot Nothing AndAlso picbox.PreservePhysicsArtworkAspect Then
                     e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
                 ElseIf drawImage IsNot Nothing Then
@@ -740,6 +746,15 @@ Public Class formBackglass
             e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
             e.Graphics.DrawImage(drawImage, BallRollDestinationPoints(picbox.MotionPathSourceRectangle, picbox.MotionPathSourceRollAngle),
                                  New RectangleF(0, 0, drawImage.Width, drawImage.Height), GraphicsUnit.Pixel)
+            e.Graphics.Restore(state)
+            Return
+        End If
+
+        If picbox.HasFullResolutionSnippet Then
+            Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+            e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+            e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+            e.Graphics.DrawImage(drawImage, picbox.MotionPathSourceRectangle)
             e.Graphics.Restore(state)
             Return
         End If
@@ -2735,6 +2750,7 @@ Public Class formBackglass
                         Dim physicsBoundaryPaths As List(Of List(Of PointF)) = Nothing
                         Dim physicsBoundarySegmentBounces As List(Of List(Of Single)) = Nothing
                         Dim physicsObstacles As List(Of RectangleF) = Nothing
+                        Dim physicsObstacleBounces As List(Of Single) = Nothing
                         Dim physicsSwitchZones As List(Of B2SData.PhysicsSwitchZone) = Nothing
                         Dim physicsLauncher As B2SData.PhysicsLauncher = Nothing
                         If innerNode.Attributes("ExternalGridName") IsNot Nothing Then
@@ -2776,6 +2792,7 @@ Public Class formBackglass
                         If innerNode.Attributes("PhysicsBoundaries") IsNot Nothing Then physicsBoundaryPaths = ParsePhysicsBoundaries(innerNode.Attributes("PhysicsBoundaries").InnerText)
                         If innerNode.Attributes("PhysicsBoundarySegmentBounces") IsNot Nothing Then physicsBoundarySegmentBounces = ParsePhysicsBoundarySegmentBounces(innerNode.Attributes("PhysicsBoundarySegmentBounces").InnerText)
                         If innerNode.Attributes("PhysicsObstacles") IsNot Nothing Then physicsObstacles = ParsePhysicsObstacles(innerNode.Attributes("PhysicsObstacles").InnerText)
+                        If innerNode.Attributes("PhysicsObstacleBounces") IsNot Nothing Then physicsObstacleBounces = ParsePhysicsObstacleBounces(innerNode.Attributes("PhysicsObstacleBounces").InnerText)
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then physicsSwitchZones = ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText)
                         If physicsSwitchZones IsNot Nothing AndAlso innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then
                             ApplyPhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, physicsSwitchZones)
@@ -2875,13 +2892,16 @@ Public Class formBackglass
                         Dim visible As Boolean = (CInt(innerNode.Attributes("Visible").InnerText) = 1)
                         Dim loc As Point = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                         Dim size As Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
-                        Dim image As Image = Base64ToImage(innerNode.Attributes("Image").InnerText)
+                        Dim fullResolutionAttribute As Xml.XmlAttribute = innerNode.Attributes("RuntimeSnippitImage")
+                        Dim fullResolutionSnippet As Boolean = isimagesnippit AndAlso Not nativerotation AndAlso
+                            picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso fullResolutionAttribute IsNot Nothing
+                        Dim image As Image = Base64ToImage(If(fullResolutionSnippet, fullResolutionAttribute.InnerText, innerNode.Attributes("Image").InnerText))
                         Dim offimage As Image = Nothing
                         If innerNode.Attributes("OffImage") IsNot Nothing Then
                             offimage = Base64ToImage(innerNode.Attributes("OffImage").InnerText)
                         End If
                         Dim preserveRollingCanvas As Boolean = (isimagesnippit AndAlso motionPathRollEnabled)
-                        If picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso Not preserveRollingCanvas Then
+                        If picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso Not preserveRollingCanvas AndAlso Not fullResolutionSnippet Then
                             ' Events of overlapping pictures get merged #76, crop image transparency
                             image = CropImageToTransparency(image, offimage, loc, size)
                         End If
@@ -2905,6 +2925,8 @@ Public Class formBackglass
                         picbox.BackgroundImage = image
                         picbox.OffImage = offimage
                         picbox.IsImageSnippit = isimagesnippit
+                        ' This image retains source pixels and the complete authored rectangle.
+                        picbox.HasFullResolutionSnippet = fullResolutionSnippet
                         ' Pivot artwork must use the background's X/Y scaling so its saved
                         ' editor placement stays exact. A ball keeps a round visual while
                         ' its center follows those same scaled coordinates.
@@ -3002,7 +3024,7 @@ Public Class formBackglass
                         If physicsBall AndAlso Not physicsBounds.IsEmpty Then
                             B2SData.RegisterPhysicsBall(picbox, physicsFlipperName, physicsBounds, physicsGravity,
                                                         physicsFlipperStrength, physicsBoundaryBounce, physicsBoundaryPaths, physicsObstacles, physicsSwitchZones, physicsLauncher,
-                                                        physicsBoundarySegmentBounces)
+                                                        physicsBoundarySegmentBounces, physicsObstacleBounces)
                         End If
                         If picbox.MotionPathPoints.Count >= 2 AndAlso motionPathSolenoidID > 0 Then
                             If Not B2SData.UsedMotionPathSolenoidIDs.ContainsKey(motionPathSolenoidID) Then
@@ -4026,7 +4048,7 @@ Public Class formBackglass
         If xResizeFactor <> 1 OrElse yResizeFactor <> 1 Then
             For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
                 If illu.Value.PictureBoxType = B2SPictureBox.ePictureBoxType.StandardImage AndAlso
-                   Not illu.Value.NativeRotation AndAlso Not illu.Value.PreservePhysicsArtworkAspect Then
+                   Not illu.Value.NativeRotation AndAlso Not illu.Value.PreservePhysicsArtworkAspect AndAlso Not illu.Value.HasFullResolutionSnippet Then
                     If illu.Value.BackgroundImage IsNot Nothing Then
                         Dim newsize As SizeF = New SizeF(illu.Value.BackgroundImage.Size.Width / xResizeFactor, illu.Value.BackgroundImage.Size.Height / yResizeFactor)
                         'Dim image As Image = illu.Value.BackgroundImage.ResizedF(newsize, True)
@@ -4122,6 +4144,21 @@ Public Class formBackglass
             paths.Add(segments)
         Next
         Return paths
+    End Function
+
+    Private Shared Function ParsePhysicsObstacleBounces(ByVal value As String) As List(Of Single)
+        Dim result As New List(Of Single)()
+        If String.IsNullOrWhiteSpace(value) Then Return result
+        For Each encoded As String In value.Split(","c)
+            Dim parsed As Single
+            If Not Single.TryParse(encoded, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, parsed) OrElse
+                Single.IsNaN(parsed) OrElse Single.IsInfinity(parsed) OrElse parsed < 0.0F Then
+                result.Add(-1.0F)
+            Else
+                result.Add(Math.Min(3.0F, parsed))
+            End If
+        Next
+        Return result
     End Function
 
     Private Function ParsePhysicsObstacles(ByVal value As String) As List(Of RectangleF)

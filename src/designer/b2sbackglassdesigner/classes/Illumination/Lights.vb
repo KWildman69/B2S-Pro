@@ -251,10 +251,12 @@ Namespace Illumination
         ' never duplicates the full background, avoiding scaling seams.
         Public Shared Function CreateCanvasClippedSnippet(ByVal source As Image,
                                                           ByVal canvas As Image,
-                                                          ByVal absoluteRectangle As Rectangle) As Bitmap
+                                                          ByVal absoluteRectangle As Rectangle,
+                                                          Optional ByVal preserveSourceResolution As Boolean = False) As Bitmap
             If source Is Nothing OrElse canvas Is Nothing OrElse absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
 
-            Dim rendered As New Bitmap(absoluteRectangle.Width, absoluteRectangle.Height, PixelFormat.Format32bppArgb)
+            Dim renderedSize As Size = If(preserveSourceResolution, source.Size, absoluteRectangle.Size)
+            Dim rendered As New Bitmap(renderedSize.Width, renderedSize.Height, PixelFormat.Format32bppArgb)
             Dim canvasBitmap As Bitmap = TryCast(canvas, Bitmap)
             Dim convertedCanvas As Bitmap = Nothing
             Try
@@ -288,10 +290,10 @@ Namespace Illumination
                     Marshal.Copy(canvasData.Scan0, canvasRaw, 0, canvasRaw.Length)
                     For y As Integer = 0 To rendered.Height - 1
                         Dim renderedRow As Integer = If(renderedData.Stride >= 0, y, rendered.Height - 1 - y) * renderedStride
-                        Dim canvasY As Integer = absoluteRectangle.Y + y
+                        Dim canvasY As Integer = absoluteRectangle.Y + CInt(Math.Floor(CDbl(y) * absoluteRectangle.Height / rendered.Height))
                         For x As Integer = 0 To rendered.Width - 1
                             Dim renderedPixel As Integer = renderedRow + x * 4
-                            Dim canvasX As Integer = absoluteRectangle.X + x
+                            Dim canvasX As Integer = absoluteRectangle.X + CInt(Math.Floor(CDbl(x) * absoluteRectangle.Width / rendered.Width))
                             Dim transmission As Integer = 0
                             If canvasX >= 0 AndAlso canvasY >= 0 AndAlso canvasX < canvasBitmap.Width AndAlso canvasY < canvasBitmap.Height Then
                                 Dim canvasRow As Integer = If(canvasData.Stride >= 0, canvasY, canvasBitmap.Height - 1 - canvasY) * canvasStride
@@ -321,11 +323,13 @@ Namespace Illumination
         ' An empty mask stays on the original snippet path.
         Public Shared Function CreateSelectionMaskedSnippet(ByVal source As Image,
                                                              ByVal selectionMaskData As String,
-                                                             ByVal absoluteRectangle As Rectangle) As Bitmap
+                                                             ByVal absoluteRectangle As Rectangle,
+                                                             Optional ByVal preserveSourceResolution As Boolean = False) As Bitmap
             If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) OrElse
                absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
 
-            Dim rendered As New Bitmap(absoluteRectangle.Width, absoluteRectangle.Height, PixelFormat.Format32bppArgb)
+            Dim renderedSize As Size = If(preserveSourceResolution, source.Size, absoluteRectangle.Size)
+            Dim rendered As New Bitmap(renderedSize.Width, renderedSize.Height, PixelFormat.Format32bppArgb)
             Dim maskBitmap As Bitmap = Nothing
             Try
                 Using maskStream As New IO.MemoryStream(Convert.FromBase64String(selectionMaskData))
@@ -360,10 +364,10 @@ Namespace Illumination
                     Marshal.Copy(maskData.Scan0, maskRaw, 0, maskRaw.Length)
                     For y As Integer = 0 To rendered.Height - 1
                         Dim renderedRow As Integer = If(renderedData.Stride >= 0, y, rendered.Height - 1 - y) * renderedStride
-                        Dim maskY As Integer = absoluteRectangle.Y + y
+                        Dim maskY As Integer = absoluteRectangle.Y + CInt(Math.Floor(CDbl(y) * absoluteRectangle.Height / rendered.Height))
                         For x As Integer = 0 To rendered.Width - 1
                             Dim renderedPixel As Integer = renderedRow + x * 4
-                            Dim maskX As Integer = absoluteRectangle.X + x
+                            Dim maskX As Integer = absoluteRectangle.X + CInt(Math.Floor(CDbl(x) * absoluteRectangle.Width / rendered.Width))
                             Dim maskAlpha As Integer = 0
                             If maskX >= 0 AndAlso maskY >= 0 AndAlso maskX < maskBitmap.Width AndAlso maskY < maskBitmap.Height Then
                                 Dim maskRow As Integer = If(maskData.Stride >= 0, maskY, maskBitmap.Height - 1 - maskY) * maskStride

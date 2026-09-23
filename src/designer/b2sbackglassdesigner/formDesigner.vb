@@ -2484,9 +2484,28 @@ Public Class formDesigner
     Private Sub ReloadBackgroundImage_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiReloadBackglassImage.Click
         If Backglass.currentTabPage IsNot Nothing Then
             If IO.File.Exists(Backglass.currentData.ImageFileName) Then
-                Undo.AddEntry(New Undo.UndoEntry(Undo.Type.ImageReloaded, Backglass.currentData.Image))
                 Dim oldimagesize As Size = Backglass.currentTabPage.Image.Size
-                Dim image As Image = Bitmap.FromFile(Backglass.currentData.ImageFileName).Copy(True).Resized(Backglass.currentData.Image.Size)
+                Dim image As Image = Bitmap.FromFile(Backglass.currentData.ImageFileName).Copy(True)
+                If image.Size <> oldimagesize Then
+                    Dim choice As DialogResult = B2SMessageBox.Show(
+                        "The source image is " & image.Width & " × " & image.Height &
+                        " pixels. The current canvas is " & oldimagesize.Width & " × " & oldimagesize.Height & "." &
+                        Environment.NewLine & Environment.NewLine &
+                        "Keep the source image's original dimensions?" & Environment.NewLine &
+                        "Yes: use the original resolution. Existing object positions and physics boundaries stay unchanged." & Environment.NewLine &
+                        "No: resize the image to the current canvas; this can reduce detail." & Environment.NewLine &
+                        "Cancel: leave the current image unchanged.",
+                        AppTitle, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1)
+                    If choice = DialogResult.Cancel Then
+                        image.Dispose()
+                        Return
+                    ElseIf choice = DialogResult.No Then
+                        Dim resized As Image = image.Resized(oldimagesize)
+                        image.Dispose()
+                        image = resized
+                    End If
+                End If
+                Undo.AddEntry(New Undo.UndoEntry(Undo.Type.ImageReloaded, Backglass.currentData.Image))
                 'Backglass.currentBulbs.Resize(oldimagesize, image.Size)
                 'Backglass.currentScores.Resize(oldimagesize, image.Size)
                 Backglass.currentTabPage.Image() = image

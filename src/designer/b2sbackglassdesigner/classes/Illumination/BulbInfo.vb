@@ -203,6 +203,7 @@
         ' value means that segment inherits PhysicsBoundaryBounce.
         Public PhysicsBoundarySegmentBounces As New List(Of List(Of Single))()
         Public PhysicsObstacles As New List(Of RectangleF)()
+        Public PhysicsObstacleBounces As New List(Of Single)()
         Public PhysicsSwitchZones As New List(Of RectangleF)()
         Public PhysicsSwitchIDs As New List(Of Integer)()
         Public PhysicsSwitchAngles As New List(Of Single)()

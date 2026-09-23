@@ -126,6 +126,7 @@
     <Import Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Classes\PhysicsPreview.vb" />
     <Compile Include="Classes\Animations\AnimationHeader.vb" />
     <Compile Include="Classes\Animations\AnimationHeaderCollection.vb" />
     <Compile Include="Classes\Animations\AnimationStepCollection.vb" />
@@ -260,6 +261,7 @@
     <Compile Include="Forms\formPivotAnimation.vb">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Forms\formPhysicsEditor.Preview.vb" />
     <Compile Include="Forms\formPhysicsEditor.vb">
       <SubType>Form</SubType>
     </Compile>
@@ -818,6 +820,7 @@
       <Install>false</Install>
     </BootstrapperPackage>
   </ItemGroup>
+  <PropertyGroup><DefineConstants>$(DefineConstants),PHYSICS_PREVIEW=True</DefineConstants></PropertyGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
@@ -826,4 +829,8 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <ItemGroup>
+    <Compile Include="..\..\shared\PhysicsBallState.vb"><Link>Shared\PhysicsBallState.vb</Link></Compile>
+  </ItemGroup>
+
 </Project>

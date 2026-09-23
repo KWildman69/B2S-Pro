@@ -2,9 +2,9 @@
 
 The same tested installation engine produces two separate setup programs:
 
-- `B2SProSetup.exe` installs B2S Pro Backglass Designer 1.0.2 beside the
-  original Designer and installs or updates B2S Pro Server 3.0.1.
-- `B2SServerSetup.exe` installs or updates only B2S Pro Server 3.0.1 for VPX
+- `B2SProSetup.exe` installs B2S Pro Backglass Designer 1.0.3 beside the
+  original Designer and installs or updates B2S Pro Server 3.0.2.
+- `B2SServerSetup.exe` installs or updates only B2S Pro Server 3.0.2 for VPX
   players who do not need the Designer.
 
 ## Installation model
@@ -51,11 +51,11 @@ The same tested installation engine produces two separate setup programs:
 For private development or offline installation, keep the applicable verified
 files together in one folder:
 
-- Complete setup: `B2SProSetup.exe`, `B2S-Pro-Backglass-1.0.2.zip`,
-  `B2S-Pro-Backglass-1.0.2.zip.sha256`, `B2S-Pro-Server-3.0.1.zip`, and
-  `B2S-Pro-Server-3.0.1.zip.sha256`.
-- Server-only setup: `B2SServerSetup.exe`, `B2S-Pro-Server-3.0.1.zip`, and
-  `B2S-Pro-Server-3.0.1.zip.sha256`.
+- Complete setup: `B2SProSetup.exe`, `B2S-Pro-Backglass-1.0.3.zip`,
+  `B2S-Pro-Backglass-1.0.3.zip.sha256`, `B2S-Pro-Server-3.0.2.zip`, and
+  `B2S-Pro-Server-3.0.2.zip.sha256`.
+- Server-only setup: `B2SServerSetup.exe`, `B2S-Pro-Server-3.0.2.zip`, and
+  `B2S-Pro-Server-3.0.2.zip.sha256`.
 
 Each package's checksum sidecar is required. Setup verifies every required
 package before changing any installed files.

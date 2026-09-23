@@ -1237,6 +1237,8 @@ Public Class formToolLayers
             Next
             ball.SnippitInfo.PhysicsObstacles.Clear()
             ball.SnippitInfo.PhysicsObstacles.AddRange(editor.ResultObstacles)
+            ball.SnippitInfo.PhysicsObstacleBounces.Clear()
+            ball.SnippitInfo.PhysicsObstacleBounces.AddRange(editor.ResultObstacleBounces)
             ball.SnippitInfo.PhysicsSwitchZones.Clear()
             ball.SnippitInfo.PhysicsSwitchZones.AddRange(editor.ResultSwitchZones)
             ball.SnippitInfo.PhysicsSwitchIDs.Clear()

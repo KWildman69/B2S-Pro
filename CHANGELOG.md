@@ -2,6 +2,15 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## 1.0.3 / Server 3.0.2 — 2026-09-23
+
+- Preserve original snippet image resolution in the Designer and Server, with a compatible fallback for legacy backglasses.
+- Reload larger backglass images at their original resolution by default; resizing to the existing canvas is an explicit choice.
+- Add live ball testing in the physics boundary editor using the shared Server physics implementation, with firing, pause, reset, and live adjustments.
+- Improve physics preview rendering performance and keep ball rotation consistent with runtime rendering.
+- Add individual circular bumper bounce settings, saved with projects and exports and used by both the preview and Server.
+- Update Designer, Server, and setup release versions; About and Server version displays continue to derive their labels from release metadata.
+
 ## 1.0.2 / Server 3.0.1 — 2026-09-20
 
 - Added Help → Check for Updates for manual checks at any time, independent of the once-per-day automatic check.

@@ -6,8 +6,8 @@ B2S Pro is a modernized backglass designer and animation workspace for creating 
 
 ## Current release
 
-- B2S Pro Backglass Designer: **1.0.2**
-- B2S Pro Server: **3.0.1**
+- B2S Pro Backglass Designer: **1.0.3**
+- B2S Pro Server: **3.0.2**
 - Platform: Windows
 
 The tested Designer and Server runtime packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases/latest) page. GitHub provides the source code directly, and compiled release files are not stored in the source tree.
@@ -46,8 +46,8 @@ The original Backglass Designer help remains intact alongside the new B2S Pro fe
 
 ## Source layout
 
-- `src/designer` — B2S Pro Backglass Designer 1.0.2 source
-- `src/server` — B2S Pro Server 3.0.1 source
+- `src/designer` — B2S Pro Backglass Designer 1.0.3 source
+- `src/server` — B2S Pro Server 3.0.2 source
 - `docs/help-source` — complete help project and illustrated documentation
 - `CHANGELOG.md` — B2S Pro release history
 - `CREDITS.md` — acknowledgements and project lineage
