@@ -108,6 +108,7 @@ Public Class B2SPictureBox
     Public Property PivotDownAngle() As Single = 0.0F
     Public Property PivotUpAngle() As Single = -30.0F
     Public Property PivotMoveDuration() As Integer = 80
+    Public Property PivotRandomStrength As Single = 0.0F
     Public Property PivotAutomaticOscillation() As Boolean = False
     Private pivotAutomaticActive As Boolean = False
 

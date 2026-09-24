@@ -240,10 +240,19 @@ Public Partial Class formPhysicsEditor
         ' Paint them back first so foreground artwork stays visible here too.
         For Each snippet As Illumination.BulbInfo In snippets.Reverse().OrderBy(Function(item) item.ZOrder)
             If snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing Then
-                canvas.Scene.Add(New SceneItem(snippet.Name, snippet.Image,
+                ' Use the same selection alpha as export, retaining source resolution.
+                ' Build it once so masking does not slow the live physics loop.
+                Dim previewImage As Image = snippet.Image
+                If Not Object.ReferenceEquals(snippet, ball) AndAlso Not String.IsNullOrEmpty(snippet.SelectionMaskData) Then
+                    Dim masked As Bitmap = Illumination.Lights.CreateSelectionMaskedSnippet(
+                        snippet.Image, snippet.SelectionMaskData, New Rectangle(snippet.Location, snippet.Size), True)
+                    If masked IsNot Nothing Then previewImage = masked
+                End If
+                canvas.Scene.Add(New SceneItem(snippet.Name, previewImage,
                                                New RectangleF(snippet.Location.X, snippet.Location.Y,
                                                               Math.Max(1, snippet.Size.Width), Math.Max(1, snippet.Size.Height)),
-                                               Object.ReferenceEquals(snippet, ball)))
+                                               Object.ReferenceEquals(snippet, ball), Not Object.ReferenceEquals(previewImage, snippet.Image),
+                                               If(Object.ReferenceEquals(snippet, ball), snippet.SelectionMaskData, Nothing)))
             End If
         Next
         If ball.SnippitInfo.PhysicsBoundaryPaths.Count > 0 Then
@@ -748,13 +757,43 @@ Public Partial Class formPhysicsEditor
         Public Bounds As RectangleF
         Public ReadOnly InitialBounds As RectangleF
         Public ReadOnly IsBall As Boolean
+        Public ReadOnly OwnsImage As Boolean
+        Public ReadOnly MaskAlpha As Byte()
+        Public ReadOnly MaskSize As Size
 
-        Public Sub New(ByVal name As String, ByVal image As Image, ByVal bounds As RectangleF, ByVal isBall As Boolean)
+        Public Sub New(ByVal name As String, ByVal image As Image, ByVal bounds As RectangleF, ByVal isBall As Boolean, Optional ByVal ownsImage As Boolean = False, Optional ByVal selectionMask As String = Nothing)
             Me.Name = name
             Me.Image = image
             Me.Bounds = bounds
             Me.InitialBounds = bounds
             Me.IsBall = isBall
+            Me.OwnsImage = ownsImage
+            If Not String.IsNullOrEmpty(selectionMask) Then
+                Using stream As New IO.MemoryStream(Convert.FromBase64String(selectionMask))
+                    Using decoded As New Bitmap(stream)
+                        MaskSize = decoded.Size
+                        MaskAlpha = New Byte(MaskSize.Width * MaskSize.Height - 1) {}
+                        Using bitmap As New Bitmap(MaskSize.Width, MaskSize.Height, Imaging.PixelFormat.Format32bppArgb)
+                            Using graphics As Graphics = Graphics.FromImage(bitmap)
+                                graphics.CompositingMode = CompositingMode.SourceCopy
+                                graphics.DrawImageUnscaled(decoded, 0, 0)
+                            End Using
+                            Dim data As Imaging.BitmapData = bitmap.LockBits(New Rectangle(Point.Empty, MaskSize), Imaging.ImageLockMode.ReadOnly, Imaging.PixelFormat.Format32bppArgb)
+                            Try
+                                Dim row(MaskSize.Width * 4 - 1) As Byte
+                                For y As Integer = 0 To MaskSize.Height - 1
+                                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                                    For x As Integer = 0 To MaskSize.Width - 1
+                                        MaskAlpha(y * MaskSize.Width + x) = row(x * 4 + 3)
+                                    Next
+                                Next
+                            Finally
+                                bitmap.UnlockBits(data)
+                            End Try
+                        End Using
+                    End Using
+                End Using
+            End If
         End Sub
     End Class
 
@@ -843,6 +882,54 @@ Public Partial Class formPhysicsEditor
             Return points
         End Function
 
+        Private Shared Function CreateMaskedBallFrame(ByVal item As SceneItem, ByVal bounds As RectangleF,
+                                                       ByVal angle As Single, ByVal scale As Single,
+                                                       ByRef frameBounds As RectangleF) As Bitmap
+            ' The mask is in backglass coordinates: rotate/move the ball first,
+            ' then sample the stationary alpha at its current position.
+            Dim points As PointF() = BallRollDestinationPoints(bounds, angle)
+            Dim fourth As New PointF(points(1).X + points(2).X - points(0).X, points(1).Y + points(2).Y - points(0).Y)
+            Dim corners As PointF() = {points(0), points(1), points(2), fourth}
+            Dim left As Single = corners.Min(Function(p) p.X), top As Single = corners.Min(Function(p) p.Y)
+            Dim width As Integer = Math.Max(1, CInt(Math.Ceiling((corners.Max(Function(p) p.X) - left) * scale)))
+            Dim height As Integer = Math.Max(1, CInt(Math.Ceiling((corners.Max(Function(p) p.Y) - top) * scale)))
+            frameBounds = New RectangleF(left, top, width / scale, height / scale)
+            Dim frame As New Bitmap(width, height, Imaging.PixelFormat.Format32bppArgb)
+            Try
+                For i As Integer = 0 To points.Length - 1
+                    points(i) = New PointF((points(i).X - left) * scale, (points(i).Y - top) * scale)
+                Next
+                Using graphics As Graphics = Graphics.FromImage(frame)
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+                    graphics.DrawImage(item.Image, points, New RectangleF(0, 0, item.Image.Width, item.Image.Height), GraphicsUnit.Pixel)
+                End Using
+                Dim data As Imaging.BitmapData = frame.LockBits(New Rectangle(0, 0, width, height), Imaging.ImageLockMode.ReadWrite, Imaging.PixelFormat.Format32bppArgb)
+                Try
+                    Dim row(width * 4 - 1) As Byte
+                    For y As Integer = 0 To height - 1
+                        Dim rowPointer As IntPtr = IntPtr.Add(data.Scan0, y * data.Stride)
+                        Runtime.InteropServices.Marshal.Copy(rowPointer, row, 0, row.Length)
+                        Dim maskY As Integer = CInt(Math.Floor(top + (y + 0.5F) / scale))
+                        For x As Integer = 0 To width - 1
+                            Dim maskX As Integer = CInt(Math.Floor(left + (x + 0.5F) / scale))
+                            Dim alpha As Integer = 0
+                            If maskX >= 0 AndAlso maskY >= 0 AndAlso maskX < item.MaskSize.Width AndAlso maskY < item.MaskSize.Height Then
+                                alpha = item.MaskAlpha(maskY * item.MaskSize.Width + maskX)
+                            End If
+                            row(x * 4 + 3) = CByte((CInt(row(x * 4 + 3)) * alpha + 127) \ 255)
+                        Next
+                        Runtime.InteropServices.Marshal.Copy(row, 0, rowPointer, row.Length)
+                    Next
+                Finally
+                    frame.UnlockBits(data)
+                End Try
+                Return frame
+            Catch
+                frame.Dispose()
+                Throw
+            End Try
+        End Function
+
         Private Sub ClearSceneCache()
             For Each layer As Bitmap In staticSceneLayers.Values
                 layer.Dispose()
@@ -886,7 +973,13 @@ Public Partial Class formPhysicsEditor
         End Sub
 
         Protected Overrides Sub Dispose(ByVal disposing As Boolean)
-            If disposing Then ClearSceneCache()
+            If disposing Then
+                ClearSceneCache()
+                For Each item As SceneItem In Scene
+                    If item.OwnsImage Then item.Image.Dispose()
+                Next
+                Scene.Clear()
+            End If
             MyBase.Dispose(disposing)
         End Sub
 
@@ -1118,7 +1211,12 @@ Public Partial Class formPhysicsEditor
                 If Not IsMovingArtwork(item) Then Continue For
                 Dim drawBounds As RectangleF = If(item.IsBall AndAlso PreviewBallBounds.HasValue, PreviewBallBounds.GetValueOrDefault(), item.Bounds)
                 Dim drawState As GraphicsState = e.Graphics.Save()
-                If item.IsBall AndAlso PreviewBallBounds.HasValue Then
+                If item.IsBall AndAlso item.MaskAlpha IsNot Nothing Then
+                    Dim frameBounds As RectangleF
+                    Using frame As Bitmap = CreateMaskedBallFrame(item, drawBounds, If(PreviewBallBounds.HasValue, PreviewBallAngle, 0.0F), scale, frameBounds)
+                        e.Graphics.DrawImage(frame, frameBounds)
+                    End Using
+                ElseIf item.IsBall AndAlso PreviewBallBounds.HasValue Then
                     e.Graphics.DrawImage(item.Image, BallRollDestinationPoints(drawBounds, PreviewBallAngle),
                                          New RectangleF(0, 0, item.Image.Width, item.Image.Height), GraphicsUnit.Pixel)
                 ElseIf PreviewPivot IsNot Nothing AndAlso item.Name = PreviewPivotName Then

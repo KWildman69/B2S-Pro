@@ -15,6 +15,7 @@ Namespace PhysicsPreview
         Public RotationPivotY As Single
         Public RotationTipX As Single
         Public RotationTipY As Single
+        Public PivotRandomStrength As Single
         Public PivotDownAngle As Single
         Public PivotAutomaticOscillation As Boolean
         Public PreservePhysicsArtworkAspect As Boolean

@@ -47,6 +47,7 @@ Public Partial Class B2SData
         Private ReadOnly launcher As PhysicsLauncher
         Private Shared ReadOnly launcherRandom As New Random()
         Private Shared boundaryScatterRandom As New Random()
+        Private Shared ReadOnly flipperStrengthRandom As New Random()
         Private launcherArmed As Boolean = True
         Private launcherHolding As Boolean
         Private launcherExitedCapture As Boolean
@@ -721,8 +722,16 @@ Public Partial Class B2SData
             End If
             Dim armX As Single = contact.X - hinge.X
             Dim armY As Single = contact.Y - hinge.Y
-            Dim surfaceX As Single = -angularVelocity * armY * flipperStrength
-            Dim surfaceY As Single = angularVelocity * armX * flipperStrength
+            Dim impactStrength As Single = flipperStrength
+            Dim variation As Single = flipper.PivotRandomStrength
+            If angularVelocity <> 0.0F AndAlso variation > 0.0F AndAlso Not Single.IsInfinity(variation) Then
+                variation = Math.Min(100.0F, variation)
+                SyncLock flipperStrengthRandom
+                    impactStrength *= 1.0F + CSng((flipperStrengthRandom.NextDouble() * 2.0R - 1.0R) * variation / 100.0R)
+                End SyncLock
+            End If
+            Dim surfaceX As Single = -angularVelocity * armY * impactStrength
+            Dim surfaceY As Single = angularVelocity * armX * impactStrength
             Dim relativeX As Single = ballVelocity.X - surfaceX
             Dim relativeY As Single = ballVelocity.Y - surfaceY
             Dim towardSurface As Single = relativeX * normalX + relativeY * normalY

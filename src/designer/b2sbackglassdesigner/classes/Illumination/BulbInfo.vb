@@ -180,6 +180,7 @@
         Public PivotDownAngle As Single = 0.0F
         Public PivotUpAngle As Single = -30.0F
         Public PivotDuration As Integer = 80
+        Public PivotRandomStrength As Single = 0.0F
         Public PivotAutomaticOscillation As Boolean = False
         ' 0=named commands, 1=solenoid, 2=lamp, 3=B2S ID.
         Public PivotTriggerType As Integer = 1

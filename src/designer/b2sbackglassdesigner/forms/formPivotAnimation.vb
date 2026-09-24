@@ -12,6 +12,7 @@ Public Class formPivotAnimation
     Private ReadOnly downAngle As New NumericUpDown()
     Private ReadOnly upAngle As New NumericUpDown()
     Private ReadOnly duration As New NumericUpDown()
+    Private ReadOnly randomStrength As New NumericUpDown()
     Private ReadOnly triggerType As New ComboBox()
     Private ReadOnly triggerID As New NumericUpDown()
     Private ReadOnly downTrigger As New TextBox()
@@ -32,6 +33,7 @@ Public Class formPivotAnimation
         SetupNumber(downAngle, -360D, 360D, source.SnippitInfo.PivotDownAngle, 1)
         SetupNumber(upAngle, -360D, 360D, source.SnippitInfo.PivotUpAngle, 1)
         SetupNumber(duration, 10D, 5000D, source.SnippitInfo.PivotDuration, 0)
+        SetupNumber(randomStrength, 0D, 100D, source.SnippitInfo.PivotRandomStrength, 1)
         triggerType.DropDownStyle = ComboBoxStyle.DropDownList : triggerType.Dock = DockStyle.Fill
         triggerType.Items.AddRange(New Object() {"Named commands (advanced)", "ROM solenoid", "ROM lamp", "B2S ID", "Automatic when backglass starts"})
         Dim detectedNamedPair As Boolean = (Not source.SnippitInfo.PivotAnimationEnabled AndAlso source.Name.EndsWith("_down", StringComparison.OrdinalIgnoreCase))
@@ -60,6 +62,9 @@ Public Class formPivotAnimation
         fields.Controls.Add(FieldRow("Rest/down angle", downAngle))
         fields.Controls.Add(FieldRow("Other/up limit", upAngle))
         fields.Controls.Add(FieldRow("Swing time (ms)", duration))
+        fields.Controls.Add(FieldRow("Random strength (%)", randomStrength))
+        fields.Controls.Add(New Label With {.Text = "Ball impact variation: 0% = fixed; 20% = 80–120% of normal strength.",
+                                             .ForeColor = Color.White, .Width = 310, .Height = 36})
         fields.Controls.Add(SectionHeader("PIVOT POINTS AND PREVIEW"))
         Dim zoomIn As New Button With {.Text = "Zoom In (+)", .Width = 310, .Height = 31}
         Dim zoomOut As New Button With {.Text = "Zoom Out (-)", .Width = 310, .Height = 31}
@@ -216,6 +221,7 @@ Public Class formPivotAnimation
             .PivotTipX = canvas.Tip.X : .PivotTipY = canvas.Tip.Y
             .PivotDownAngle = CSng(downAngle.Value) : .PivotUpAngle = CSng(upAngle.Value) : .PivotDuration = CInt(duration.Value)
             .PivotAutomaticOscillation = automaticBox.Checked
+            .PivotRandomStrength = CSng(randomStrength.Value)
             .PivotTriggerType = triggerType.SelectedIndex : .PivotTriggerID = CInt(triggerID.Value)
             .PivotDownTrigger = downTrigger.Text.Trim() : .PivotUpTrigger = upTrigger.Text.Trim()
         End With

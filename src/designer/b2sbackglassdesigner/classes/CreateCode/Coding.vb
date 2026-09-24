@@ -702,6 +702,7 @@ Public Class Coding
                                     nodeBulb.SetAttribute("PivotDownAngle", .SnippitInfo.PivotDownAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                     nodeBulb.SetAttribute("PivotUpAngle", .SnippitInfo.PivotUpAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                     nodeBulb.SetAttribute("PivotDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotDuration)).ToString())
+                                    nodeBulb.SetAttribute("PivotRandomStrength", Math.Max(0.0F, Math.Min(100.0F, .SnippitInfo.PivotRandomStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
                                     If .SnippitInfo.PivotAutomaticOscillation Then nodeBulb.SetAttribute("PivotAutomaticOscillation", "1")
                                     nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(4, .SnippitInfo.PivotTriggerType)).ToString())
                                     nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())
@@ -1388,6 +1389,7 @@ Public Class Coding
                             bulb.SnippitInfo.PivotDownAngle = ReadPivotSingle(innerNode, "PivotDownAngle", 0.0F, -360.0F, 360.0F)
                             bulb.SnippitInfo.PivotUpAngle = ReadPivotSingle(innerNode, "PivotUpAngle", -30.0F, -360.0F, 360.0F)
                             If innerNode.Attributes("PivotDuration") IsNot Nothing Then bulb.SnippitInfo.PivotDuration = Math.Max(10, Math.Min(5000, CInt(innerNode.Attributes("PivotDuration").InnerText)))
+                            bulb.SnippitInfo.PivotRandomStrength = ReadPivotSingle(innerNode, "PivotRandomStrength", 0.0F, 0.0F, 100.0F)
                             bulb.SnippitInfo.PivotAutomaticOscillation = ReadPivotInteger(innerNode, "PivotAutomaticOscillation", 0, 0, 1) = 1
                             If innerNode.Attributes("PivotTriggerType") IsNot Nothing Then bulb.SnippitInfo.PivotTriggerType = Math.Max(0, Math.Min(4, CInt(innerNode.Attributes("PivotTriggerType").InnerText)))
                             If innerNode.Attributes("PivotTriggerID") IsNot Nothing Then bulb.SnippitInfo.PivotTriggerID = Math.Max(0, Math.Min(255, CInt(innerNode.Attributes("PivotTriggerID").InnerText)))

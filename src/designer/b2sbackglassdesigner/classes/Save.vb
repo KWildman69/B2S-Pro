@@ -427,6 +427,7 @@ Public Class Save
                         bulb.SnippitInfo.PivotDownAngle = ReadSingleAttribute(innerNode, "PivotDownAngle", 0.0F, -360.0F, 360.0F)
                         bulb.SnippitInfo.PivotUpAngle = ReadSingleAttribute(innerNode, "PivotUpAngle", -30.0F, -360.0F, 360.0F)
                         bulb.SnippitInfo.PivotDuration = ReadIntAttribute(innerNode, "PivotDuration", 80, 10, 5000)
+                        bulb.SnippitInfo.PivotRandomStrength = ReadSingleAttribute(innerNode, "PivotRandomStrength", 0.0F, 0.0F, 100.0F)
                         bulb.SnippitInfo.PivotAutomaticOscillation = ReadIntAttribute(innerNode, "PivotAutomaticOscillation", 0, 0, 1) = 1
                         bulb.SnippitInfo.PivotTriggerType = ReadIntAttribute(innerNode, "PivotTriggerType", 1, 0, 4)
                         bulb.SnippitInfo.PivotTriggerID = ReadIntAttribute(innerNode, "PivotTriggerID", 0, 0, 255)
@@ -864,6 +865,7 @@ Public Class Save
                                 nodeBulb.SetAttribute("PivotDownAngle", .SnippitInfo.PivotDownAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("PivotUpAngle", .SnippitInfo.PivotUpAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("PivotDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotDuration)).ToString())
+                                nodeBulb.SetAttribute("PivotRandomStrength", Math.Max(0.0F, Math.Min(100.0F, .SnippitInfo.PivotRandomStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
                                 If .SnippitInfo.PivotAutomaticOscillation Then nodeBulb.SetAttribute("PivotAutomaticOscillation", "1")
                                 nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(4, .SnippitInfo.PivotTriggerType)).ToString())
                                 nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())

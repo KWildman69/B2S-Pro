@@ -2909,6 +2909,12 @@ Public Class formBackglass
                         Dim picbox As B2SPictureBox = New B2SPictureBox()
                         Dim IsOnBackglass As Boolean = (parent = "Backglass")
                         picbox.Name = "PictureBox" & id.ToString()
+                        Dim pivotRandomStrength As Single = 0.0F
+                        If innerNode.Attributes("PivotRandomStrength") IsNot Nothing Then
+                            Single.TryParse(innerNode.Attributes("PivotRandomStrength").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotRandomStrength)
+                        End If
+                        If Single.IsNaN(pivotRandomStrength) OrElse Single.IsInfinity(pivotRandomStrength) Then pivotRandomStrength = 0.0F
+                        picbox.PivotRandomStrength = Math.Max(0.0F, Math.Min(100.0F, pivotRandomStrength))
                         picbox.GroupName = name
                         picbox.Location = loc
                         picbox.Size = size

@@ -4,6 +4,12 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
+### September 24 update — versions unchanged
+
+- Physics preview keeps the ball selection mask fixed in backglass coordinates while the ball moves and rotates, including feathered edges.
+- Pivot Animation adds Random strength (%) for flipper impacts, saved in projects and exports and applied by the shared preview/Server physics implementation. Zero preserves fixed strength.
+- Existing 1.0.3 / 3.0.2 installations need to rerun setup manually to receive this same-version update.
+
 - Preserve original snippet image resolution in the Designer and Server, with a compatible fallback for legacy backglasses.
 - Reload larger backglass images at their original resolution by default; resizing to the existing canvas is an explicit choice.
 - Add live ball testing in the physics boundary editor using the shared Server physics implementation, with firing, pause, reset, and live adjustments.

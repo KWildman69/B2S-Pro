@@ -95,6 +95,7 @@ Public Partial Class formPhysicsEditor
                     .RectangleF = New RectangleF(pivot.Location, pivot.Size), .RotationPivotX = pivot.SnippitInfo.PivotX,
                     .RotationPivotY = pivot.SnippitInfo.PivotY, .RotationTipX = pivot.SnippitInfo.PivotTipX,
                     .RotationTipY = pivot.SnippitInfo.PivotTipY, .PivotDownAngle = pivot.SnippitInfo.PivotDownAngle,
+                    .PivotRandomStrength = pivot.SnippitInfo.PivotRandomStrength,
                     .PivotAutomaticOscillation = pivot.SnippitInfo.PivotAutomaticOscillation,
                     .RotationAngle = If(pivot.SnippitInfo.PivotAutomaticOscillation, 0.0F, pivot.SnippitInfo.PivotDownAngle)}
                 pivotStartAngle = testSession.Pivot.RotationAngle
