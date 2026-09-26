@@ -1,4 +1,4 @@
-﻿#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
+#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
 Imports System
 Imports System.Collections.Generic
 Imports System.Drawing
@@ -372,6 +372,12 @@ Public Partial Class B2SData
             physicsAdvancing = False
         End Try
     End Sub
+
+    Friend Shared ReadOnly Property HasPhysicsBalls As Boolean
+        Get
+            Return PhysicsBalls.Count > 0
+        End Get
+    End Property
 
     Friend Shared Function IsPhysicsPivot(ByVal pivot As B2SPictureBox) As Boolean
         Return PhysicsBalls.Any(Function(state) state.PhysicsPivot Is pivot)

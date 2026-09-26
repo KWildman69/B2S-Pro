@@ -1,4 +1,4 @@
-﻿#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
+#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
 Imports System.Drawing
 Imports System.Drawing.Imaging
 Imports System.IO
@@ -89,6 +89,7 @@ Public Class formBackglass
     End Class
     Private sparseImageTiles As New Generic.Dictionary(Of Image, Generic.List(Of SparseImageTile))()
     Private denseImages As New Generic.HashSet(Of Image)()
+    Private ReadOnly staticPhysicsImages As New StaticPhysicsImageCache()
     Private behindCanvasCacheImage As Bitmap = Nothing
     Private behindCanvasCachePictureBox As B2SPictureBox = Nothing
     Private behindCanvasCacheBackground As Image = Nothing
@@ -433,6 +434,7 @@ Public Class formBackglass
                 tile.Image.Dispose()
             Next
         Next
+        staticPhysicsImages.Dispose()
         sparseImageTiles.Clear()
         denseImages.Clear()
         If behindCanvasCacheImage IsNot Nothing Then
@@ -713,6 +715,7 @@ Public Class formBackglass
                 ElseIf drawImage IsNot Nothing AndAlso picbox.PreservePhysicsArtworkAspect Then
                     e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
                 ElseIf drawImage IsNot Nothing Then
+                    If B2SData.HasPhysicsBalls AndAlso staticPhysicsImages.Draw(e.Graphics, drawImage, picbox.RectangleF.Location) Then Return
                     Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(drawImage)
                     If tiles Is Nothing Then
                         e.Graphics.DrawImage(drawImage, picbox.RectangleF.Location)
@@ -4789,4 +4792,77 @@ Public Class formBackglass
 #End Region
 
 
+End Class
+
+' Cache the existing fractional-position/DPI rasterization of stationary images.
+' Physics and native rotation retain their original rendering paths.
+Friend Class StaticPhysicsImageCache
+    Implements IDisposable
+    Private Class Entry
+        Public Raster As Bitmap
+        Public Signature As String
+    End Class
+    Private ReadOnly entries As New Generic.Dictionary(Of Image, Entry)()
+    Private bytes As Long
+    Private Const MaximumBytes As Long = 67108864
+
+    Public Function Draw(ByVal graphics As Graphics, ByVal source As Image, ByVal location As PointF) As Boolean
+        If source Is Nothing OrElse source.Width * CLng(source.Height) >= 1000000 OrElse
+           graphics.PageUnit <> GraphicsUnit.Pixel OrElse graphics.PageScale <> 1.0F Then Return False
+        Using transform As Drawing2D.Matrix = graphics.Transform
+            Dim matrix As Single() = transform.Elements
+            If matrix(0) <> 1.0F OrElse matrix(1) <> 0.0F OrElse matrix(2) <> 0.0F OrElse
+               matrix(3) <> 1.0F OrElse matrix(4) <> 0.0F OrElse matrix(5) <> 0.0F Then Return False
+        End Using
+        Dim origin As New Point(CInt(Math.Floor(location.X)) - 1, CInt(Math.Floor(location.Y)) - 1)
+        Dim offset As New PointF(location.X - origin.X, location.Y - origin.Y)
+        Dim signature As String = String.Join("|", New String() {
+            graphics.DpiX.ToString("R"), graphics.DpiY.ToString("R"), offset.X.ToString("R"), offset.Y.ToString("R"),
+            source.HorizontalResolution.ToString("R"), source.VerticalResolution.ToString("R"), source.Size.ToString(),
+            CInt(graphics.InterpolationMode).ToString(), CInt(graphics.SmoothingMode).ToString(),
+            CInt(graphics.PixelOffsetMode).ToString(), CInt(graphics.CompositingQuality).ToString()})
+        Dim cached As Entry = Nothing
+        If entries.TryGetValue(source, cached) AndAlso cached.Signature <> signature Then
+            bytes -= CLng(cached.Raster.Width) * cached.Raster.Height * 4
+            cached.Raster.Dispose()
+            entries.Remove(source)
+            cached = Nothing
+        End If
+        If cached Is Nothing Then
+            Dim width As Integer = CInt(Math.Ceiling(source.Width * CDbl(graphics.DpiX) / source.HorizontalResolution + offset.X)) + 1
+            Dim height As Integer = CInt(Math.Ceiling(source.Height * CDbl(graphics.DpiY) / source.VerticalResolution + offset.Y)) + 1
+            Dim required As Long = CLng(width) * height * 4
+            If width <= 0 OrElse height <= 0 OrElse required > MaximumBytes Then Return False
+            If bytes + required > MaximumBytes Then Return False
+            Dim raster As New Bitmap(width, height, PixelFormat.Format32bppPArgb)
+            Try
+                raster.SetResolution(graphics.DpiX, graphics.DpiY)
+                Using target As Graphics = Graphics.FromImage(raster)
+                    target.PageUnit = GraphicsUnit.Pixel
+                    target.InterpolationMode = graphics.InterpolationMode
+                    target.SmoothingMode = graphics.SmoothingMode
+                    target.PixelOffsetMode = graphics.PixelOffsetMode
+                    target.CompositingQuality = graphics.CompositingQuality
+                    target.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+                    target.DrawImage(source, offset)
+                End Using
+                cached = New Entry With {.Raster = raster, .Signature = signature}
+                entries.Add(source, cached)
+                bytes += required
+            Catch
+                raster.Dispose()
+                Throw
+            End Try
+        End If
+        graphics.DrawImageUnscaled(cached.Raster, origin)
+        Return True
+    End Function
+
+    Public Sub Dispose() Implements IDisposable.Dispose
+        For Each cached As Entry In entries.Values
+            cached.Raster.Dispose()
+        Next
+        entries.Clear()
+        bytes = 0
+    End Sub
 End Class
