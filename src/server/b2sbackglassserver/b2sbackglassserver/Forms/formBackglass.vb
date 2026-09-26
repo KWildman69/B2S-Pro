@@ -666,7 +666,12 @@ Public Class formBackglass
                         drawImage = picbox.OffImage
                     End If
                 End If
-                If drawImage IsNot Nothing AndAlso (picbox.NativeRotation OrElse picbox.MotionPathRollEnabled) Then
+                If drawImage IsNot Nothing AndAlso picbox.PhysicsSelectionMaskAlpha IsNot Nothing Then
+                    Dim frameBounds As Rectangle
+                    Using frame As Bitmap = CreatePhysicsMaskedFrame(picbox, drawImage, frameBounds)
+                        e.Graphics.DrawImageUnscaled(frame, frameBounds.Location)
+                    End Using
+                ElseIf drawImage IsNot Nothing AndAlso (picbox.NativeRotation OrElse picbox.MotionPathRollEnabled) Then
                     Dim directFrameDraw As Boolean = (picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled AndAlso picbox.NativeRotationFramePlayback AndAlso
                         drawImage.Width = CInt(picbox.RectangleF.Width) AndAlso
                         drawImage.Height = CInt(picbox.RectangleF.Height))
@@ -724,6 +729,60 @@ Public Class formBackglass
         End If
 
     End Sub
+
+    Private Function CreatePhysicsMaskedFrame(ByVal picbox As B2SPictureBox, ByVal source As Image,
+                                               ByRef frameBounds As Rectangle) As Bitmap
+        Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
+        Dim points As PointF() = BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle)
+        Dim fourth As New PointF(points(1).X + points(2).X - points(0).X, points(1).Y + points(2).Y - points(0).Y)
+        Dim left As Single = Math.Min(Math.Min(points(0).X, points(1).X), Math.Min(points(2).X, fourth.X))
+        Dim top As Single = Math.Min(Math.Min(points(0).Y, points(1).Y), Math.Min(points(2).Y, fourth.Y))
+        Dim right As Single = Math.Max(Math.Max(points(0).X, points(1).X), Math.Max(points(2).X, fourth.X))
+        Dim bottom As Single = Math.Max(Math.Max(points(0).Y, points(1).Y), Math.Max(points(2).Y, fourth.Y))
+        frameBounds = Rectangle.FromLTRB(CInt(Math.Floor(left)), CInt(Math.Floor(top)),
+                                         CInt(Math.Ceiling(right)), CInt(Math.Ceiling(bottom)))
+        frameBounds.Width = Math.Max(1, frameBounds.Width)
+        frameBounds.Height = Math.Max(1, frameBounds.Height)
+        Dim frame As New Bitmap(frameBounds.Width, frameBounds.Height, PixelFormat.Format32bppArgb)
+        Try
+            Dim localPoints(points.Length - 1) As PointF
+            For index As Integer = 0 To points.Length - 1
+                localPoints(index) = New PointF(points(index).X - frameBounds.Left, points(index).Y - frameBounds.Top)
+            Next
+            Using graphics As Graphics = Graphics.FromImage(frame)
+                graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                graphics.DrawImage(source, localPoints, New RectangleF(0, 0, source.Width, source.Height), GraphicsUnit.Pixel)
+            End Using
+            Dim maskSize As Size = picbox.PhysicsSelectionMaskSize
+            Dim maskAlpha As Byte() = picbox.PhysicsSelectionMaskAlpha
+            Dim canvasWidth As Integer = Math.Max(1, Me.ClientSize.Width)
+            Dim canvasHeight As Integer = Math.Max(1, Me.ClientSize.Height)
+            Dim data As BitmapData = frame.LockBits(New Rectangle(Point.Empty, frame.Size), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
+            Try
+                Dim row(frame.Width * 4 - 1) As Byte
+                For y As Integer = 0 To frame.Height - 1
+                    Dim rowPointer As IntPtr = IntPtr.Add(data.Scan0, y * data.Stride)
+                    Runtime.InteropServices.Marshal.Copy(rowPointer, row, 0, row.Length)
+                    Dim maskY As Integer = CInt(Math.Floor((frameBounds.Top + y + 0.5F) * maskSize.Height / canvasHeight))
+                    For x As Integer = 0 To frame.Width - 1
+                        Dim maskX As Integer = CInt(Math.Floor((frameBounds.Left + x + 0.5F) * maskSize.Width / canvasWidth))
+                        Dim alpha As Integer = 0
+                        If maskX >= 0 AndAlso maskY >= 0 AndAlso maskX < maskSize.Width AndAlso maskY < maskSize.Height Then
+                            alpha = maskAlpha(maskY * maskSize.Width + maskX)
+                        End If
+                        row(x * 4 + 3) = CByte((CInt(row(x * 4 + 3)) * alpha + 127) \ 255)
+                    Next
+                    Runtime.InteropServices.Marshal.Copy(row, 0, rowPointer, row.Length)
+                Next
+            Finally
+                frame.UnlockBits(data)
+            End Try
+            Return frame
+        Catch
+            frame.Dispose()
+            Throw
+        End Try
+    End Function
 
     Private Sub DrawPersistentMotionPathSource(e As PaintEventArgs, picbox As B2SPictureBox, drawingBehindCanvas As Boolean)
         If picbox Is Nothing OrElse Not picbox.IsMotionPathSourceSeparate OrElse
@@ -2937,6 +2996,12 @@ Public Class formBackglass
                         ' editor placement stays exact. A ball keeps a round visual while
                         ' its center follows those same scaled coordinates.
                         picbox.PreservePhysicsArtworkAspect = physicsBall
+                        If physicsBall AndAlso innerNode.Attributes("PhysicsSelectionMaskData") IsNot Nothing Then
+                            Dim physicsMaskSize As Size = Size.Empty
+                            picbox.PhysicsSelectionMaskAlpha = DecodePhysicsSelectionMask(innerNode.Attributes("PhysicsSelectionMaskData").InnerText,
+                                                                                          physicsMaskSize)
+                            picbox.PhysicsSelectionMaskSize = physicsMaskSize
+                        End If
                         picbox.SnippitRotationStopBehaviour = picboxrotationstopbehaviour
                         picbox.RotationDirection = picboxrotationdirection
                         picbox.AutoStartRotation = automaticrotationcontinuous
@@ -4225,6 +4290,35 @@ Public Class formBackglass
            Not Single.TryParse(parts(3), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, bottom) OrElse
            right <= left OrElse bottom <= top Then Return RectangleF.Empty
         Return RectangleF.FromLTRB(left, top, right, bottom)
+    End Function
+
+    Private Shared Function DecodePhysicsSelectionMask(ByVal value As String, ByRef maskSize As Size) As Byte()
+        If String.IsNullOrEmpty(value) Then Return Nothing
+        Using stream As New MemoryStream(Convert.FromBase64String(value))
+            Using decoded As New Bitmap(stream)
+                maskSize = decoded.Size
+                Dim alpha(maskSize.Width * maskSize.Height - 1) As Byte
+                Using bitmap As New Bitmap(maskSize.Width, maskSize.Height, PixelFormat.Format32bppArgb)
+                    Using graphics As Graphics = Graphics.FromImage(bitmap)
+                        graphics.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+                        graphics.DrawImageUnscaled(decoded, 0, 0)
+                    End Using
+                    Dim data As BitmapData = bitmap.LockBits(New Rectangle(Point.Empty, maskSize), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
+                    Try
+                        Dim row(maskSize.Width * 4 - 1) As Byte
+                        For y As Integer = 0 To maskSize.Height - 1
+                            Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                            For x As Integer = 0 To maskSize.Width - 1
+                                alpha(y * maskSize.Width + x) = row(x * 4 + 3)
+                            Next
+                        Next
+                    Finally
+                        bitmap.UnlockBits(data)
+                    End Try
+                End Using
+                Return alpha
+            End Using
+        End Using
     End Function
 
     Private Sub ShowStartupSnippits()

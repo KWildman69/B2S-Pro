@@ -82,6 +82,8 @@ Public Class B2SPictureBox
     Public Property IsImageSnippit() As Boolean = False
     Public Property PreservePhysicsArtworkAspect() As Boolean = False
     Public Property HasFullResolutionSnippet() As Boolean = False
+    Public Property PhysicsSelectionMaskAlpha() As Byte()
+    Public Property PhysicsSelectionMaskSize() As Size = Size.Empty
     Public ReadOnly Property VisualArtworkBounds As RectangleF
         Get
             Dim bounds As RectangleF = Me.RectangleF

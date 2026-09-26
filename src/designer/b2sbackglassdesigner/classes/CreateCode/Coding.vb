@@ -26,12 +26,13 @@ Public Class Coding
         End Get
     End Property
 
-    Public Shared Function CreateFullResolutionSnippet(ByVal bulb As Illumination.BulbInfo, ByVal canvas As Image) As Image
+    Public Shared Function CreateFullResolutionSnippet(ByVal bulb As Illumination.BulbInfo, ByVal canvas As Image,
+                                                       Optional ByVal applySelectionMask As Boolean = True) As Image
         Dim result As Image = Illumination.Lights.CreateBrightnessAdjustedSnippet(bulb.Image, bulb.SnippitInfo.Brightness)
         If Object.ReferenceEquals(result, bulb.Image) Then result = New Bitmap(bulb.Image)
         Try
             Dim rect As New Rectangle(bulb.Location, bulb.Size)
-            If Not String.IsNullOrEmpty(bulb.SelectionMaskData) Then
+            If applySelectionMask AndAlso Not String.IsNullOrEmpty(bulb.SelectionMaskData) Then
                 Dim masked As Image = Illumination.Lights.CreateSelectionMaskedSnippet(result, bulb.SelectionMaskData, rect, True)
                 If masked Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet selection mask.")
                 result.Dispose()
@@ -710,6 +711,9 @@ Public Class Coding
                                     nodeBulb.SetAttribute("PivotUpTrigger", .SnippitInfo.PivotUpTrigger.Trim())
                                     If .SnippitInfo.PhysicsBall OrElse .SnippitInfo.PhysicsFloorPoints.Count >= 2 OrElse .SnippitInfo.PhysicsBoundaryPaths.Count > 0 Then
                                         nodeBulb.SetAttribute("PhysicsBall", If(.SnippitInfo.PhysicsBall, "1", "0"))
+                                        If .SnippitInfo.PhysicsBall AndAlso Not String.IsNullOrEmpty(.SelectionMaskData) Then
+                                            nodeBulb.SetAttribute("PhysicsSelectionMaskData", .SelectionMaskData)
+                                        End If
                                         nodeBulb.SetAttribute("PhysicsFlipperName", .SnippitInfo.PhysicsFlipperName.Trim())
                                         If Not String.IsNullOrWhiteSpace(.SnippitInfo.PhysicsBounds) Then nodeBulb.SetAttribute("PhysicsBounds", .SnippitInfo.PhysicsBounds.Trim())
                                         nodeBulb.SetAttribute("PhysicsGravity", Math.Max(0.0F, Math.Min(10000.0F, .SnippitInfo.PhysicsGravity)).ToString("R", Globalization.CultureInfo.InvariantCulture))
@@ -797,7 +801,7 @@ Public Class Coding
                                         nodeBulb.SetAttribute("Image", ImageToBase64(fallback))
                                     End Using
                                 End If
-                                Using fullResolution As Image = CreateFullResolutionSnippet(bulb.Value, If(.ParentForm = eParentForm.DMD, dmdimage, image))
+                                Using fullResolution As Image = CreateFullResolutionSnippet(bulb.Value, If(.ParentForm = eParentForm.DMD, dmdimage, image), Not .SnippitInfo.PhysicsBall)
                                     nodeBulb.SetAttribute("RuntimeSnippitImage", ImageToBase64(fullResolution))
                                 End Using
                             End If
