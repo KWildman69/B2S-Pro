@@ -28,6 +28,8 @@ Public Class formQuickSelection
     Private ReadOnly undoMasks As New Collections.Generic.Stack(Of Bitmap)()
     Private ReadOnly redoMasks As New Collections.Generic.Stack(Of Bitmap)()
     Private lastBrushPoint As Point
+    Private brushLineAnchor As Point
+    Private brushLineAnchorValid As Boolean = False
     Private rectangleStartPoint As Point
     Private rectangleCurrentPoint As Point
     Private activeEllipse As Rectangle = Rectangle.Empty
@@ -174,7 +176,7 @@ Public Class formQuickSelection
         tools.Controls.Add(editGroup, 1, 1)
 
         Dim helpLabel As New Label With {
-            .Text = "Choose a selection tool, then refine the mask. Hold Shift for a perfect circle. Alt erases while brushing. Mouse wheel zooms; middle-drag or Space+drag pans. Ctrl+Z / Ctrl+Y undo and redo.",
+            .Text = "Choose a selection tool, then refine the mask. Brush: Shift-click draws from the previous point; Alt erases. Circular Marquee: Shift makes a perfect circle. Mouse wheel zooms; middle-drag or Space+drag pans. Ctrl+Z / Ctrl+Y undo and redo.",
             .Dock = DockStyle.Fill, .Height = 30, .TextAlign = ContentAlignment.MiddleLeft, .AutoEllipsis = True}
         tools.Controls.Add(helpLabel, 0, 2)
         tools.SetColumnSpan(helpLabel, 2)
@@ -266,8 +268,13 @@ Public Class formQuickSelection
             isDragging = False
             preview.Capture = False
         ElseIf toolBrush.Checked Then
+            Dim modifiers As Keys = Control.ModifierKeys
+            Dim drawFromAnchor As Boolean = brushLineAnchorValid AndAlso (modifiers And Keys.Shift) = Keys.Shift
             lastBrushPoint = imagePoint
-            PaintBrushStroke(imagePoint, imagePoint, (Control.ModifierKeys And Keys.Alt) = Keys.Alt)
+            PaintBrushStroke(If(drawFromAnchor, brushLineAnchor, imagePoint), imagePoint,
+                             (modifiers And Keys.Alt) = Keys.Alt)
+            brushLineAnchor = imagePoint
+            brushLineAnchorValid = True
         ElseIf toolRectangle.Checked Then
             ellipseDragMode = HitTestEllipse(imagePoint)
             ellipseDragAnchor = imagePoint
@@ -304,6 +311,8 @@ Public Class formQuickSelection
         If toolBrush.Checked Then
             PaintBrushStroke(lastBrushPoint, imagePoint, (modifiers And Keys.Alt) = Keys.Alt)
             lastBrushPoint = imagePoint
+            brushLineAnchor = imagePoint
+            brushLineAnchorValid = True
             preview.Invalidate()
             Return
         ElseIf toolAuto.Checked Then
@@ -673,20 +682,34 @@ Public Class formQuickSelection
 
     Private Sub PaintBrushStroke(ByVal fromPoint As Point, ByVal toPoint As Point, ByVal altErase As Boolean)
         Dim isErase As Boolean = altErase
-        Dim radius As Single = brushSize.Value / 2.0F
         Dim alpha As Integer = CInt(255.0 * BrushOpacityPercent / 100.0)
         Using g As Graphics = Graphics.FromImage(mask)
             g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
             If isErase Then g.CompositingMode = Drawing2D.CompositingMode.SourceCopy
-            Using pen As New Pen(If(isErase, Color.FromArgb(0, 255, 255, 255), Color.FromArgb(alpha, 255, 255, 255)), brushSize.Value)
-                pen.StartCap = Drawing2D.LineCap.Round : pen.EndCap = Drawing2D.LineCap.Round
-                g.DrawLine(pen, fromPoint, toPoint)
-            End Using
-            If brushHardness.Value < 100 AndAlso Not isErase Then
-                Dim softAlpha As Integer = Math.Max(5, CInt(alpha * (100 - brushHardness.Value) / 300.0))
-                Using softPen As New Pen(Color.FromArgb(softAlpha, 255, 255, 255), brushSize.Value * 1.35F)
-                    softPen.StartCap = Drawing2D.LineCap.Round : softPen.EndCap = Drawing2D.LineCap.Round
-                    g.DrawLine(softPen, fromPoint, toPoint)
+            If isErase OrElse brushHardness.Value >= 100 Then
+                Using pen As New Pen(If(isErase, Color.FromArgb(0, 255, 255, 255), Color.FromArgb(alpha, 255, 255, 255)), brushSize.Value)
+                    pen.StartCap = Drawing2D.LineCap.Round : pen.EndCap = Drawing2D.LineCap.Round
+                    g.DrawLine(pen, fromPoint, toPoint)
+                End Using
+            Else
+                ' Feather inward from the selected brush diameter.  The old soft
+                ' stroke was 135% of the cursor diameter, so it necessarily
+                ' painted outside the visible circle.
+                Dim hardnessRatio As Single = brushHardness.Value / 100.0F
+                Dim coreWidth As Single = Math.Max(1.0F, brushSize.Value * hardnessRatio)
+                Const featherBands As Integer = 8
+                For band As Integer = featherBands To 1 Step -1
+                    Dim amount As Single = band / CSng(featherBands)
+                    Dim bandWidth As Single = coreWidth + (brushSize.Value - coreWidth) * amount
+                    Dim bandAlpha As Integer = Math.Max(1, CInt(alpha * (1.0F - amount) / featherBands))
+                    Using featherPen As New Pen(Color.FromArgb(bandAlpha, 255, 255, 255), bandWidth)
+                        featherPen.StartCap = Drawing2D.LineCap.Round : featherPen.EndCap = Drawing2D.LineCap.Round
+                        g.DrawLine(featherPen, fromPoint, toPoint)
+                    End Using
+                Next
+                Using corePen As New Pen(Color.FromArgb(alpha, 255, 255, 255), coreWidth)
+                    corePen.StartCap = Drawing2D.LineCap.Round : corePen.EndCap = Drawing2D.LineCap.Round
+                    g.DrawLine(corePen, fromPoint, toPoint)
                 End Using
             End If
         End Using

@@ -4,6 +4,11 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
+### September 26 update — versions unchanged
+
+- Keep Quick Selection brush feathering inside the visible brush diameter and add Photoshop-style Shift-click straight lines from the previous brush point.
+- Existing 1.0.3 installations need to rerun setup manually to receive this same-version update.
+
 ### September 24 update — versions unchanged
 
 - Physics preview keeps the ball selection mask fixed in backglass coordinates while the ball moves and rotates, including feathered edges.
