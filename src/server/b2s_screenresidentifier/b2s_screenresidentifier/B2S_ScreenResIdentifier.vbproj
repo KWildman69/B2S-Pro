@@ -146,6 +146,7 @@
     <Compile Include="module.vb">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="..\..\shared\StableMonitorIdentity.vb"><Link>StableMonitorIdentity.vb</Link></Compile>
     <Compile Include="My Project\AssemblyInfo.vb" />
     <Compile Include="My Project\Application.Designer.vb">
       <AutoGen>True</AutoGen>

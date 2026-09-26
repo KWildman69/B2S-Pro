@@ -50,6 +50,18 @@ Public Class B2SScreen
 
     Public Property BackglassRescaleFactor As SizeF = New SizeF(1, 1)
     Public Property ScreenDpiFactor As SizeF = New SizeF(1, 1)
+    Public Property LockWindowPositions As Boolean = False
+    Private lockedBackglassMonitorId As String = String.Empty
+    Private lockedDMDMonitorId As String = String.Empty
+    Private lockedBackgroundMonitorId As String = String.Empty
+    Private lockedBackglassLocation As Point = Point.Empty
+    Private lockedDMDLocation As Point = Point.Empty
+    Private lockedBackgroundLocation As Point = Point.Empty
+    Private lockedBackglassSize As Size = Size.Empty
+    Private lockedDMDSize As Size = Size.Empty
+    Private lockedBackgroundSize As Size = Size.Empty
+    Private applyingPositionLock As Boolean = False
+    Private positionLockHandlersAttached As Boolean = False
 
 #Region "constructor and startup"
 
@@ -144,6 +156,7 @@ Public Class B2SScreen
             Do Until EOF(1) Or i > 20
                 line(i) = LineInput(1)
                 If (line(i).StartsWith("#")) Then
+                    ParsePositionLockMetadata(line(i))
                     If (line(i).Replace(" ", "").StartsWith("#V2")) Then VersionTwoFile = True
                     Continue Do
                 End If
@@ -408,10 +421,17 @@ Public Class B2SScreen
 
         ' get the correct screen
         Me.BackglassScreen = ScreensOrdered(0)
+        If LockWindowPositions Then
+            Dim lockedScreen As Screen = FindByStableId(lockedBackglassMonitorId)
+            If lockedScreen IsNot Nothing Then
+                Me.BackglassScreen = lockedScreen
+                UpdateScreenDpiFactor()
+                On Error GoTo 0
+                Return
+            End If
+        End If
         Dim s As Screen
         Dim currentScreen = 0
-
-        Const S_OK As Integer = &H0
 
         'searchPathLog.WriteLogEntry("BackglassMonitor " & BackglassMonitor)
         For Each s In ScreensOrdered
@@ -434,6 +454,13 @@ Public Class B2SScreen
                 Exit For
             End If
         Next
+        UpdateScreenDpiFactor()
+        On Error GoTo 0
+
+    End Sub
+
+    Private Sub UpdateScreenDpiFactor()
+        Const S_OK As Integer = &H0
         Dim dpiX As UInt32
         Dim dpiY As UInt32
         Dim result As Integer = GetDpiForMonitor(GetMonitorHandle(Me.BackglassScreen), 0, dpiX, dpiY)
@@ -441,8 +468,6 @@ Public Class B2SScreen
             ScreenDpiFactor = New SizeF(dpiX / 96.0, dpiY / 96.0)
         End If
         debugLog.WriteLogEntry("DpiFactor =" & ScreenDpiFactor.Width)
-        On Error GoTo 0
-
     End Sub
 
     Private Sub Show()
@@ -617,6 +642,100 @@ Public Class B2SScreen
             End If
         End If
 
+        EnablePositionLock()
+
+    End Sub
+
+    Private Sub ParsePositionLockMetadata(ByVal comment As String)
+        Dim separator As Integer = comment.IndexOf("="c)
+        If separator <= 1 Then Return
+        Dim key As String = comment.Substring(1, separator - 1).Trim()
+        Dim value As String = comment.Substring(separator + 1).Trim()
+        Select Case key
+            Case "B2SLockWindowPositions" : LockWindowPositions = (value = "1")
+            Case "B2SBackglassMonitorId" : lockedBackglassMonitorId = DecodeStableId(value)
+            Case "B2SDMDMonitorId" : lockedDMDMonitorId = DecodeStableId(value)
+            Case "B2SBackgroundMonitorId" : lockedBackgroundMonitorId = DecodeStableId(value)
+            Case "B2SBackglassLocalX" : lockedBackglassLocation = New Point(ParseMetadataInteger(value), lockedBackglassLocation.Y)
+            Case "B2SBackglassLocalY" : lockedBackglassLocation = New Point(lockedBackglassLocation.X, ParseMetadataInteger(value))
+            Case "B2SDMDLocalX" : lockedDMDLocation = New Point(ParseMetadataInteger(value), lockedDMDLocation.Y)
+            Case "B2SDMDLocalY" : lockedDMDLocation = New Point(lockedDMDLocation.X, ParseMetadataInteger(value))
+            Case "B2SBackgroundLocalX" : lockedBackgroundLocation = New Point(ParseMetadataInteger(value), lockedBackgroundLocation.Y)
+            Case "B2SBackgroundLocalY" : lockedBackgroundLocation = New Point(lockedBackgroundLocation.X, ParseMetadataInteger(value))
+        End Select
+    End Sub
+
+    Private Shared Function ParseMetadataInteger(ByVal value As String) As Integer
+        Dim parsed As Integer
+        If Integer.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, parsed) Then Return parsed
+        Return 0
+    End Function
+
+    Private Sub EnablePositionLock()
+        If Not LockWindowPositions OrElse formBackglass Is Nothing Then Return
+        lockedBackglassSize = formBackglass.Size
+        If formDMD IsNot Nothing Then lockedDMDSize = formDMD.Size
+        If formbackground IsNot Nothing Then lockedBackgroundSize = formbackground.Size
+        ApplyLockedWindowPositions()
+        If positionLockHandlersAttached Then Return
+        AddHandler formBackglass.LocationChanged, AddressOf LockedWindowBoundsChanged
+        AddHandler formBackglass.SizeChanged, AddressOf LockedWindowBoundsChanged
+        AddHandler formBackglass.FormClosed, AddressOf LockedBackglassClosed
+        If formDMD IsNot Nothing Then
+            AddHandler formDMD.LocationChanged, AddressOf LockedWindowBoundsChanged
+            AddHandler formDMD.SizeChanged, AddressOf LockedWindowBoundsChanged
+        End If
+        If formbackground IsNot Nothing Then
+            AddHandler formbackground.LocationChanged, AddressOf LockedWindowBoundsChanged
+            AddHandler formbackground.SizeChanged, AddressOf LockedWindowBoundsChanged
+        End If
+        AddHandler Microsoft.Win32.SystemEvents.DisplaySettingsChanged, AddressOf DisplaySettingsChanged
+        positionLockHandlersAttached = True
+    End Sub
+
+    Private Sub LockedWindowBoundsChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If Not applyingPositionLock Then ApplyLockedWindowPositions()
+    End Sub
+
+    Private Sub DisplaySettingsChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If formBackglass Is Nothing OrElse formBackglass.IsDisposed OrElse Not formBackglass.IsHandleCreated Then Return
+        formBackglass.BeginInvoke(New MethodInvoker(AddressOf ApplyLockedWindowPositions))
+    End Sub
+
+    Private Sub ApplyLockedWindowPositions()
+        If Not LockWindowPositions OrElse applyingPositionLock OrElse formBackglass Is Nothing OrElse formBackglass.IsDisposed Then Return
+        applyingPositionLock = True
+        Try
+            Dim backglassTarget As Screen = FindByStableId(lockedBackglassMonitorId)
+            If backglassTarget Is Nothing Then backglassTarget = BackglassScreen
+            If backglassTarget IsNot Nothing AndAlso Not lockedBackglassSize.IsEmpty Then
+                formBackglass.SetBounds(backglassTarget.Bounds.Left + lockedBackglassLocation.X,
+                                        backglassTarget.Bounds.Top + lockedBackglassLocation.Y,
+                                        lockedBackglassSize.Width, lockedBackglassSize.Height)
+            End If
+            If IsDMDToBeShown AndAlso formDMD IsNot Nothing AndAlso Not formDMD.IsDisposed AndAlso Not lockedDMDSize.IsEmpty Then
+                Dim dmdTarget As Screen = FindByStableId(lockedDMDMonitorId)
+                If dmdTarget Is Nothing Then dmdTarget = Screen.FromControl(formDMD)
+                formDMD.SetBounds(dmdTarget.Bounds.Left + lockedDMDLocation.X,
+                                  dmdTarget.Bounds.Top + lockedDMDLocation.Y,
+                                  lockedDMDSize.Width, lockedDMDSize.Height)
+            End If
+            If StartBackground AndAlso formbackground IsNot Nothing AndAlso Not formbackground.IsDisposed AndAlso Not lockedBackgroundSize.IsEmpty Then
+                Dim backgroundTarget As Screen = FindByStableId(lockedBackgroundMonitorId)
+                If backgroundTarget Is Nothing Then backgroundTarget = Screen.FromControl(formbackground)
+                formbackground.SetBounds(backgroundTarget.Bounds.Left + lockedBackgroundLocation.X,
+                                          backgroundTarget.Bounds.Top + lockedBackgroundLocation.Y,
+                                          lockedBackgroundSize.Width, lockedBackgroundSize.Height)
+            End If
+        Finally
+            applyingPositionLock = False
+        End Try
+    End Sub
+
+    Private Sub LockedBackglassClosed(ByVal sender As Object, ByVal e As FormClosedEventArgs)
+        If Not positionLockHandlersAttached Then Return
+        RemoveHandler Microsoft.Win32.SystemEvents.DisplaySettingsChanged, AddressOf DisplaySettingsChanged
+        positionLockHandlersAttached = False
     End Sub
 
     Private Sub ScaleAllControls(ByVal _rescaleX As Single, ByVal _rescaleY As Single, ByVal _rescaleDMDX As Single, ByVal _rescaleDMDY As Single)

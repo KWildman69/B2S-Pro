@@ -25,7 +25,6 @@ Public Class formPlayfield
 
         formBackglass = New formBackglass
         formBackground = New formBackground
-
         formBackglass.formBackground = formBackground
         formDMD = New formDMD
         formDMD.formBackglass = formBackglass
@@ -50,6 +49,7 @@ Public Class formPlayfield
         Else
             GetSettings(FileName)
         End If
+        chkLockWindowPositions.Checked = LockWindowPositions
 
         StartupPlayfield()
         ' create all other forms
@@ -175,6 +175,8 @@ Public Class formPlayfield
         ' open file
         FileOpen(1, ResFileName, OpenMode.Output)
 
+        If chkLockWindowPositions.Checked Then WritePositionLockMetadata()
+
         If Me.chkSaveComments.Checked And Me.chkSaveEnhanced.Checked Then PrintLine(1, "# V" + Application.ProductVersion)
 
         If Me.chkSaveComments.Checked Then
@@ -253,6 +255,26 @@ Public Class formPlayfield
         MessageBox.Show(My.Resources.SettingsAreSaved, My.Resources.AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information)
 
         IsDirty = False
+    End Sub
+
+    Private Sub WritePositionLockMetadata()
+        Dim backglassScreen As Screen = Screen.FromControl(formBackglass)
+        Dim dmdScreen As Screen = Screen.FromControl(formDMD)
+        Dim backgroundScreen As Screen = Screen.FromControl(formBackground)
+        Dim backglassLocal As New Point(formBackglass.Left - backglassScreen.Bounds.Left, formBackglass.Top - backglassScreen.Bounds.Top)
+        Dim dmdLocal As New Point(formDMD.Left - dmdScreen.Bounds.Left, formDMD.Top - dmdScreen.Bounds.Top)
+        Dim backgroundLocal As New Point(formBackground.Left - backgroundScreen.Bounds.Left, formBackground.Top - backgroundScreen.Bounds.Top)
+
+        PrintLine(1, "#B2SLockWindowPositions=1")
+        PrintLine(1, "#B2SBackglassMonitorId=" & EncodeStableId(GetStableId(backglassScreen)))
+        PrintLine(1, "#B2SBackglassLocalX=" & backglassLocal.X)
+        PrintLine(1, "#B2SBackglassLocalY=" & backglassLocal.Y)
+        PrintLine(1, "#B2SDMDMonitorId=" & EncodeStableId(GetStableId(dmdScreen)))
+        PrintLine(1, "#B2SDMDLocalX=" & dmdLocal.X)
+        PrintLine(1, "#B2SDMDLocalY=" & dmdLocal.Y)
+        PrintLine(1, "#B2SBackgroundMonitorId=" & EncodeStableId(GetStableId(backgroundScreen)))
+        PrintLine(1, "#B2SBackgroundLocalX=" & backgroundLocal.X)
+        PrintLine(1, "#B2SBackgroundLocalY=" & backgroundLocal.Y)
     End Sub
 
     Private Sub StartupPlayfield()
@@ -356,7 +378,23 @@ Public Class formPlayfield
             Radio1deviceNo.Checked = True
         End If
 
+        ApplyLockedPreviewPositions()
+
         IsInStartup = False
+    End Sub
+
+    Private Sub ApplyLockedPreviewPositions()
+        If Not LockWindowPositions Then Return
+        Dim backglassScreen As Screen = FindByStableId(LockedBackglassMonitorId)
+        If backglassScreen IsNot Nothing Then formBackglass.Location = backglassScreen.Bounds.Location + LockedBackglassLocation
+        Dim dmdScreen As Screen = FindByStableId(LockedDMDMonitorId)
+        If dmdScreen IsNot Nothing Then formDMD.Location = dmdScreen.Bounds.Location + LockedDMDLocation
+        Dim backgroundScreen As Screen = FindByStableId(LockedBackgroundMonitorId)
+        If backgroundScreen IsNot Nothing Then formBackground.Location = backgroundScreen.Bounds.Location + LockedBackgroundLocation
+    End Sub
+
+    Private Sub chkLockWindowPositions_CheckedChanged(sender As Object, e As EventArgs) Handles chkLockWindowPositions.CheckedChanged
+        If Not IsInStartup Then IsDirty = True
     End Sub
 
     Private Sub PlayfieldInfo(ByRef form As formPlayfield)

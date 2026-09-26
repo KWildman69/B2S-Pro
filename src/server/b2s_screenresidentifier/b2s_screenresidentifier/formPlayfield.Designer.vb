@@ -56,6 +56,7 @@ Partial Class formPlayfield
         Me.lblChooseSetup = New System.Windows.Forms.Label()
         Me.lblInfo2 = New System.Windows.Forms.Label()
         Me.Panel2 = New System.Windows.Forms.Panel()
+        Me.chkLockWindowPositions = New System.Windows.Forms.CheckBox()
         Me.chkSaveEnhanced = New System.Windows.Forms.CheckBox()
         Me.FlowLayoutPanel1 = New System.Windows.Forms.FlowLayoutPanel()
         Me.buttonSaveGlobal = New System.Windows.Forms.Button()
@@ -430,6 +431,7 @@ Partial Class formPlayfield
         '
         'Panel2
         '
+        Me.Panel2.Controls.Add(Me.chkLockWindowPositions)
         Me.Panel2.Controls.Add(Me.chkSaveEnhanced)
         Me.Panel2.Controls.Add(Me.FlowLayoutPanel1)
         Me.Panel2.Controls.Add(Me.chkSaveComments)
@@ -440,6 +442,16 @@ Partial Class formPlayfield
         Me.Panel2.Name = "Panel2"
         Me.Panel2.Size = New System.Drawing.Size(1296, 119)
         Me.Panel2.TabIndex = 8
+        '
+        'chkLockWindowPositions
+        '
+        Me.chkLockWindowPositions.AutoSize = True
+        Me.chkLockWindowPositions.Location = New System.Drawing.Point(642, 61)
+        Me.chkLockWindowPositions.Name = "chkLockWindowPositions"
+        Me.chkLockWindowPositions.Size = New System.Drawing.Size(238, 23)
+        Me.chkLockWindowPositions.TabIndex = 11
+        Me.chkLockWindowPositions.Text = "Lock saved window positions"
+        Me.chkLockWindowPositions.UseVisualStyleBackColor = True
         '
         'chkSaveEnhanced
         '
@@ -571,6 +583,7 @@ Partial Class formPlayfield
     Friend WithEvents lblChooseSetup As System.Windows.Forms.Label
     Friend WithEvents lblInfo2 As System.Windows.Forms.Label
     Friend WithEvents Panel2 As System.Windows.Forms.Panel
+    Friend WithEvents chkLockWindowPositions As CheckBox
     Friend WithEvents lblCopyright As System.Windows.Forms.Label
     Friend WithEvents chkSaveComments As CheckBox
     Friend WithEvents txtPlayfieldScreenScale As TextBox

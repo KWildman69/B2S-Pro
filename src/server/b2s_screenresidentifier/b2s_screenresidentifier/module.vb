@@ -29,6 +29,13 @@ Module Module1
     Public Property BackgroundPath() As String = String.Empty
     Public Property SaveComments() As Boolean = False
     Public Property VersionTwoFile() As Boolean = False
+    Public Property LockWindowPositions() As Boolean = False
+    Public Property LockedBackglassMonitorId() As String = String.Empty
+    Public Property LockedDMDMonitorId() As String = String.Empty
+    Public Property LockedBackgroundMonitorId() As String = String.Empty
+    Public Property LockedBackglassLocation() As Point = Point.Empty
+    Public Property LockedDMDLocation() As Point = Point.Empty
+    Public Property LockedBackgroundLocation() As Point = Point.Empty
 
     Private Declare Function GetDeviceCaps Lib "gdi32" (ByVal hdc As IntPtr, ByVal nIndex As Integer) As Integer
     Private Declare Function CreateDCA Lib "gdi32" (lpszDriver As String, lpszDevice As String, lpszOutput As String, lpInitData As IntPtr) As Integer
@@ -135,6 +142,7 @@ Module Module1
             Do Until EOF(1) Or i > 30
                 line(i) = LineInput(1)
                 If (line(i).StartsWith("#")) Then
+                    ParsePositionLockMetadata(line(i))
                     If (line(i).Replace(" ", "").StartsWith("#V2")) Then
                         VersionTwoFile = True
                     Else
@@ -197,6 +205,31 @@ Module Module1
 
         End If
     End Sub
+
+    Private Sub ParsePositionLockMetadata(ByVal comment As String)
+        Dim separator As Integer = comment.IndexOf("="c)
+        If separator <= 1 Then Return
+        Dim key As String = comment.Substring(1, separator - 1).Trim()
+        Dim value As String = comment.Substring(separator + 1).Trim()
+        Select Case key
+            Case "B2SLockWindowPositions" : LockWindowPositions = (value = "1")
+            Case "B2SBackglassMonitorId" : LockedBackglassMonitorId = DecodeStableId(value)
+            Case "B2SDMDMonitorId" : LockedDMDMonitorId = DecodeStableId(value)
+            Case "B2SBackgroundMonitorId" : LockedBackgroundMonitorId = DecodeStableId(value)
+            Case "B2SBackglassLocalX" : LockedBackglassLocation = New Point(ParseMetadataInteger(value), LockedBackglassLocation.Y)
+            Case "B2SBackglassLocalY" : LockedBackglassLocation = New Point(LockedBackglassLocation.X, ParseMetadataInteger(value))
+            Case "B2SDMDLocalX" : LockedDMDLocation = New Point(ParseMetadataInteger(value), LockedDMDLocation.Y)
+            Case "B2SDMDLocalY" : LockedDMDLocation = New Point(LockedDMDLocation.X, ParseMetadataInteger(value))
+            Case "B2SBackgroundLocalX" : LockedBackgroundLocation = New Point(ParseMetadataInteger(value), LockedBackgroundLocation.Y)
+            Case "B2SBackgroundLocalY" : LockedBackgroundLocation = New Point(LockedBackgroundLocation.X, ParseMetadataInteger(value))
+        End Select
+    End Sub
+
+    Private Function ParseMetadataInteger(ByVal value As String) As Integer
+        Dim parsed As Integer
+        If Integer.TryParse(value, parsed) Then Return parsed
+        Return 0
+    End Function
 
     Public Sub MoveMe(ByRef form As Form, ByVal keyCode As Windows.Forms.Keys)
         If form.WindowState <> FormWindowState.Maximized Then
