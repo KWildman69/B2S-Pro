@@ -4301,7 +4301,9 @@ Public Class formBackglass
                 Using bitmap As New Bitmap(maskSize.Width, maskSize.Height, PixelFormat.Format32bppArgb)
                     Using graphics As Graphics = Graphics.FromImage(bitmap)
                         graphics.CompositingMode = Drawing2D.CompositingMode.SourceCopy
-                        graphics.DrawImageUnscaled(decoded, 0, 0)
+                        ' Copy pixels explicitly: DrawImageUnscaled applies image/device DPI.
+                        graphics.DrawImage(decoded, New Rectangle(Point.Empty, maskSize),
+                                           0, 0, maskSize.Width, maskSize.Height, GraphicsUnit.Pixel)
                     End Using
                     Dim data As BitmapData = bitmap.LockBits(New Rectangle(Point.Empty, maskSize), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
                     Try
