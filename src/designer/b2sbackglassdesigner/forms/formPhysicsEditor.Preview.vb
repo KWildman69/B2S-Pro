@@ -18,6 +18,7 @@ Public Partial Class formPhysicsEditor
     Private pivotHeld As Boolean
     Private pivotFirePulse As Boolean
     Private pivotElapsed As Double
+    Private pendingTestSeconds As Double
     Private pivotStartAngle As Single
     Private pivotTargetAngle As Single
     Private lastSwitchText As String = ""
@@ -141,6 +142,7 @@ Public Partial Class formPhysicsEditor
 
     Private Sub ResetPhysicsTest()
         If Not CanStartPhysicsTest() Then Return
+        pendingTestSeconds = 0.0R
         pivotHeld = False
         ConfigurePhysicsTest(True)
         canvas.PreviewSwitchHits.Clear() : lastSwitchText = ""
@@ -192,10 +194,22 @@ Public Partial Class formPhysicsEditor
         End If
         ConfigurePhysicsTest(False)
         If Not testPaused Then
-            AdvanceTestPivot(elapsed)
-            testSession.Advance(elapsed)
+            AdvancePhysicsTest(elapsed)
         End If
         ShowPhysicsTestFrame()
+    End Sub
+
+    Private Sub AdvancePhysicsTest(ByVal elapsed As Double)
+        If elapsed <= 0.0R OrElse Double.IsNaN(elapsed) OrElse Double.IsInfinity(elapsed) Then Return
+        pendingTestSeconds += elapsed
+        Dim steps As Integer = CInt(Math.Min(250, Math.Floor((pendingTestSeconds + 0.000000001R) / 0.001R)))
+        ' Sample the pivot at each physics step, not just at the rendered frame.
+        ' Otherwise a delayed frame changes the contact angle and impact speed.
+        For index As Integer = 1 To steps
+            AdvanceTestPivot(0.001R)
+            testSession.Advance(0.001R)
+        Next
+        pendingTestSeconds = Math.Max(0.0R, pendingTestSeconds - steps * 0.001R)
     End Sub
 
     Private Sub AdvanceTestPivot(ByVal elapsed As Double)
@@ -237,6 +251,7 @@ Public Partial Class formPhysicsEditor
 
     Private Sub EndPhysicsTest()
         testTimer.Stop() : testClock.Reset()
+        pendingTestSeconds = 0.0R
         If testSession IsNot Nothing Then testSession.Dispose() : testSession = Nothing
         testSignature = Nothing : testPivotSource = Nothing : pivotHeld = False : pivotFirePulse = False
         canvas.PreviewBallBounds = Nothing : canvas.PreviewPivot = Nothing : canvas.PreviewSwitchHits.Clear()

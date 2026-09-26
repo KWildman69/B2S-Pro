@@ -149,9 +149,30 @@ Public Partial Class B2SData
         Public Sub Start()
             ball.Visible = True
             pendingPhysicsSeconds = 0.0R
+#If PHYSICS_PREVIEW Then
             clock.Restart()
             timer.Start()
+#Else
+            StartPhysicsClock()
+#End If
         End Sub
+
+#If Not PHYSICS_PREVIEW Then
+        Public ReadOnly Property PhysicsPivot As B2SPictureBox
+            Get
+                Return FindPivotPicture(flipperName)
+            End Get
+        End Property
+
+        Public Sub AdvanceServerStep()
+            If ball.RectangleF.Width <= 0.0F OrElse ball.RectangleF.Height <= 0.0F Then Return
+            If Not hasLastFlipperAngle AndAlso PhysicsPivot IsNot Nothing Then
+                lastFlipperAngle = PhysicsPivot.PhysicsPreviousAngle
+                hasLastFlipperAngle = True
+            End If
+            AdvancePhysics(0.001R)
+        End Sub
+#End If
 
         Private Sub Tick(ByVal sender As Object, ByVal e As EventArgs)
             Dim elapsed As Double = clock.Elapsed.TotalSeconds

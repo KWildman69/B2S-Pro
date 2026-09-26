@@ -241,6 +241,10 @@ Public Class B2SPictureBox
     Private pivotRotationStartAngle As Single
     Private pivotRotationTargetAngle As Single
     Private pivotRotationDuration As Integer = 80
+    Private physicsPivotElapsed As Double
+    Private physicsPivotMoving As Boolean
+    Private physicsPivotNeedsRedraw As Boolean
+    Friend Property PhysicsPreviousAngle As Single
     Private motionPathClock As New Stopwatch()
     Private ReadOnly _motionPathPoints As New List(Of PointF)()
     Private ReadOnly _motionPathExitPoints As New List(Of PointF)()
@@ -700,6 +704,8 @@ Public Class B2SPictureBox
             Me.Parent.BeginInvoke(New MethodInvoker(Sub() SetPivotRotationTarget(targetAngle, duration)))
             Return
         End If
+        Dim physicsDriven As Boolean = B2SData.IsPhysicsPivot(Me)
+        If physicsDriven Then B2SData.SynchronizePhysics()
         pivotRotationTimer.Stop()
         pivotRotationClock.Reset()
         pivotRotationStartAngle = RotationAngle
@@ -708,8 +714,38 @@ Public Class B2SPictureBox
         PivotRotation = True
         NativeRotation = True
         Me.Visible = True
-        pivotRotationClock.Start()
-        pivotRotationTimer.Start()
+        physicsPivotElapsed = 0.0R
+        physicsPivotMoving = physicsDriven
+        If Not physicsDriven Then
+            pivotRotationClock.Start()
+            pivotRotationTimer.Start()
+            InvalidateNativeRotation()
+        Else
+            physicsPivotNeedsRedraw = True
+        End If
+    End Sub
+
+    Friend Sub AdvancePhysicsPivot(ByVal elapsed As Double)
+        PhysicsPreviousAngle = RotationAngle
+        If Not physicsPivotMoving Then Return
+        physicsPivotElapsed += elapsed * 1000.0R
+        Dim progress As Single = CSng(Math.Min(1.0R, physicsPivotElapsed / pivotRotationDuration))
+        Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
+        RotationAngle = pivotRotationStartAngle + (pivotRotationTargetAngle - pivotRotationStartAngle) * eased
+        If progress >= 1.0F Then
+            RotationAngle = pivotRotationTargetAngle
+            physicsPivotMoving = False
+            If PivotAutomaticOscillation AndAlso pivotAutomaticActive Then
+                SetPivotRotationTarget(If(Math.Abs(pivotRotationTargetAngle - PivotUpAngle) < 0.01F,
+                                          PivotDownAngle, PivotUpAngle), PivotMoveDuration)
+            End If
+        End If
+        physicsPivotNeedsRedraw = True
+    End Sub
+
+    Friend Sub PresentPhysicsPivot()
+        If Not physicsPivotNeedsRedraw Then Return
+        physicsPivotNeedsRedraw = False
         InvalidateNativeRotation()
     End Sub
 

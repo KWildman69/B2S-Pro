@@ -320,6 +320,62 @@ Public Partial Class B2SData
     Public Shared ReadOnly StartupPivotPictures As New Generic.List(Of B2SPictureBox)()
     Private Shared ReadOnly PivotPicturesByName As New Generic.Dictionary(Of String, B2SPictureBox)(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly PhysicsBalls As New Generic.List(Of PhysicsBallState)()
+    Private Shared ReadOnly physicsTimer As New Windows.Forms.Timer With {.Interval = 16}
+    Private Shared ReadOnly physicsClock As New Diagnostics.Stopwatch()
+    Private Shared physicsPendingSeconds As Double
+    Private Shared physicsAdvancing As Boolean
+
+    Private Shared Sub StartPhysicsClock()
+        If physicsClock.IsRunning Then Return
+        RemoveHandler physicsTimer.Tick, AddressOf PhysicsClockTick
+        AddHandler physicsTimer.Tick, AddressOf PhysicsClockTick
+        physicsClock.Restart()
+        physicsTimer.Start()
+    End Sub
+
+    Private Shared Sub PhysicsClockTick(ByVal sender As Object, ByVal e As EventArgs)
+        SynchronizePhysics()
+    End Sub
+
+    Friend Shared Sub SynchronizePhysics()
+        If physicsAdvancing OrElse Not physicsClock.IsRunning Then Return
+        Dim elapsed As Double = physicsClock.Elapsed.TotalSeconds
+        physicsClock.Restart()
+        AdvanceServerPhysics(elapsed)
+    End Sub
+
+    Private Shared Sub AdvanceServerPhysics(ByVal elapsed As Double)
+        If physicsAdvancing OrElse elapsed <= 0.0R OrElse Double.IsNaN(elapsed) OrElse Double.IsInfinity(elapsed) Then Return
+        physicsAdvancing = True
+        Try
+            Dim pivots As New Generic.HashSet(Of B2SPictureBox)()
+            For Each state As PhysicsBallState In PhysicsBalls
+                If state.PhysicsPivot IsNot Nothing Then pivots.Add(state.PhysicsPivot)
+            Next
+            physicsPendingSeconds += elapsed
+            Dim steps As Integer = CInt(Math.Floor((physicsPendingSeconds + 0.000000001R) / 0.001R))
+            For index As Integer = 1 To steps
+                For Each pivot As B2SPictureBox In pivots
+                    pivot.AdvancePhysicsPivot(0.001R)
+                Next
+                For Each state As PhysicsBallState In PhysicsBalls
+                    state.AdvanceServerStep()
+                Next
+            Next
+            physicsPendingSeconds = Math.Max(0.0R, physicsPendingSeconds - steps * 0.001R)
+            ' Present only the completed frame; painting every 1 ms substep
+            ' blocks the UI thread and makes rendering feed back into catch-up.
+            For Each pivot As B2SPictureBox In pivots
+                pivot.PresentPhysicsPivot()
+            Next
+        Finally
+            physicsAdvancing = False
+        End Try
+    End Sub
+
+    Friend Shared Function IsPhysicsPivot(ByVal pivot As B2SPictureBox) As Boolean
+        Return PhysicsBalls.Any(Function(state) state.PhysicsPivot Is pivot)
+    End Function
     Private Shared ReadOnly PhysicsLauncherSolenoidIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherB2SIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
 
@@ -418,6 +474,7 @@ Public Partial Class B2SData
             Return False
         End If
         For Each state As PhysicsBallState In routes(triggerID)
+            SynchronizePhysics()
             state.Launch()
         Next
         Return True
@@ -1297,6 +1354,9 @@ Public Partial Class B2SData
         PivotLampIDs.Clear()
         PivotB2SIDs.Clear()
         StartupPivotPictures.Clear()
+        physicsTimer.Stop()
+        physicsClock.Reset()
+        physicsPendingSeconds = 0.0R
         PivotPicturesByName.Clear()
         For Each state As PhysicsBallState In PhysicsBalls
             state.Dispose()
