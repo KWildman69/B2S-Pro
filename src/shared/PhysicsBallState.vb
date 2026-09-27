@@ -59,6 +59,9 @@ Public Partial Class B2SData
         Private pendingPhysicsSeconds As Double
         Private Const MaxPhysicsStepsPerTick As Integer = 250
         Private velocity As PointF = PointF.Empty
+        ' Simulation positions and velocities stay in the saved backglass space.
+        ' Screen scaling is applied only when presenting the ball.
+        Private physicsCenter As PointF
         Private lastFlipperAngle As Single
         Private hasLastFlipperAngle As Boolean
         Public Sub New(ByVal pictureBox As B2SPictureBox, ByVal pivotName As String, ByVal playBounds As RectangleF,
@@ -81,6 +84,7 @@ Public Partial Class B2SData
             ' bounds already contain the ball's saved editor placement here.
             authoredBallCenter = New PointF(pictureBox.Left + pictureBox.Width / 2.0F,
                                             pictureBox.Top + pictureBox.Height / 2.0F)
+            physicsCenter = authoredBallCenter
             If returnBoundaries IsNot Nothing Then
                 For pathIndex As Integer = 0 To returnBoundaries.Count - 1
                     Dim path As Generic.List(Of PointF) = returnBoundaries(pathIndex)
@@ -133,11 +137,12 @@ Public Partial Class B2SData
             Dim randomAngleOffset As Single = CSng((launcherRandom.NextDouble() * 2.0R - 1.0R) * launcher.RandomAngle)
             Dim randomStrengthFactor As Single = 1.0F + CSng((launcherRandom.NextDouble() * 2.0R - 1.0R) * launcher.RandomStrength / 100.0R)
             Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
-            GetLauncherPose(scaleX, scaleY, origin, angle)
+            GetLauncherPose(origin, angle)
             Dim radians As Double = (angle + randomAngleOffset) * Math.PI / 180.0R
             Dim launchStrength As Single = Math.Max(0.0F, launcher.Strength * randomStrengthFactor)
-            ball.SetMotionPathPosition(origin)
-            velocity = New PointF(CSng(Math.Cos(radians)) * launchStrength * scaleX, CSng(Math.Sin(radians)) * launchStrength * scaleY)
+            physicsCenter = origin
+            ball.SetMotionPathPosition(New PointF(origin.X * scaleX, origin.Y * scaleY))
+            velocity = New PointF(CSng(Math.Cos(radians)) * launchStrength, CSng(Math.Sin(radians)) * launchStrength)
             launcherArmed = False
             launcherHolding = False
             launcherExitedCapture = False
@@ -215,6 +220,7 @@ Public Partial Class B2SData
 
         Public Sub KeepPreviewMotion(ByVal previous As PhysicsBallState)
             velocity = previous.velocity
+            physicsCenter = previous.physicsCenter
             pendingPhysicsSeconds = previous.pendingPhysicsSeconds
             If (launcher Is Nothing) = (previous.launcher Is Nothing) Then
                 launcherArmed = previous.launcherArmed
@@ -234,22 +240,23 @@ Public Partial Class B2SData
 #End If
 
         Private Sub StepPhysics(ByVal elapsed As Single, ByVal flipper As B2SPictureBox, ByVal angularVelocity As Single)
-            Dim center As PointF = ball.MotionPathCenter
+            Dim center As PointF = physicsCenter
             Dim scaleX As Single = If(authoredBallWidth <= 0.0F, 1.0F, ball.RectangleF.Width / authoredBallWidth)
             Dim scaleY As Single = If(authoredBallHeight <= 0.0F, 1.0F, ball.RectangleF.Height / authoredBallHeight)
             If launcherHolding AndAlso launcher IsNot Nothing Then
                 Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
-                GetLauncherPose(scaleX, scaleY, origin, angle)
-                ball.SetMotionPathPosition(origin)
+                GetLauncherPose(origin, angle)
+                physicsCenter = origin
+                ball.SetMotionPathPosition(New PointF(origin.X * scaleX, origin.Y * scaleY))
                 velocity = PointF.Empty
                 Return
             End If
-            Dim runtimeBounds As RectangleF = RectangleF.FromLTRB(bounds.Left * scaleX, bounds.Top * scaleY, bounds.Right * scaleX, bounds.Bottom * scaleY)
+            Dim runtimeBounds As RectangleF = bounds
             Dim previousCenter As PointF = center
-            velocity.Y += gravity * scaleY * elapsed
+            velocity.Y += gravity * elapsed
             center.X += velocity.X * elapsed
             center.Y += velocity.Y * elapsed
-            Dim radius As Single = Math.Max(2.0F, Math.Min(ball.RectangleF.Width, ball.RectangleF.Height) * 0.43F)
+            Dim radius As Single = Math.Max(2.0F, Math.Min(authoredBallWidth, authoredBallHeight) * 0.43F)
             If center.X - radius < runtimeBounds.Left Then center.X = runtimeBounds.Left + radius : velocity.X = Math.Abs(velocity.X) * 0.55F
             If center.X + radius > runtimeBounds.Right Then center.X = runtimeBounds.Right - radius : velocity.X = -Math.Abs(velocity.X) * 0.55F
             If center.Y - radius < runtimeBounds.Top Then center.Y = runtimeBounds.Top + radius : velocity.Y = Math.Abs(velocity.Y) * 0.55F
@@ -262,8 +269,8 @@ Public Partial Class B2SData
             For pathIndex As Integer = 0 To boundaryPaths.Count - 1
                 Dim path As Generic.List(Of PointF) = boundaryPaths(pathIndex)
                 For segmentIndex As Integer = 0 To path.Count - 2
-                    Dim fromPoint As New PointF(path(segmentIndex).X * scaleX, path(segmentIndex).Y * scaleY)
-                    Dim toPoint As New PointF(path(segmentIndex + 1).X * scaleX, path(segmentIndex + 1).Y * scaleY)
+                    Dim fromPoint As PointF = path(segmentIndex)
+                    Dim toPoint As PointF = path(segmentIndex + 1)
                     Dim segmentBounce As Single = boundaryBounce
                     If pathIndex < boundarySegmentBounces.Count AndAlso segmentIndex < boundarySegmentBounces(pathIndex).Count AndAlso
                        boundarySegmentBounces(pathIndex)(segmentIndex) >= 0.0F Then
@@ -278,16 +285,17 @@ Public Partial Class B2SData
                         Math.Abs(velocity.X - beforeCollisionVelocity.X) > 0.0001F OrElse
                         Math.Abs(velocity.Y - beforeCollisionVelocity.Y) > 0.0001F
                     If collisionResolved Then
-                        ApplyShallowSurfaceRollingBoost(velocity, fromPoint, toPoint, elapsed, gravity * scaleY)
+                        ApplyShallowSurfaceRollingBoost(velocity, fromPoint, toPoint, elapsed, gravity)
                     End If
                 Next
             Next
             For index As Integer = 0 To obstacles.Count - 1
-                ResolveCircularObstacleCollision(center, radius, velocity, obstacles(index), scaleX, scaleY, obstacleBounces(index))
+                ResolveCircularObstacleCollision(center, radius, velocity, obstacles(index), 1.0F, 1.0F, obstacleBounces(index))
             Next
-            CheckLauncherCapture(center, scaleX, scaleY)
-            CheckSwitchZones(previousCenter, center, scaleX, scaleY)
-            ball.SetMotionPathPosition(center, True)
+            CheckLauncherCapture(center, 1.0F, 1.0F)
+            CheckSwitchZones(previousCenter, center, 1.0F, 1.0F)
+            physicsCenter = center
+            ball.SetMotionPathPosition(New PointF(center.X * scaleX, center.Y * scaleY), True)
         End Sub
 
         Private Shared Sub ApplyShallowSurfaceRollingBoost(ByRef ballVelocity As PointF,
@@ -314,7 +322,7 @@ Public Partial Class B2SData
         Private Sub CheckLauncherCapture(ByRef center As PointF, ByVal scaleX As Single, ByVal scaleY As Single)
             If launcher Is Nothing OrElse launcherArmed Then Return
             Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
-            GetLauncherPose(scaleX, scaleY, origin, angle)
+            GetLauncherPose(origin, angle)
             Dim radius As Single = launcher.CaptureRadius * (scaleX + scaleY) / 2.0F
             Dim dx As Single = center.X - origin.X
             Dim dy As Single = center.Y - origin.Y
@@ -329,52 +337,29 @@ Public Partial Class B2SData
             End If
         End Sub
 
-        Private Sub GetLauncherPose(ByVal scaleX As Single, ByVal scaleY As Single,
-                                    ByRef origin As PointF, ByRef angle As Single)
-            origin = New PointF(launcher.Origin.X * scaleX, launcher.Origin.Y * scaleY)
+        Private Function AuthoredPivotBounds(ByVal pivot As B2SPictureBox) As RectangleF
+            Dim scaleX As Single = If(authoredBallWidth > 0.0F AndAlso ball.RectangleF.Width > 0.0F, ball.RectangleF.Width / authoredBallWidth, 1.0F)
+            Dim scaleY As Single = If(authoredBallHeight > 0.0F AndAlso ball.RectangleF.Height > 0.0F, ball.RectangleF.Height / authoredBallHeight, 1.0F)
+            Return New RectangleF(pivot.RectangleF.X / scaleX, pivot.RectangleF.Y / scaleY,
+                                  pivot.RectangleF.Width / scaleX, pivot.RectangleF.Height / scaleY)
+        End Function
+
+        Private Sub GetLauncherPose(ByRef origin As PointF, ByRef angle As Single)
+            origin = launcher.Origin
             angle = launcher.Angle
             If Not launcher.FollowPivot Then Return
             Dim pivot As B2SPictureBox = FindPivotPicture(flipperName)
             If pivot Is Nothing Then Return
-            If pivot.PivotAutomaticOscillation Then
-                ' The main editor ball placement is the firing point for an attached
-                ' automatic pivot. Keep the saved launch coordinates for other modes.
-                origin = New PointF(authoredBallCenter.X * scaleX, authoredBallCenter.Y * scaleY)
-            End If
-            Dim hinge As New PointF(pivot.RectangleF.Left + pivot.RectangleF.Width * pivot.RotationPivotX,
-                                    pivot.RectangleF.Top + pivot.RectangleF.Height * pivot.RotationPivotY)
-            If pivot.PreservePhysicsArtworkAspect AndAlso pivot.Width > 0 AndAlso pivot.Height > 0 Then
-                ' Keep the held ball at the point it occupied on the authored
-                ' launcher. The background and physics boundaries retain their
-                ' independent X/Y screen scaling; only this rigid pair uses one
-                ' visual scale around the hinge.
-                Dim authoredOrigin As PointF = If(pivot.PivotAutomaticOscillation, authoredBallCenter, launcher.Origin)
-                Dim authoredHinge As New PointF(pivot.Left + pivot.Width * pivot.RotationPivotX,
-                                                pivot.Top + pivot.Height * pivot.RotationPivotY)
-                Dim visualScale As Single = Math.Min(pivot.RectangleF.Width / pivot.Width,
-                                                    pivot.RectangleF.Height / pivot.Height)
-                origin = New PointF(hinge.X + (authoredOrigin.X - authoredHinge.X) * visualScale,
-                                    hinge.Y + (authoredOrigin.Y - authoredHinge.Y) * visualScale)
-            End If
+            If pivot.PivotAutomaticOscillation Then origin = authoredBallCenter
+            Dim pivotBounds As RectangleF = AuthoredPivotBounds(pivot)
+            Dim hinge As New PointF(pivotBounds.Left + pivotBounds.Width * pivot.RotationPivotX,
+                                    pivotBounds.Top + pivotBounds.Height * pivot.RotationPivotY)
             Dim restAngle As Single = If(pivot.PivotAutomaticOscillation, 0.0F, pivot.PivotDownAngle)
             Dim delta As Single = pivot.RotationAngle - restAngle
             Dim radians As Double = delta * Math.PI / 180.0R
             Dim dx As Single = origin.X - hinge.X, dy As Single = origin.Y - hinge.Y
-            If pivot.PivotAutomaticOscillation AndAlso pivot.Width > 0 AndAlso pivot.Height > 0 Then
-                ' Match the automatic pivot artwork: rotate the editor point in
-                ' authored coordinates, then apply the backglass X/Y scales.
-                Dim authoredHinge As New PointF(pivot.Left + pivot.Width * pivot.RotationPivotX,
-                                                pivot.Top + pivot.Height * pivot.RotationPivotY)
-                Dim authoredX As Single = authoredBallCenter.X - authoredHinge.X
-                Dim authoredY As Single = authoredBallCenter.Y - authoredHinge.Y
-                Dim pivotScaleX As Single = pivot.RectangleF.Width / pivot.Width
-                Dim pivotScaleY As Single = pivot.RectangleF.Height / pivot.Height
-                origin = New PointF(hinge.X + CSng((authoredX * Math.Cos(radians) - authoredY * Math.Sin(radians)) * pivotScaleX),
-                                    hinge.Y + CSng((authoredX * Math.Sin(radians) + authoredY * Math.Cos(radians)) * pivotScaleY))
-            Else
-                origin = New PointF(hinge.X + CSng(dx * Math.Cos(radians) - dy * Math.Sin(radians)),
-                                    hinge.Y + CSng(dx * Math.Sin(radians) + dy * Math.Cos(radians)))
-            End If
+            origin = New PointF(hinge.X + CSng(dx * Math.Cos(radians) - dy * Math.Sin(radians)),
+                                hinge.Y + CSng(dx * Math.Sin(radians) + dy * Math.Cos(radians)))
             angle += delta
         End Sub
 
@@ -704,10 +689,11 @@ Public Partial Class B2SData
 
         Private Sub ResolveFlipperCollision(ByRef center As PointF, ByVal ballRadius As Single, ByRef ballVelocity As PointF,
                                             ByVal flipper As B2SPictureBox, ByVal angularVelocity As Single)
-            Dim hinge As New PointF(flipper.RectangleF.Left + flipper.RectangleF.Width * flipper.RotationPivotX,
-                                    flipper.RectangleF.Top + flipper.RectangleF.Height * flipper.RotationPivotY)
-            Dim baseTipX As Single = flipper.RectangleF.Left + flipper.RectangleF.Width * flipper.RotationTipX
-            Dim baseTipY As Single = flipper.RectangleF.Top + flipper.RectangleF.Height * flipper.RotationTipY
+            Dim flipperBounds As RectangleF = AuthoredPivotBounds(flipper)
+            Dim hinge As New PointF(flipperBounds.Left + flipperBounds.Width * flipper.RotationPivotX,
+                                    flipperBounds.Top + flipperBounds.Height * flipper.RotationPivotY)
+            Dim baseTipX As Single = flipperBounds.Left + flipperBounds.Width * flipper.RotationTipX
+            Dim baseTipY As Single = flipperBounds.Top + flipperBounds.Height * flipper.RotationTipY
             Dim radians As Double = flipper.RotationAngle * Math.PI / 180.0R
             Dim sourceX As Double = baseTipX - hinge.X
             Dim sourceY As Double = baseTipY - hinge.Y
@@ -724,7 +710,7 @@ Public Partial Class B2SData
             Dim normalX As Single = segmentY / segmentLength
             Dim normalY As Single = -segmentX / segmentLength
             If normalY > 0.0F Then normalX = -normalX : normalY = -normalY
-            Dim flipperRadius As Single = Math.Max(3.0F, Math.Min(flipper.RectangleF.Width, flipper.RectangleF.Height) * 0.07F)
+            Dim flipperRadius As Single = Math.Max(3.0F, Math.Min(flipperBounds.Width, flipperBounds.Height) * 0.07F)
             Dim minimumDistance As Single = ballRadius + flipperRadius
             If rawFraction < 0.0F OrElse rawFraction > 1.0F Then
                 Dim endX As Single = center.X - contact.X

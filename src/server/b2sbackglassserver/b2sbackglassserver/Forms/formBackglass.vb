@@ -4070,7 +4070,7 @@ Public Class formBackglass
         If DarkImage4Authentic IsNot Nothing Then
             Dim width As Integer = DarkImage4Authentic.Width
             Dim height As Integer = DarkImage4Authentic.Height
-            Dim image As Image = DarkImage4Authentic.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = DarkImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
             DarkImage4Authentic.Dispose()
             DarkImage4Authentic = Nothing
             DarkImage4Authentic = image
@@ -4081,37 +4081,37 @@ Public Class formBackglass
             DarkImage4Fantasy = DarkImage4Authentic
         End If
         If TopLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = TopLightImage4Authentic.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = TopLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
             TopLightImage4Authentic.Dispose()
             TopLightImage4Authentic = Nothing
             TopLightImage4Authentic = image
         End If
         If TopLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = TopLightImage4Fantasy.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = TopLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
             TopLightImage4Fantasy.Dispose()
             TopLightImage4Fantasy = Nothing
             TopLightImage4Fantasy = image
         End If
         If SecondLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = SecondLightImage4Authentic.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = SecondLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
             SecondLightImage4Authentic.Dispose()
             SecondLightImage4Authentic = Nothing
             SecondLightImage4Authentic = image
         End If
         If SecondLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = SecondLightImage4Fantasy.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = SecondLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
             SecondLightImage4Fantasy.Dispose()
             SecondLightImage4Fantasy = Nothing
             SecondLightImage4Fantasy = image
         End If
         If TopAndSecondLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = TopAndSecondLightImage4Authentic.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = TopAndSecondLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
             TopAndSecondLightImage4Authentic.Dispose()
             TopAndSecondLightImage4Authentic = Nothing
             TopAndSecondLightImage4Authentic = image
         End If
         If TopAndSecondLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = TopAndSecondLightImage4Fantasy.Resized(B2SScreen.BackglassSize)
+            Dim image As Image = TopAndSecondLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
             TopAndSecondLightImage4Fantasy.Dispose()
             TopAndSecondLightImage4Fantasy = Nothing
             TopAndSecondLightImage4Fantasy = image

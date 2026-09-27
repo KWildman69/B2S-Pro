@@ -38,7 +38,10 @@ Public Class Coding
                 result.Dispose()
                 result = masked
             End If
-            If bulb.SnippitInfo.BehindCanvas Then
+            ' A physics ball moves away from its saved position. The server
+            ' composites the stationary canvas over it at its current position;
+            ' baking the starting canvas mask here can erase the entire ball.
+            If bulb.SnippitInfo.BehindCanvas AndAlso Not bulb.SnippitInfo.PhysicsBall Then
                 Dim clipped As Image = Illumination.Lights.CreateCanvasClippedSnippet(result, canvas, rect, True)
                 If clipped Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet canvas mask.")
                 result.Dispose()

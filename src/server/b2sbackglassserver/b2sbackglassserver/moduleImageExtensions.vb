@@ -1,8 +1,35 @@
-﻿#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
+#Disable Warning BC42016, BC42017, BC42018, BC42019, BC42032
 Imports System
 Imports System.Drawing
 
 Module moduleImageExtensions
+
+    ' Full-canvas artwork is sampled once at load time. Keep the existing
+    ' snippet/animation resizing paths separate from this presentation filter.
+    <System.Runtime.CompilerServices.Extension()> _
+    Public Function ResizedCanvas(image As Image, size As Size) As Image
+        If image Is Nothing OrElse size.Width <= 0 OrElse size.Height <= 0 Then Return Nothing
+        Dim ret As New Bitmap(size.Width, size.Height)
+        If image.Size = size Then
+            Dim native As Bitmap = DirectCast(image.Clone(), Bitmap)
+            native.SetResolution(ret.HorizontalResolution, ret.VerticalResolution)
+            ret.Dispose()
+            Return native
+        End If
+        Using gr As Graphics = Graphics.FromImage(ret)
+            gr.PageUnit = GraphicsUnit.Pixel
+            gr.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+            gr.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+            Using attributes As New Imaging.ImageAttributes()
+                ' Sample the edge pixels rather than transparent pixels
+                ' outside the image, avoiding a faded canvas border.
+                attributes.SetWrapMode(Drawing2D.WrapMode.TileFlipXY)
+                gr.DrawImage(image, New Rectangle(Point.Empty, size),
+                             0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes)
+            End Using
+        End Using
+        Return ret
+    End Function
 
     <System.Runtime.CompilerServices.Extension()> _
     Public Function Resized(image As Image, size As Size, Optional ByVal disposeOriginal As Boolean = False) As Image
