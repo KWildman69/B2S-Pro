@@ -6,6 +6,8 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ### September 27 update — versions unchanged
 
+- Give grouped trough balls a fixed collision bounce based on arrival speed, with reduced force transferred through adjacent balls and exact return to their authored slots.
+- Stagger trough compaction by 48 ms per following ball so ejected balls no longer move in lockstep.
 - Reuse identical layered snippet backdrops while exporting artwork lights, cutting repeated full-canvas bitmap work on image-heavy backglasses.
 - Dispose generated save images and animation-preview timers promptly, and guarantee the Layers list resumes painting after every rebuild.
 - Ignore malformed or NUL-filled Step 2 preview telemetry instead of allowing an intermittent conversion error to interrupt the preview.

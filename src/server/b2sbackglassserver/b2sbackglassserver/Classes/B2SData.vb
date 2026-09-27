@@ -812,7 +812,9 @@ Public Partial Class B2SData
             If occupiedInOrder.Count = 0 OrElse occupiedInOrder(0) IsNot removingMember Then Return
             For index As Integer = 0 To occupiedInOrder.Count - 2
                 compactionTargets.Add(occupiedInOrder(index).MotionPathCenter)
-                occupiedInOrder(index + 1).StartMotionPathShift(compactionTargets(index), removingMember.MotionPathExitDuration)
+                occupiedInOrder(index + 1).StartMotionPathShift(compactionTargets(index),
+                                                                 removingMember.MotionPathExitDuration,
+                                                                 index * 48)
             Next
         End Sub
 
@@ -882,12 +884,44 @@ Public Partial Class B2SData
                 RemoveHandler completedMember.MotionPathLaunchSegmentCompleted, AddressOf MemberLaunchSegmentCompleted
             End If
             If completedMember IsNot Nothing AndAlso activeEntries.Remove(completedMember) Then
+                ApplyEntryCollision(completedMember)
                 occupiedMembers.Add(completedMember)
                 If completedMember Is launchingMember Then
                     BeginSourceRespawn()
                 End If
             End If
             ProcessPendingOperations()
+        End Sub
+
+        Private Sub ApplyEntryCollision(ByVal incomingMember As B2SPictureBox)
+            If incomingMember Is Nothing OrElse occupiedMembers.Count = 0 Then Return
+            Dim impactedMembers As New Generic.List(Of B2SPictureBox)()
+            For Each member As B2SPictureBox In members
+                If occupiedMembers.Contains(member) Then impactedMembers.Add(member)
+            Next
+            impactedMembers.Sort(Function(left As B2SPictureBox, right As B2SPictureBox)
+                                     Return right.MotionPathSequenceOrder.CompareTo(left.MotionPathSequenceOrder)
+                                 End Function)
+            If impactedMembers.Count = 0 Then Return
+
+            Dim incomingCenter As PointF = incomingMember.MotionPathCenter
+            Dim nearestCenter As PointF = impactedMembers(0).MotionPathCenter
+            Dim direction As New PointF(nearestCenter.X - incomingCenter.X, nearestCenter.Y - incomingCenter.Y)
+            Dim directionLength As Double = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y)
+            If directionLength <= 0.001R Then Return
+            direction = New PointF(CSng(direction.X / directionLength), CSng(direction.Y / directionLength))
+
+            Dim ballDiameter As Single = Math.Max(1.0F, Math.Min(incomingMember.RectangleF.Width, incomingMember.RectangleF.Height))
+            Dim impactAmplitude As Single = incomingMember.MotionPathArrivalSpeed * 4.5F
+            impactAmplitude = Math.Max(ballDiameter * 0.012F, Math.Min(ballDiameter * 0.04F, impactAmplitude)) * 30.0F
+
+            incomingMember.StartTroughCollisionImpulse(New PointF(-direction.X, -direction.Y), impactAmplitude * 0.35F)
+            Dim transferredAmplitude As Single = impactAmplitude
+            For index As Integer = 0 To impactedMembers.Count - 1
+                impactedMembers(index).StartTroughCollisionImpulse(direction, transferredAmplitude, index * 18)
+                transferredAmplitude *= 0.58F
+                If transferredAmplitude < 0.25F Then Exit For
+            Next
         End Sub
 
         Private Sub RemovalCompleted(ByVal sender As Object, ByVal e As EventArgs)

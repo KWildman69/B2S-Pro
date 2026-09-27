@@ -62,6 +62,8 @@ Public Class B2SPictureBox
         AddHandler nativeRotationTimer.Tick, AddressOf NativeRotationTimer_Tick
         motionPathTimer = New Timer() With {.Interval = 16}
         AddHandler motionPathTimer.Tick, AddressOf MotionPathTimer_Tick
+        troughCollisionTimer = New Timer() With {.Interval = 16}
+        AddHandler troughCollisionTimer.Tick, AddressOf TroughCollisionTimer_Tick
         motionPathSourceRespawnTimer = New Timer() With {.Interval = 16}
         AddHandler motionPathSourceRespawnTimer.Tick, AddressOf MotionPathSourceRespawnTimer_Tick
         pivotRotationTimer = New Timer() With {.Interval = 16}
@@ -170,6 +172,11 @@ Public Class B2SPictureBox
             Return motionPathTimer IsNot Nothing AndAlso (motionPathTimer.Enabled OrElse motionPathPaused)
         End Get
     End Property
+    Public ReadOnly Property MotionPathArrivalSpeed() As Single
+        Get
+            Return _motionPathArrivalSpeed
+        End Get
+    End Property
     Public ReadOnly Property HasPersistentMotionPathSource() As Boolean
         Get
             Return motionPathSequenceSourceAnchor AndAlso _motionPathPoints.Count >= 2
@@ -232,6 +239,13 @@ Public Class B2SPictureBox
     Private nativeFrameGeneration As Integer = 0
     Private nativeFrameIndex As Integer = -1
     Private motionPathTimer As Timer
+    Private troughCollisionTimer As Timer
+    Private troughCollisionClock As New Stopwatch()
+    Private troughCollisionBaseBounds As RectangleF = RectangleF.Empty
+    Private troughCollisionDirection As PointF = PointF.Empty
+    Private troughCollisionAmplitude As Single = 0.0F
+    Private troughCollisionDelay As Integer = 0
+    Private Const TroughCollisionDuration As Integer = 180
     Private motionPathSourceRespawnTimer As Timer
     Private flasherPulseTimer As Timer
     Private flasherPulseActive As Boolean = False
@@ -268,11 +282,13 @@ Public Class B2SPictureBox
     Private motionPathPaused As Boolean = False
     Private motionPathQueuedStarts As Integer = 0
     Private motionPathActiveDuration As Integer = 3000
+    Private motionPathStartDelay As Integer = 0
     Private motionPathActiveLoop As Boolean = False
     Private motionPathExternalShift As Boolean = False
     Private motionPathExternalStartVelocity As PointF = PointF.Empty
     Private motionPathExternalEndVelocity As PointF = PointF.Empty
     Private motionPathExternalLastVelocity As PointF = PointF.Empty
+    Private _motionPathArrivalSpeed As Single = 0.0F
     Private nativePreparingWidth As Integer = 0
     Private nativePreparingHeight As Integer = 0
     Private nativePreparationDispatch As TaskCompletionSource(Of Boolean)
@@ -781,6 +797,7 @@ Public Class B2SPictureBox
             Me.Parent.BeginInvoke(New MethodInvoker(Sub() SetMotionPathPosition(center, advanceRoll)))
             Return
         End If
+        StopTroughCollisionImpulse(True)
         ' Slot normalization is authoritative. A survivor shift and the exit
         ' path can finish on adjacent timer ticks; cancel the survivor timer so
         ' it cannot move the normalized object back onto an occupied slot.
@@ -788,17 +805,20 @@ Public Class B2SPictureBox
         motionPathClock.Reset()
         motionPathPaused = False
         motionPathActiveLoop = False
+        motionPathStartDelay = 0
         motionPathLaunchSegmentReported = True
         motionPathStartRectangle = Me.RectangleF
         SetMotionPathCenter(center, advanceRoll)
     End Sub
 
-    Public Sub StartMotionPathShift(ByVal target As PointF, ByVal duration As Integer)
+    Public Sub StartMotionPathShift(ByVal target As PointF, ByVal duration As Integer,
+                                    Optional ByVal delayMilliseconds As Integer = 0)
         If Me.Parent Is Nothing Then Return
         If Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
-            Me.Parent.BeginInvoke(New MethodInvoker(Sub() StartMotionPathShift(target, duration)))
+            Me.Parent.BeginInvoke(New MethodInvoker(Sub() StartMotionPathShift(target, duration, delayMilliseconds)))
             Return
         End If
+        StopTroughCollisionImpulse(True)
         motionPathTimer.Stop()
         motionPathClock.Reset()
         motionPathPaused = False
@@ -807,6 +827,7 @@ Public Class B2SPictureBox
         motionPathStartRectangle = Me.RectangleF
         motionPathRuntimePoints = New List(Of PointF) From {MotionPathCenter, target}
         motionPathActiveDuration = Math.Max(250, Math.Min(30000, duration))
+        motionPathStartDelay = Math.Max(0, delayMilliseconds)
         motionPathActiveLoop = False
         Me.Visible = True
         motionPathClock.Start()
@@ -834,6 +855,7 @@ Public Class B2SPictureBox
         motionPathStartRectangle = Me.RectangleF
         motionPathRuntimePoints = New List(Of PointF) From {startCenter, target}
         motionPathActiveDuration = Math.Max(10, Math.Min(1000, duration))
+        motionPathStartDelay = 0
         motionPathActiveLoop = False
         motionPathExternalShift = True
         motionPathExternalStartVelocity = LimitExternalGridVelocity(startVelocity, startCenter, target, motionPathActiveDuration)
@@ -863,11 +885,13 @@ Public Class B2SPictureBox
             Return
         End If
 
+        StopTroughCollisionImpulse(True)
         motionPathTimer.Stop()
         motionPathClock.Reset()
         motionPathPaused = False
         motionPathExternalShift = False
         motionPathActiveDuration = Math.Max(250, Math.Min(30000, If(useExitPath, MotionPathExitDuration, MotionPathDuration)))
+        motionPathStartDelay = 0
         motionPathActiveLoop = Not useExitPath AndAlso MotionPathLoop
         If Not motionPathRuntimePrepared Then
             motionPathStartRectangle = Me.RectangleF
@@ -898,12 +922,79 @@ Public Class B2SPictureBox
             motionPathRuntimePrepared = True
         End If
         motionPathRuntimePoints = If(useExitPath, motionPathRuntimeExitPoints, motionPathRuntimeEntryPoints)
+        If Not useExitPath Then
+            _motionPathArrivalSpeed = CSng(MotionPathLength(motionPathRuntimePoints) / Math.Max(1, motionPathActiveDuration))
+        End If
         motionPathLaunchSegmentReported = useExitPath
         motionPathLaunchSegmentProgress = If(useExitPath, 1.0F, FirstMotionPathSegmentCompletion(motionPathRuntimePoints))
         SetMotionPathCenter(motionPathRuntimePoints(0))
         Me.Visible = True
         motionPathClock.Start()
         motionPathTimer.Start()
+    End Sub
+
+    Public Sub StartTroughCollisionImpulse(ByVal direction As PointF, ByVal amplitude As Single,
+                                            Optional ByVal delayMilliseconds As Integer = 0)
+        If Me.Parent IsNot Nothing AndAlso Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
+            Me.Parent.BeginInvoke(New MethodInvoker(Sub() StartTroughCollisionImpulse(direction, amplitude, delayMilliseconds)))
+            Return
+        End If
+        StopTroughCollisionImpulse(True)
+        Dim length As Double = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y)
+        If length <= 0.001R OrElse amplitude <= 0.0F Then Return
+        troughCollisionBaseBounds = Me.RectangleF
+        troughCollisionDirection = New PointF(CSng(direction.X / length), CSng(direction.Y / length))
+        troughCollisionAmplitude = amplitude
+        troughCollisionDelay = Math.Max(0, delayMilliseconds)
+        troughCollisionClock.Restart()
+        troughCollisionTimer.Start()
+    End Sub
+
+    Private Sub TroughCollisionTimer_Tick(ByVal sender As Object, ByVal e As EventArgs)
+        Dim elapsed As Double = troughCollisionClock.Elapsed.TotalMilliseconds
+        If elapsed < troughCollisionDelay Then Return
+        Dim progress As Single = CSng((elapsed - troughCollisionDelay) / TroughCollisionDuration)
+        If progress >= 1.0F Then
+            StopTroughCollisionImpulse(True)
+            Return
+        End If
+        Dim offset As Single = CSng(troughCollisionAmplitude * Math.Sin(Math.PI * progress) * Math.Exp(-1.2R * progress))
+        Dim baseCenter As PointF = RectangleCenter(troughCollisionBaseBounds)
+        SetTroughCollisionCenter(New PointF(baseCenter.X + troughCollisionDirection.X * offset,
+                                            baseCenter.Y + troughCollisionDirection.Y * offset))
+    End Sub
+
+    Private Sub StopTroughCollisionImpulse(ByVal restorePosition As Boolean)
+        If troughCollisionTimer IsNot Nothing Then troughCollisionTimer.Stop()
+        troughCollisionClock.Reset()
+        If restorePosition AndAlso Not troughCollisionBaseBounds.IsEmpty Then
+            Dim oldBounds As Rectangle = MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle)
+            Me.RectangleF = troughCollisionBaseBounds
+            If Me.Parent IsNot Nothing Then
+                Dim dirty As Rectangle = Rectangle.Union(oldBounds, MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle))
+                dirty.Inflate(2, 2)
+                Me.Parent.Invalidate(dirty)
+            End If
+        End If
+        troughCollisionBaseBounds = RectangleF.Empty
+        troughCollisionDirection = PointF.Empty
+        troughCollisionAmplitude = 0.0F
+        troughCollisionDelay = 0
+    End Sub
+
+    Private Sub SetTroughCollisionCenter(ByVal center As PointF)
+        Dim previousCenter As PointF = MotionPathCenter
+        Dim oldBounds As Rectangle = MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle)
+        AdvanceMotionPathRoll(previousCenter, center, troughCollisionBaseBounds.Size, MotionPathRollAngle)
+        Me.RectangleF = New RectangleF(center.X - troughCollisionBaseBounds.Width / 2.0F,
+                                       center.Y - troughCollisionBaseBounds.Height / 2.0F,
+                                       troughCollisionBaseBounds.Width,
+                                       troughCollisionBaseBounds.Height)
+        If Me.Parent IsNot Nothing Then
+            Dim dirty As Rectangle = Rectangle.Union(oldBounds, MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle))
+            dirty.Inflate(2, 2)
+            Me.Parent.Invalidate(dirty)
+        End If
     End Sub
 
     Public Sub StopMotionPath()
@@ -935,7 +1026,9 @@ Public Class B2SPictureBox
             motionPathClock.Reset()
             Return
         End If
-        Dim progress As Single = CSng(Math.Min(1.0, motionPathClock.Elapsed.TotalMilliseconds / motionPathActiveDuration))
+        Dim elapsedMilliseconds As Double = motionPathClock.Elapsed.TotalMilliseconds
+        If elapsedMilliseconds < motionPathStartDelay Then Return
+        Dim progress As Single = CSng(Math.Min(1.0, (elapsedMilliseconds - motionPathStartDelay) / motionPathActiveDuration))
         If motionPathExternalShift Then
             SetMotionPathCenter(ExternalGridPoint(progress), True)
             motionPathExternalLastVelocity = ExternalGridVelocity(progress)
@@ -1028,6 +1121,17 @@ Public Class B2SPictureBox
             target -= lengths(index)
         Next
         Return motionPathRuntimePoints(motionPathRuntimePoints.Count - 1)
+    End Function
+
+    Private Shared Function MotionPathLength(ByVal points As List(Of PointF)) As Double
+        If points Is Nothing OrElse points.Count < 2 Then Return 0.0R
+        Dim total As Double = 0.0R
+        For index As Integer = 0 To points.Count - 2
+            Dim dx As Double = points(index + 1).X - points(index).X
+            Dim dy As Double = points(index + 1).Y - points(index).Y
+            total += Math.Sqrt(dx * dx + dy * dy)
+        Next
+        Return total
     End Function
 
     Private Function FirstMotionPathSegmentCompletion(ByVal points As List(Of PointF)) As Single
@@ -1125,6 +1229,13 @@ Public Class B2SPictureBox
             RemoveHandler motionPathTimer.Tick, AddressOf MotionPathTimer_Tick
             motionPathTimer.Dispose()
             motionPathTimer = Nothing
+        End If
+        If disposing AndAlso troughCollisionTimer IsNot Nothing Then
+            troughCollisionTimer.Stop()
+            troughCollisionClock.Reset()
+            RemoveHandler troughCollisionTimer.Tick, AddressOf TroughCollisionTimer_Tick
+            troughCollisionTimer.Dispose()
+            troughCollisionTimer = Nothing
         End If
         If disposing AndAlso motionPathSourceRespawnTimer IsNot Nothing Then
             motionPathSourceRespawnTimer.Stop()
