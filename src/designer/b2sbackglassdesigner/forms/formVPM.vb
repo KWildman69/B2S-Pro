@@ -190,6 +190,25 @@ Public Class formVPM
 
     End Sub
 
+    Friend Shared Function TryParsePreviewEvent(ByVal record As String, ByRef kind As String,
+                                                ByRef eventID As Integer, ByRef state As Integer) As Boolean
+        kind = String.Empty
+        eventID = 0
+        state = 0
+        ' Test telemetry can contain incomplete or corrupt records. In particular,
+        ' embedded NULs must never reach numeric conversion or the WinForms text box.
+        If String.IsNullOrEmpty(record) OrElse record.IndexOf(ChrW(0)) >= 0 Then Return False
+        Dim fields() As String = record.Split(","c)
+        If fields.Length <> 3 Then Return False
+        If fields(0) <> "L" AndAlso fields(0) <> "S" AndAlso fields(0) <> "G" Then Return False
+        If Not Integer.TryParse(fields(1), Globalization.NumberStyles.Integer,
+                                Globalization.CultureInfo.InvariantCulture, eventID) OrElse eventID < 0 Then Return False
+        If Not Integer.TryParse(fields(2), Globalization.NumberStyles.Integer,
+                                Globalization.CultureInfo.InvariantCulture, state) OrElse state < 0 Then Return False
+        kind = fields(0)
+        Return True
+    End Function
+
     Private Sub TimerInfos_Tick(sender As System.Object, e As System.EventArgs) Handles TimerInfos.Tick
 
         If isVPinMAMEBackglass Then
@@ -208,22 +227,22 @@ Public Class formVPM
                 sb.Append(txtInfo.Text)
                 Dim infolines As String() = regdata.Split(";")
                 For Each info As String In infolines
-                    Dim infos As String() = info.Split(",")
-
-                    If infos.Length = 3 Then
+                    Dim kind As String = Nothing
+                    Dim eventID As Integer, state As Integer
+                    If TryParsePreviewEvent(info, kind, eventID, state) Then
 
                         ' add text info
-                        Select Case infos(0)
+                        Select Case kind
                             Case "L" : sb.Append("Lamp ")
                             Case "S" : sb.Append("Solenoid ")
                             Case "G" : sb.Append("G.I. string ")
                         End Select
-                        sb.Append(infos(1))
+                        sb.Append(eventID)
                         sb.Append(" is set to ")
-                        sb.AppendLine(infos(2))
+                        sb.AppendLine(state.ToString(Globalization.CultureInfo.InvariantCulture))
 
                         ' collect data
-                        Dim key As String = infos(0) & CInt(infos(1)).ToString("D4")
+                        Dim key As String = kind & eventID.ToString("D4", Globalization.CultureInfo.InvariantCulture)
                         Dim statistic As statistic = Nothing
                         If Not stats.ContainsKey(key) Then
                             statistic = New statistic()
@@ -231,16 +250,16 @@ Public Class formVPM
                         Else
                             statistic = stats(key)
                         End If
-                        Select Case infos(2)
-                            Case "0" : statistic.Count0 += 1
-                            Case "1" : statistic.Count1 += 1
-                            Case "2" : statistic.Count2 += 1
-                            Case "3" : statistic.Count3 += 1
-                            Case "4" : statistic.Count4 += 1
-                            Case "5" : statistic.Count5 += 1
-                            Case "6" : statistic.Count6 += 1
-                            Case "7" : statistic.Count7 += 1
-                            Case "8" : statistic.Count8 += 1
+                        Select Case state
+                            Case 0 : statistic.Count0 += 1
+                            Case 1 : statistic.Count1 += 1
+                            Case 2 : statistic.Count2 += 1
+                            Case 3 : statistic.Count3 += 1
+                            Case 4 : statistic.Count4 += 1
+                            Case 5 : statistic.Count5 += 1
+                            Case 6 : statistic.Count6 += 1
+                            Case 7 : statistic.Count7 += 1
+                            Case 8 : statistic.Count8 += 1
                         End Select
 
                     End If

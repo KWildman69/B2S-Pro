@@ -4,6 +4,13 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
+### September 27 update — versions unchanged
+
+- Reuse identical layered snippet backdrops while exporting artwork lights, cutting repeated full-canvas bitmap work on image-heavy backglasses.
+- Dispose generated save images and animation-preview timers promptly, and guarantee the Layers list resumes painting after every rebuild.
+- Ignore malformed or NUL-filled Step 2 preview telemetry instead of allowing an intermittent conversion error to interrupt the preview.
+- Existing 1.0.3 installations need to rerun setup manually to receive this same-version update.
+
 ### September 26 update — versions unchanged
 
 - Advance physics-linked flippers and balls together in 1 ms steps in the Designer test and Server, so delayed screen updates do not alter the calculated hit.

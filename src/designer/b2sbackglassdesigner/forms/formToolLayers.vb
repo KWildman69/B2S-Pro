@@ -587,17 +587,20 @@ Public Class formToolLayers
         refreshing = True
         Dim selected As List(Of Object) = SelectedObjects()
         layers.BeginUpdate()
-        layers.Items.Clear()
-        If Backglass.currentTabPage IsNot Nothing Then
-            AddVisualLayers()
-        End If
-        layers.EndUpdate()
-        For Each item As Object In selected
-            SelectObject(item, False)
-        Next
-        refreshing = False
-        countLabel.Text = layers.Items.Count.ToString()
-        UpdateButtonState()
+        Try
+            layers.Items.Clear()
+            If Backglass.currentTabPage IsNot Nothing Then
+                AddVisualLayers()
+            End If
+            For Each item As Object In selected
+                SelectObject(item, False)
+            Next
+            countLabel.Text = layers.Items.Count.ToString()
+            UpdateButtonState()
+        Finally
+            layers.EndUpdate()
+            refreshing = False
+        End Try
     End Sub
 
     Private Sub AddVisualLayers()

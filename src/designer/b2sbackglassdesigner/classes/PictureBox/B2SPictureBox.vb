@@ -1140,6 +1140,25 @@ Public Class B2SPictureBox
         End Try
     End Function
 
+    ' Backdrops are identical when the same visible snippet layers sit below a
+    ' light.  Lights.DrawImages uses this key to share one native canvas during
+    ' a render pass instead of cloning the full backglass once per light.
+    Friend Function LightArtworkBackdropKey(ByVal target As Illumination.BulbInfo) As String
+        If target Is Nothing OrElse target.LightBehindCanvas OrElse
+           Not target.UsesArtworkPixelRenderer Then Return String.Empty
+
+        Dim key As New Text.StringBuilder()
+        For Each item As Object In OrderedVisualItems()
+            If Object.ReferenceEquals(item, target) Then Exit For
+            Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+            If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
+               LayerManager.IsVisible(snippet) AndAlso IsPictureAnimationReferenceFrame(snippet) Then
+                key.Append(snippet.ID).Append(":"c)
+            End If
+        Next
+        Return key.ToString()
+    End Function
+
     ' Group-aware version used by Light Settings.  The off image excludes every
     ' selected lamp and the on image forces every selected lamp through the same
     ' native compositor used by the designer canvas.
@@ -1631,6 +1650,14 @@ Public Class B2SPictureBox
 
     Protected Overrides Sub Dispose(ByVal disposing As Boolean)
         If disposing Then
+            If animationtimer IsNot Nothing Then
+                animationtimer.Stop()
+                RemoveHandler animationtimer.Tick, AddressOf AnimationTimer_Tick
+                animationtimer.Dispose()
+                animationtimer = Nothing
+            End If
+            currentAnimationSteps = Nothing
+            animationOn.Clear()
             ClearUnifiedCompositeCache()
             ClearLightLayerCache()
             EndDragPreview(False)
@@ -2266,7 +2293,8 @@ Public Class B2SPictureBox
     Private animationtimeroff As Boolean = False
     Private animationtimerticks As Integer = 0
     Private animationtimerloops As Integer = 0
-    Private Sub AnimationTimer_Tick()
+    Private Sub AnimationTimer_Tick(Optional ByVal sender As Object = Nothing,
+                                    Optional ByVal e As EventArgs = Nothing)
         animationtimer.Stop()
         animationtimerticks -= 1
         Do While animationtimerticks <= 0

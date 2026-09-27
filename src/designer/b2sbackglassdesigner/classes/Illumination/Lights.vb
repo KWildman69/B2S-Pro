@@ -398,7 +398,10 @@ Namespace Illumination
             Cursor.Current = Cursors.WaitCursor
             RaiseEvent ReportProgress(Me, New LightsProgressEventArgs(0))
             Dim progress As Integer = 0
+            Dim artworkBackdrops As New Generic.Dictionary(Of String, Bitmap)(StringComparer.Ordinal)
+            Dim offArtworkBackdrops As New Generic.Dictionary(Of String, Bitmap)(StringComparer.Ordinal)
 
+            Try
             ' 3.0.10: export safety. A project can occasionally retain an empty
             ' light entry after intensive add/delete/paste editing. Older drawing
             ' code dereferenced that entry and stopped DirectB2S processing with a
@@ -427,8 +430,8 @@ Namespace Illumination
                 For Each bulb As Illumination.BulbInfo In bulbs
                     If bulb Is Nothing Then Continue For
                     With bulb
-                        Using artworkBackdrop As Bitmap = parent.CreateLightArtworkBackdrop(bulb, currentimage),
-                              offArtworkBackdrop As Bitmap = parent.CreateLightArtworkBackdrop(bulb, currentoffimage)
+                        Dim artworkBackdrop As Bitmap = GetOrCreateArtworkBackdrop(artworkBackdrops, bulb, currentimage)
+                        Dim offArtworkBackdrop As Bitmap = GetOrCreateArtworkBackdrop(offArtworkBackdrops, bulb, currentoffimage)
                         If artworkBackdrop IsNot Nothing Then .IsIlluminatedImageDirty = True
                         If Not newimages.ContainsKey(.ID) OrElse .IsIlluminatedImageDirty Then
                             If .IsIlluminatedImageDirty Then
@@ -528,12 +531,36 @@ Namespace Illumination
                                 End If
                             End If
                         End If
-                        End Using
                     End With
                 Next
             End If
             RaiseEvent ReportProgress(Me, New LightsProgressEventArgs(100))
-            Cursor.Current = Cursors.Default
+            Finally
+                DisposeArtworkBackdrops(artworkBackdrops)
+                DisposeArtworkBackdrops(offArtworkBackdrops)
+                Cursor.Current = Cursors.Default
+            End Try
+        End Sub
+
+        Private Function GetOrCreateArtworkBackdrop(ByVal cache As Generic.Dictionary(Of String, Bitmap),
+                                                     ByVal bulb As Illumination.BulbInfo,
+                                                     ByVal background As Image) As Bitmap
+            If background Is Nothing Then Return Nothing
+            Dim key As String = parent.LightArtworkBackdropKey(bulb)
+            If String.IsNullOrEmpty(key) Then Return Nothing
+
+            Dim backdrop As Bitmap = Nothing
+            If cache.TryGetValue(key, backdrop) Then Return backdrop
+            backdrop = parent.CreateLightArtworkBackdrop(bulb, background)
+            If backdrop IsNot Nothing Then cache.Add(key, backdrop)
+            Return backdrop
+        End Function
+
+        Private Shared Sub DisposeArtworkBackdrops(ByVal cache As Generic.Dictionary(Of String, Bitmap))
+            For Each backdrop As Bitmap In cache.Values
+                backdrop.Dispose()
+            Next
+            cache.Clear()
         End Sub
 
         Private Shared Function ClipLightBehindCanvas(ByVal lightImage As Image,

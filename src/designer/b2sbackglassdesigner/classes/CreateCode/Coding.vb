@@ -91,6 +91,8 @@ Public Class Coding
         If Not isRecoverySnapshot AndAlso Not CheckData() Then Return False
 
         Dim ret As Boolean = True
+        Dim generatedBackglassImage As Image = Nothing
+        Dim generatedDmdImage As Image = Nothing
 
         RaiseEvent ReportProgress(Me, New CodingProgressEventArgs(0))
 
@@ -556,8 +558,10 @@ Public Class Coding
                 IO.Directory.SetCurrentDirectory(currentDir)
                 Throw New InvalidOperationException("The main backglass image could not be loaded. DirectB2S export was cancelled so a black backglass file is not created.")
             End If
+            generatedBackglassImage = image
 
             Dim dmdimage As Image = Backglass.currentTabPage.IlluminatedDMDImageOnlyWithAlwaysOnLights()
+            generatedDmdImage = dmdimage
             Dim offimage As Image = Backglass.currentTabPage.OffImage()
             Dim illuminationimage As Image = Backglass.currentTabPage.FirstStoredIlluminationImage()
             Dim thumbnailimage As Image = Backglass.currentData.ThumbnailImage
@@ -968,6 +972,8 @@ Public Class Coding
 
         Return ret
         Finally
+            If generatedDmdImage IsNot Nothing Then generatedDmdImage.Dispose()
+            If generatedBackglassImage IsNot Nothing Then generatedBackglassImage.Dispose()
             IO.Directory.SetCurrentDirectory(currentDir)
         End Try
 
