@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.Drawing.Drawing2D
 Imports System.Drawing.Imaging
 Imports System.Runtime.InteropServices
@@ -427,6 +427,9 @@ Namespace Illumination
                 For Each bulb As Illumination.BulbInfo In bulbs
                     If bulb Is Nothing Then Continue For
                     With bulb
+                        Using artworkBackdrop As Bitmap = parent.CreateLightArtworkBackdrop(bulb, currentimage),
+                              offArtworkBackdrop As Bitmap = parent.CreateLightArtworkBackdrop(bulb, currentoffimage)
+                        If artworkBackdrop IsNot Nothing Then .IsIlluminatedImageDirty = True
                         If Not newimages.ContainsKey(.ID) OrElse .IsIlluminatedImageDirty Then
                             If .IsIlluminatedImageDirty Then
                                 RemoveCachedImage(.ID)
@@ -466,8 +469,8 @@ Namespace Illumination
                                             Dim lowerintensity As Integer = Math.Max(.Intensity - 2, 1)
                                             If .DodgeColor <> Nothing Then lowerintensity = 3
                                             'Dim lowerintensity As Integer = 1
-                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(currentimage, rect, rectX, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas)
-                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(currentoffimage, rect, rectX, lowerintensity, .LightColor, Nothing, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas), Nothing)
+                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas)
+                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas), Nothing)
                                             If .LightBehindCanvas Then
                                                 illuimage = ClipLightBehindCanvas(illuimage, currentimage, rectX)
                                                 offimage = ClipLightBehindCanvas(offimage, If(currentoffimage, currentimage), rectX)
@@ -481,8 +484,8 @@ Namespace Illumination
                                             Dim lowerintensity As Integer = Math.Max(.Intensity - 2, 1)
                                             If .DodgeColor <> Nothing Then lowerintensity = 3
                                             'Dim lowerintensity As Integer = 1
-                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(currentimage, rect, rectX, .Intensity, .LightColor, .DodgeColor, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas)
-                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(currentoffimage, rect, rectX, lowerintensity, .LightColor, Nothing, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas), Nothing)
+                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas)
+                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas), Nothing)
                                             If .LightBehindCanvas Then
                                                 illuimage = ClipLightBehindCanvas(illuimage, currentimage, rectX)
                                                 offimage = ClipLightBehindCanvas(offimage, If(currentoffimage, currentimage), rectX)
@@ -525,6 +528,7 @@ Namespace Illumination
                                 End If
                             End If
                         End If
+                        End Using
                     End With
                 Next
             End If

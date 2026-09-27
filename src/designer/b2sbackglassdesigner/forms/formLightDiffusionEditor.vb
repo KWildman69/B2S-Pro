@@ -1540,7 +1540,16 @@ Public Class formLightDiffusionEditor
         ' Selection must not batch-copy unrelated slider values.
         Dim inFrontBeforeQuickSelection As Boolean = bulb.InFrontOfGlobalMask
 
-        Using editor As New formQuickSelection(bulb, bg)
+        ' Match the live preview's unlit artwork, including visible snippets.
+        ' Keep full canvas coordinates for the saved selection mask.
+        Dim excludedLights As Generic.List(Of Illumination.BulbInfo) = PreviewLightsExceptSelected()
+        excludedLights.AddRange(selectedBulbs)
+        Dim maskArtwork As Bitmap = Nothing
+        Dim canvas As B2SPictureBox = Backglass.currentTabPage.CurrentPictureBox
+        If canvas IsNot Nothing Then maskArtwork = canvas.CreateLayeredPreviewImageForBulbs(excludedLights, Nothing)
+        If maskArtwork Is Nothing Then maskArtwork = New Bitmap(bg)
+        Using maskArtwork
+        Using editor As New formQuickSelection(bulb, maskArtwork)
             If editor.ShowDialog(Me) = DialogResult.OK Then
                 bulb.InFrontOfGlobalMask = inFrontBeforeQuickSelection
 
@@ -1560,6 +1569,7 @@ Public Class formLightDiffusionEditor
             Else
                 bulb.InFrontOfGlobalMask = inFrontBeforeQuickSelection
             End If
+        End Using
         End Using
     End Sub
 

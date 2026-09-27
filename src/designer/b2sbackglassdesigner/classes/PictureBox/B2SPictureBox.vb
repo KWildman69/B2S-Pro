@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.Drawing.Imaging
 
 Public Class B2SPictureBox
@@ -1108,6 +1108,36 @@ Public Class B2SPictureBox
         If excludedBulb IsNot Nothing Then excluded = New Illumination.BulbInfo() {excludedBulb}
         If forceVisibleBulb IsNot Nothing Then forced = New Illumination.BulbInfo() {forceVisibleBulb}
         Return CreateLayeredPreviewImageForBulbs(excluded, forced)
+    End Function
+
+    ' Export artwork lights against the same lower snippet layers as the editor.
+    ' Nothing means the original canvas-only path is sufficient.
+    Friend Function CreateLightArtworkBackdrop(ByVal target As Illumination.BulbInfo,
+                                                ByVal background As Image) As Bitmap
+        If target Is Nothing OrElse background Is Nothing OrElse target.LightBehindCanvas OrElse
+           Not target.UsesArtworkPixelRenderer Then Return Nothing
+        Dim lower As New Generic.List(Of Illumination.BulbInfo)()
+        For Each item As Object In OrderedVisualItems()
+            If Object.ReferenceEquals(item, target) Then Exit For
+            Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+            If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
+               LayerManager.IsVisible(snippet) Then lower.Add(snippet)
+        Next
+        If lower.Count = 0 Then Return Nothing
+        Dim result As New Bitmap(background)
+        Try
+            Using graphics As Graphics = Graphics.FromImage(result)
+                graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                For Each snippet As Illumination.BulbInfo In lower
+                    If IsPictureAnimationReferenceFrame(snippet) Then DrawSnippetLayerNative(graphics, snippet)
+                Next
+            End Using
+            Return result
+        Catch
+            result.Dispose()
+            Throw
+        End Try
     End Function
 
     ' Group-aware version used by Light Settings.  The off image excludes every

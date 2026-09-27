@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.IO
 Imports System.Runtime.InteropServices
 
@@ -2799,6 +2799,10 @@ Public Class formDesigner
             Return
         End If
 
+        Dim sourceSnippet As Illumination.BulbInfo = Backglass.currentTabPage.Mouse.SelectedBulb
+        If sourceSnippet IsNot Nothing AndAlso (Not sourceSnippet.IsImageSnippit OrElse sourceSnippet.Image Is Nothing) Then sourceSnippet = Nothing
+        Dim sourceArtwork As Image = If(sourceSnippet IsNot Nothing, sourceSnippet.Image, currentPicture.Image)
+
         If Not Backglass.currentTabPage.ShowIlluFrames Then tsmiShowIlluFrames.PerformClick()
 
         ' The temporary light gives Quick Selection a place to store its full-
@@ -2808,17 +2812,17 @@ Public Class formDesigner
         Dim selection As New Illumination.BulbInfo() With {
             .Name = "Make Snippet Selection",
             .Location = Point.Empty,
-            .Size = currentPicture.Image.Size,
+            .Size = sourceArtwork.Size,
             .IsImageSnippit = True
         }
 
         Dim selectedBounds As Rectangle = Rectangle.Empty
         Dim snippetImage As Bitmap = Nothing
-        Using selectionEditor As New formQuickSelection(selection, currentPicture.Image)
+        Using selectionEditor As New formQuickSelection(selection, sourceArtwork)
             If selectionEditor.ShowDialog(Me) <> DialogResult.OK Then Return
 
             selectedBounds = Rectangle.Intersect(selectionEditor.SelectedBounds,
-                                                  New Rectangle(Point.Empty, currentPicture.Image.Size))
+                                                  New Rectangle(Point.Empty, sourceArtwork.Size))
             If selectedBounds.Width <= 0 OrElse selectedBounds.Height <= 0 Then
                 MessageBox.Show(Me, "Select part of the image before clicking OK.",
                                 "Make Snippet", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -2830,7 +2834,7 @@ Public Class formDesigner
                 Using graphics As Graphics = Graphics.FromImage(croppedSource)
                     graphics.Clear(Color.Transparent)
                     graphics.CompositingMode = Drawing.Drawing2D.CompositingMode.SourceCopy
-                    graphics.DrawImage(currentPicture.Image,
+                    graphics.DrawImage(sourceArtwork,
                                        New Rectangle(0, 0, croppedSource.Width, croppedSource.Height),
                                        selectedBounds, GraphicsUnit.Pixel)
                 End Using
@@ -2847,7 +2851,25 @@ Public Class formDesigner
         End If
 
         Dim snippetName As String = NextMadeSnippetName()
-        Backglass.currentTabPage.Illumination_AddSnippit(snippetName, snippetImage, selectedBounds.Location)
+        Dim placedBounds As Rectangle = selectedBounds
+        If sourceSnippet IsNot Nothing Then
+            ' Crop native source pixels; map only placement back to canvas space.
+            Dim sx As Double = sourceSnippet.Size.Width / CDbl(sourceArtwork.Width)
+            Dim sy As Double = sourceSnippet.Size.Height / CDbl(sourceArtwork.Height)
+            placedBounds = New Rectangle(sourceSnippet.Location.X + CInt(selectedBounds.X * sx),
+                                         sourceSnippet.Location.Y + CInt(selectedBounds.Y * sy),
+                                         Math.Max(1, CInt(selectedBounds.Width * sx)),
+                                         Math.Max(1, CInt(selectedBounds.Height * sy)))
+        End If
+        Backglass.currentTabPage.Illumination_AddSnippit(snippetName, snippetImage, placedBounds.Location)
+        If sourceSnippet IsNot Nothing Then
+            For Each created As Illumination.BulbInfo In Backglass.currentBulbs
+                If created.Name = snippetName Then
+                    created.Size = placedBounds.Size
+                    Exit For
+                End If
+            Next
+        End If
         Backglass.currentData.Images.Insert(Images.eImageInfoType.Title4IlluminationSnippits,
                                             New Images.ImageInfo(Images.eImageInfoType.IlluminationSnippits,
                                                                  snippetName, snippetImage))

@@ -89,11 +89,23 @@ Public Class formQuickSelection
         End Get
     End Property
 
+    Friend Shared Function CreateMaskPreview(ByVal selected As Illumination.BulbInfo, ByVal background As Image) As Bitmap
+        Dim result As New Bitmap(background)
+        ' Masks stay in canvas coordinates. Show the selected artwork without
+        ' its existing mask or canvas occlusion so either can be edited.
+        If selected.IsImageSnippit AndAlso selected.Image IsNot Nothing Then
+            Using graphics As Graphics = Graphics.FromImage(result)
+                graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                graphics.DrawImage(selected.Image, New Rectangle(selected.Location, selected.Size))
+            End Using
+        End If
+        Return result
+    End Function
     Public Sub New(ByVal selectedBulb As Illumination.BulbInfo, ByVal background As Image)
         bulb = selectedBulb
         originalMask = bulb.SelectionMaskData
         originalInFrontOfGlobalMask = bulb.InFrontOfGlobalMask
-        sourceImage = New Bitmap(background)
+        sourceImage = CreateMaskPreview(bulb, background)
         mask = DecodeMask(bulb.SelectionMaskData, sourceImage.Size)
 
         WindowStateManager.Attach(Me)
