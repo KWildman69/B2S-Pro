@@ -49,6 +49,41 @@
 
         Public PerfectScaleWidthFix As Boolean = False
 
+        Public Sub CopyCreationSettingsFrom(ByVal source As ScoreInfo)
+            If source Is Nothing Then Return
+
+            Size = source.Size
+            ReelType = source.ReelType
+            ReelColor = source.ReelColor
+            Digits = source.Digits
+            Spacing = source.Spacing
+            DisplayState = source.DisplayState
+
+            RotationAngle = source.RotationAngle
+            PerspectiveDepth = source.PerspectiveDepth
+            PerspectiveLeftScale = source.PerspectiveLeftScale
+            PerspectiveRightScale = source.PerspectiveRightScale
+            BehindCanvas = source.BehindCanvas
+
+            B2SScoreType = source.B2SScoreType
+
+            ReelIlluLocation = source.ReelIlluLocation
+            ReelIlluB2SID = source.ReelIlluB2SID
+            ReelIlluB2SIDType = source.ReelIlluB2SIDType
+            ReelIlluB2SValue = source.ReelIlluB2SValue
+            ReelIlluIntensity = source.ReelIlluIntensity
+
+            CopyReel3DSettingsFrom(source)
+            PerfectScaleWidthFix = source.PerfectScaleWidthFix
+
+            ' ID, player/start-digit routing, location, parent and Z layer are
+            ' assigned by the normal Add Reel path. Render dimensions are
+            ' derived for the new frame instead of sharing the source cache.
+            SingleReelSize = Nothing
+            IsSingleReelSizeDirty = True
+            SingleReelFactor = 1
+        End Sub
+
         Public Sub CopyReel3DSettingsFrom(ByVal source As ScoreInfo)
             If source Is Nothing Then Return
 

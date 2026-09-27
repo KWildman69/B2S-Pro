@@ -29,10 +29,11 @@
       <p>The main toolbar groups the most-used jobs: project commands, image tools, reels and LEDs, lights and flashers, snippets, animation, and final B2S Pro creation/testing. The redesigned dark interface makes active objects and editing modes easier to see.</p>
       <ol class="steps">
         <li>Import the backglass artwork with <strong>Import Backglass Image</strong>.</li>
-        <li>Use <strong>Backglass Brightness</strong> when the base image needs global adjustment.</li>
+        <li>Use <strong>Backglass Brightness</strong> for the base image, an independent grill correction, or to reset the current session's adjustments to the original light state.</li>
         <li>Add and arrange reels, LEDs, lights, flashers, snippets, and animations.</li>
         <li>Use <strong>Step 1 — Create B2S Pro Backglass File</strong>, then <strong>Step 2 — Backglass Preview &amp; Test</strong>.</li>
       </ol>
+      <p>In <strong>Backglass Brightness</strong>, leave <strong>Do not change the brightness of the grill area</strong> checked to adjust the upper artwork and grill independently. The second slider changes only the defined grill area. <strong>Reset both to 0</strong> restores the image from before the first brightness change in the current editor session and preserves the current native dimensions; an import, reload, or resize begins a new reset baseline.</p>
       <p>Resizable editor windows remember their last size, position, monitor, DPI-adjusted bounds, and maximized state. Set a window once; B2S Pro restores it the next time it opens.</p>
       <figure>
         <img src="pro-images/image-menu.png" alt="B2S Pro Image menu and backglass toolbar commands">
@@ -284,7 +285,7 @@
         <li>Raise <strong>3D depth</strong> to exaggerate drum curvature and the recessed window shadow.</li>
         <li>Raise <strong>Glass reflection</strong> to add the highlight that runs continuously across the whole score window.</li>
         <li>Close the window when the reel looks right. Every setting is retained automatically and remains attached to that score frame in the saved <code>.B2SPro</code> file.</li>
-        <li>Click <strong>Add Reel or LED Frame</strong> again to create the next reel with the original Designer behavior. Only the five optional 3D controls—enabled, brightness, color temperature, depth, and glass reflection—carry forward from the selected or latest reel. Set player, start-digit, illumination, placement, and other standard attributes exactly as before.</li>
+        <li>Click <strong>Add Reel or LED Frame</strong> again to repeat the selected or latest frame's reusable display setup, including size, digit count, spacing, reel or LED type, color, visibility, illumination, rotation, perspective, canvas placement, and 3D controls. The new frame receives the next frame number; player and start-digit routing remain unassigned for you to set.</li>
       </ol>
       <table>
         <tr><th>Control</th><th>Effect</th></tr>
@@ -308,6 +309,7 @@
       <h2>Scores, reels, and LEDs</h2>
       <p>Create reel or LED frames with the toolbar, then use the Reels &amp; LEDs tool window to set the player, digit count, spacing, score type, reel type, and display state.</p>
       <ul>
+        <li>Configure and select one frame before adding the next. The new frame repeats that reusable setup—including its digit count—and receives the next frame number without duplicating player or start-digit routing.</li>
         <li>Select a score frame and drag its rotation handle to angle the complete score display.</li>
         <li>Use Layers &gt; Canvas Placement to place a reel or LED display behind the backglass canvas. Transparent canvas openings reveal the live digits while opaque artwork remains in front.</li>
         <li>Custom LED colors survive <code>.B2SPro</code> save and reopening.</li>

@@ -954,8 +954,9 @@ Public Class B2STabPage
 
     Public Sub ReelsAndLEDs_AddScore()
         BackglassData.IsDirty = True
-        ' The selected or newest reel supplies only the five optional B2S Pro
-        ' 3D settings. All standard Add Reel behavior remains unchanged.
+        ' Repeat the selected score frame's reusable configuration. If the
+        ' selection was cleared, the newest frame on the active canvas is the
+        ' template. The normal Add path still assigns identity and placement.
         Dim templateScore As ReelAndLED.ScoreInfo = SelectedScore
         If templateScore Is Nothing AndAlso Backglass.currentScores IsNot Nothing AndAlso Backglass.currentScores.Count > 0 Then
             templateScore = Backglass.currentScores(0)
@@ -975,18 +976,21 @@ Public Class B2STabPage
         End If
         newScore.ZOrder = If(highestLayer = Integer.MaxValue, highestLayer, highestLayer + 1)
         With newScore
-            .Digits = 6
-            .Spacing = 5
-            If Mouse.LastScoreSize <> Nothing Then
-                .Size = Mouse.LastScoreSize
+            If templateScore IsNot Nothing Then
+                .CopyCreationSettingsFrom(templateScore)
             Else
-                .Size = New Size(300, 100)
+                .Digits = 6
+                .Spacing = 5
+                If Mouse.LastScoreSize <> Nothing Then
+                    .Size = Mouse.LastScoreSize
+                Else
+                    .Size = New Size(300, 100)
+                End If
+                If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
+                If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
+                If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
+                If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
             End If
-            If Mouse.LastScoreDigits <> Nothing Then .Digits = Mouse.LastScoreDigits
-            If Mouse.LastScoreSpacing <> Nothing Then .Spacing = Mouse.LastScoreSpacing
-            If Mouse.LastScoreReelType <> Nothing Then .ReelType = Mouse.LastScoreReelType
-            If Mouse.LastScoreReelColor <> Nothing Then .ReelColor = Mouse.LastScoreReelColor
-            If templateScore IsNot Nothing Then .CopyReel3DSettingsFrom(templateScore)
             If String.IsNullOrEmpty(.ReelType) Then
                 .ReelType = GetFirstReelType()
             End If

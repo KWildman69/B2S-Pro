@@ -25,14 +25,20 @@ Partial Class formBrightness
         Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(formBrightness))
         Me.btnCancel = New System.Windows.Forms.Button()
         Me.btnOk = New System.Windows.Forms.Button()
+        Me.btnResetBrightness = New System.Windows.Forms.Button()
         Me.PictureBoxPreview = New System.Windows.Forms.PictureBox()
         Me.TrackBarBrightness = New System.Windows.Forms.TrackBar()
         Me.NumericUpDownBrightness = New System.Windows.Forms.NumericUpDown()
         Me.chkIgnoreGrill = New System.Windows.Forms.CheckBox()
+        Me.B2SLineGrill = New B2SBackglassDesigner.B2SLine()
+        Me.TrackBarGrillBrightness = New System.Windows.Forms.TrackBar()
+        Me.NumericUpDownGrillBrightness = New System.Windows.Forms.NumericUpDown()
         Me.B2SLine1 = New B2SBackglassDesigner.B2SLine()
         CType(Me.PictureBoxPreview, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.TrackBarBrightness, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.NumericUpDownBrightness, System.ComponentModel.ISupportInitialize).BeginInit()
+        CType(Me.TrackBarGrillBrightness, System.ComponentModel.ISupportInitialize).BeginInit()
+        CType(Me.NumericUpDownGrillBrightness, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.SuspendLayout()
         '
         'btnCancel
@@ -47,6 +53,16 @@ Partial Class formBrightness
         resources.ApplyResources(Me.btnOk, "btnOk")
         Me.btnOk.Name = "btnOk"
         Me.btnOk.UseVisualStyleBackColor = True
+        '
+        'btnResetBrightness
+        '
+        Me.btnResetBrightness.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Left), System.Windows.Forms.AnchorStyles)
+        Me.btnResetBrightness.Location = New System.Drawing.Point(12, 507)
+        Me.btnResetBrightness.Name = "btnResetBrightness"
+        Me.btnResetBrightness.Size = New System.Drawing.Size(115, 23)
+        Me.btnResetBrightness.TabIndex = 4
+        Me.btnResetBrightness.Text = "Reset both to 0"
+        Me.btnResetBrightness.UseVisualStyleBackColor = True
         '
         'PictureBoxPreview
         '
@@ -73,6 +89,35 @@ Partial Class formBrightness
         Me.chkIgnoreGrill.Name = "chkIgnoreGrill"
         Me.chkIgnoreGrill.UseVisualStyleBackColor = True
         '
+        'B2SLineGrill
+        '
+        Me.B2SLineGrill.Anchor = CType(((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Left) Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.B2SLineGrill.Font = New System.Drawing.Font("Tahoma", 8.25!)
+        Me.B2SLineGrill.Location = New System.Drawing.Point(12, 438)
+        Me.B2SLineGrill.Name = "B2SLineGrill"
+        Me.B2SLineGrill.Size = New System.Drawing.Size(500, 13)
+        Me.B2SLineGrill.TabIndex = 10
+        Me.B2SLineGrill.Text = "Grill brightness"
+        '
+        'TrackBarGrillBrightness
+        '
+        Me.TrackBarGrillBrightness.Anchor = CType(((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Left) Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.TrackBarGrillBrightness.Location = New System.Drawing.Point(12, 455)
+        Me.TrackBarGrillBrightness.Maximum = 100
+        Me.TrackBarGrillBrightness.Minimum = -100
+        Me.TrackBarGrillBrightness.Name = "TrackBarGrillBrightness"
+        Me.TrackBarGrillBrightness.Size = New System.Drawing.Size(427, 45)
+        Me.TrackBarGrillBrightness.TabIndex = 2
+        '
+        'NumericUpDownGrillBrightness
+        '
+        Me.NumericUpDownGrillBrightness.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.NumericUpDownGrillBrightness.Location = New System.Drawing.Point(445, 455)
+        Me.NumericUpDownGrillBrightness.Minimum = New Decimal(New Integer() {100, 0, 0, -2147483648})
+        Me.NumericUpDownGrillBrightness.Name = "NumericUpDownGrillBrightness"
+        Me.NumericUpDownGrillBrightness.Size = New System.Drawing.Size(67, 20)
+        Me.NumericUpDownGrillBrightness.TabIndex = 3
+        '
         'B2SLine1
         '
         resources.ApplyResources(Me.B2SLine1, "B2SLine1")
@@ -85,6 +130,10 @@ Partial Class formBrightness
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.BackColor = System.Drawing.Color.FromArgb(CType(CType(191, Byte), Integer), CType(CType(205, Byte), Integer), CType(CType(219, Byte), Integer))
         Me.CancelButton = Me.btnCancel
+        Me.Controls.Add(Me.btnResetBrightness)
+        Me.Controls.Add(Me.NumericUpDownGrillBrightness)
+        Me.Controls.Add(Me.TrackBarGrillBrightness)
+        Me.Controls.Add(Me.B2SLineGrill)
         Me.Controls.Add(Me.chkIgnoreGrill)
         Me.Controls.Add(Me.btnCancel)
         Me.Controls.Add(Me.btnOk)
@@ -96,6 +145,8 @@ Partial Class formBrightness
         CType(Me.PictureBoxPreview, System.ComponentModel.ISupportInitialize).EndInit()
         CType(Me.TrackBarBrightness, System.ComponentModel.ISupportInitialize).EndInit()
         CType(Me.NumericUpDownBrightness, System.ComponentModel.ISupportInitialize).EndInit()
+        CType(Me.TrackBarGrillBrightness, System.ComponentModel.ISupportInitialize).EndInit()
+        CType(Me.NumericUpDownGrillBrightness, System.ComponentModel.ISupportInitialize).EndInit()
         Me.ResumeLayout(False)
         Me.PerformLayout()
 
@@ -103,8 +154,12 @@ Partial Class formBrightness
     Friend WithEvents B2SLine1 As B2SBackglassDesigner.B2SLine
     Friend WithEvents btnCancel As System.Windows.Forms.Button
     Friend WithEvents btnOk As System.Windows.Forms.Button
+    Friend WithEvents btnResetBrightness As System.Windows.Forms.Button
     Friend WithEvents PictureBoxPreview As System.Windows.Forms.PictureBox
     Friend WithEvents TrackBarBrightness As System.Windows.Forms.TrackBar
     Friend WithEvents NumericUpDownBrightness As System.Windows.Forms.NumericUpDown
     Friend WithEvents chkIgnoreGrill As System.Windows.Forms.CheckBox
+    Friend WithEvents B2SLineGrill As B2SBackglassDesigner.B2SLine
+    Friend WithEvents TrackBarGrillBrightness As System.Windows.Forms.TrackBar
+    Friend WithEvents NumericUpDownGrillBrightness As System.Windows.Forms.NumericUpDown
 End Class

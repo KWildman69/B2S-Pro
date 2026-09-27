@@ -2639,11 +2639,13 @@ Public Class formDesigner
 
     Private Sub Brightness_Click(sender As System.Object, e As System.EventArgs) Handles tsmiBrightness.Click
         If Backglass.currentTabPage IsNot Nothing Then
-            Dim image As Image = If(Backglass.currentData.IsDMDImageShown, Backglass.currentData.DMDImage, Backglass.currentData.Image)
+            Dim useDMD As Boolean = Backglass.currentData.IsDMDImageShown
+            Dim image As Image = If(useDMD, Backglass.currentData.DMDImage, Backglass.currentData.Image)
             If image IsNot Nothing Then
-                If formBrightness.ShowDialog(Me, image) = Windows.Forms.DialogResult.OK Then
-                    Undo.AddEntry(New Undo.UndoEntry(Undo.Type.ImageBrightnessChanged, If(Backglass.currentData.IsDMDImageShown, Backglass.currentData.DMDImage, Backglass.currentData.Image), Backglass.currentData.IsDMDImageShown))
-                    If Backglass.currentData.IsDMDImageShown Then
+                Dim originalBrightnessImage As Image = FindOriginalBrightnessImage(image, useDMD)
+                If formBrightness.ShowDialog(Me, image, originalBrightnessImage) = Windows.Forms.DialogResult.OK Then
+                    Undo.AddEntry(New Undo.UndoEntry(Undo.Type.ImageBrightnessChanged, If(useDMD, Backglass.currentData.DMDImage, Backglass.currentData.Image), useDMD))
+                    If useDMD Then
                         Backglass.currentTabPage.DMDImage = image
                     Else
                         Backglass.currentTabPage.Image = image
@@ -2653,6 +2655,34 @@ Public Class formDesigner
             End If
         End If
     End Sub
+
+    Private Function FindOriginalBrightnessImage(ByVal currentImage As Image, ByVal useDMD As Boolean) As Image
+        Dim baseline As Image = currentImage
+        For index As Integer = Undo.UndoList.Count - 1 To 0 Step -1
+            Dim entry As Undo.UndoEntry = Undo.UndoList(index)
+            If entry.Owner IsNot Backglass.currentTabPage Then Continue For
+
+            Select Case entry.Type
+                Case Undo.Type.ImageBrightnessChanged
+                    Dim entryUsesDMD As Boolean = entry.Data1 IsNot Nothing AndAlso CBool(entry.Data1)
+                    If entryUsesDMD = useDMD Then
+                        Dim priorImage As Image = TryCast(entry.Item, Image)
+                        If priorImage IsNot Nothing Then baseline = priorImage
+                    End If
+
+                Case Undo.Type.ImageResized
+                    Dim entryUsesDMD As Boolean = entry.Data1 IsNot Nothing AndAlso CBool(entry.Data1)
+                    If entryUsesDMD = useDMD Then Exit For
+
+                Case Undo.Type.ImageImported, Undo.Type.ImageReloaded, Undo.Type.ImageChanged
+                    If Not useDMD Then Exit For
+
+                Case Undo.Type.DMDImageImported, Undo.Type.DMDImageChanged
+                    If useDMD Then Exit For
+            End Select
+        Next
+        Return baseline
+    End Function
 
 #End Region
 

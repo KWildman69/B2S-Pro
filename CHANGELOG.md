@@ -9,6 +9,8 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 - Reuse identical layered snippet backdrops while exporting artwork lights, cutting repeated full-canvas bitmap work on image-heavy backglasses.
 - Dispose generated save images and animation-preview timers promptly, and guarantee the Layers list resumes painting after every rebuild.
 - Ignore malformed or NUL-filled Step 2 preview telemetry instead of allowing an intermittent conversion error to interrupt the preview.
+- Make each new reel or LED score frame inherit the selected or latest frame's reusable display configuration, including digit count, while assigning a new frame ID and leaving player/start-digit routing unassigned.
+- Add independent grill brightness with exact numeric entry, plus a reset that restores the current session's pre-brightness image at its native dimensions and clears both brightness adjustments.
 - Existing 1.0.3 installations need to rerun setup manually to receive this same-version update.
 
 ### September 26 update — versions unchanged
@@ -120,7 +122,7 @@ First public B2S Pro baseline.
 - Composited the reel behind the backglass canvas and aligned one continuous reflection across the complete score display so each digit reads as part of the same glass-covered window.
 - Stored the new settings as optional project and `directB2S` attributes; existing backglasses without them continue through the original rendering path unchanged.
 - Carried the Designer's neutral transparent-canvas backing into new B2S Pro exports and the server's custom runtime paint layer, so score-window and other transparent openings no longer fall back to black; legacy files without the opt-in marker retain their established backing.
-- Preserved the original Add Reel behavior while carrying only the selected or latest reel's five optional 3D settings—enabled, brightness, color temperature, depth, and glass reflection—into the next reel window.
+- Added reusable 3D reel settings—enabled, brightness, color temperature, depth, and glass reflection—which now carry forward with the selected or latest score frame's display configuration.
 - Made the Reel Lighting & 3D window retain every displayed setting when it is closed and reopened instead of rolling live adjustments back.
 - Raised realistic reel backlight brightness from 200% to 400% across the Designer, saved project and `directB2S` data, and B2S Pro Server runtime.
 - Made ROM Player Up triggers switch the realistic 3D reel backlight together with the active player's illumination, leaving inactive-player reel material unlit.

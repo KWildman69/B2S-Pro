@@ -3,37 +3,26 @@ Imports System
 Public Class formBrightness
 
     Private sourceimage As Image = Nothing
+    Private resetimage As Image = Nothing
 
     Public Shadows Function ShowDialog(ByVal owner As IWin32Window,
-                                       ByRef image As Image) As DialogResult
+                                       ByRef image As Image,
+                                       Optional ByVal originalBrightnessImage As Image = Nothing) As DialogResult
         ' show dialog
         sourceimage = image
-        PictureBoxPreview.Image = sourceimage.Resized(PictureBoxPreview.Size)
+        resetimage = If(originalBrightnessImage, image)
         NumericUpDownBrightness.Value = 0
+        NumericUpDownGrillBrightness.Value = 0
         chkIgnoreGrill.Enabled = (Backglass.currentData.GrillHeight > 0 AndAlso Not Backglass.currentData.IsDMDImageShown)
         If chkIgnoreGrill.Enabled Then chkIgnoreGrill.Checked = True Else chkIgnoreGrill.Checked = False
+        TrackBarGrillBrightness.Enabled = chkIgnoreGrill.Enabled
+        NumericUpDownGrillBrightness.Enabled = chkIgnoreGrill.Enabled
+        ChangeBrightness()
         ' now show the dialog
         Dim nRet As DialogResult = MyBase.ShowDialog(owner)
         If nRet = Windows.Forms.DialogResult.OK Then
             ' return new image
-            Dim newimage As Bitmap = New Bitmap(sourceimage.Width, sourceimage.Height)
-            If chkIgnoreGrill.Checked Then
-                Using backglassimage As Bitmap = sourceimage.PartFromImage(New Rectangle(0, 0, sourceimage.Width, sourceimage.Height - Backglass.currentData.GrillHeight))
-                    backglassimage.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
-                    Using grillimage As Bitmap = sourceimage.PartFromImage(New Rectangle(0, sourceimage.Height - Backglass.currentData.GrillHeight, sourceimage.Width, Backglass.currentData.GrillHeight))
-                        Using gr As Graphics = Graphics.FromImage(newimage)
-                            gr.PageUnit = GraphicsUnit.Pixel
-                            gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-                            gr.DrawImage(backglassimage, New Rectangle(0, 0, backglassimage.Width, backglassimage.Height))
-                            gr.DrawImage(grillimage, New Rectangle(0, sourceimage.Height - Backglass.currentData.GrillHeight, sourceimage.Width, Backglass.currentData.GrillHeight))
-                        End Using
-                    End Using
-                End Using
-            Else
-                newimage = sourceimage.Copy() '.Resized(sourceimage.Size)
-                newimage.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
-            End If
-            image = newimage
+            image = CreateAdjustedImage(sourceimage.Size)
         End If
         Return nRet
     End Function
@@ -44,6 +33,12 @@ Public Class formBrightness
     End Sub
     Private Sub Cancel_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnCancel.Click
         Me.Close()
+    End Sub
+    Private Sub ResetBrightness_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnResetBrightness.Click
+        sourceimage = resetimage
+        NumericUpDownBrightness.Value = 0
+        NumericUpDownGrillBrightness.Value = 0
+        ChangeBrightness()
     End Sub
 
     Private Sub formBrightness_ResizeBegin(sender As Object, e As System.EventArgs) Handles Me.ResizeBegin
@@ -61,39 +56,51 @@ Public Class formBrightness
         TrackBarBrightness.Value = NumericUpDownBrightness.Value
         ChangeBrightness()
     End Sub
+    Private Sub TrackBarGrillBrightness_Scroll(sender As System.Object, e As System.EventArgs) Handles TrackBarGrillBrightness.Scroll
+        NumericUpDownGrillBrightness.Value = TrackBarGrillBrightness.Value
+    End Sub
+    Private Sub NumericUpDownGrillBrightness_ValueChanged(sender As System.Object, e As System.EventArgs) Handles NumericUpDownGrillBrightness.ValueChanged
+        TrackBarGrillBrightness.Value = NumericUpDownGrillBrightness.Value
+        ChangeBrightness()
+    End Sub
 
     Private Sub IgnoreGrill_CheckedChanged(sender As System.Object, e As System.EventArgs) Handles chkIgnoreGrill.CheckedChanged
         ChangeBrightness()
     End Sub
 
     Private Sub ChangeBrightness()
+        If sourceimage Is Nothing OrElse PictureBoxPreview.Width <= 0 OrElse PictureBoxPreview.Height <= 0 Then Return
+        Dim previous As Image = PictureBoxPreview.Image
+        PictureBoxPreview.Image = CreateAdjustedImage(PictureBoxPreview.Size)
+        If previous IsNot Nothing AndAlso Not Object.ReferenceEquals(previous, sourceimage) Then previous.Dispose()
+    End Sub
 
-        PictureBoxPreview.Image.Dispose()
-
-        Dim factor As Single = sourceimage.Height / PictureBoxPreview.Height
-        Dim size As Size = PictureBoxPreview.Size
-
-        Dim newimage As Bitmap = New Bitmap(size.Width, size.Height)
-
-        If chkIgnoreGrill.Enabled AndAlso chkIgnoreGrill.Checked Then
-            Using backglassimage As Bitmap = sourceimage.Resized(PictureBoxPreview.Size).PartFromImage(New Rectangle(0, 0, size.Width, size.Height - Backglass.currentData.GrillHeight / factor))
-                backglassimage.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
-                Using grillimage As Bitmap = sourceimage.Resized(PictureBoxPreview.Size).PartFromImage(New Rectangle(0, size.Height - Backglass.currentData.GrillHeight / factor, size.Width, Backglass.currentData.GrillHeight / factor))
-                    Using gr As Graphics = Graphics.FromImage(newimage)
-                        gr.PageUnit = GraphicsUnit.Pixel
-                        gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-                        gr.DrawImage(backglassimage, New Rectangle(0, 0, backglassimage.Width, backglassimage.Height))
-                        gr.DrawImage(grillimage, New Rectangle(0, size.Height - Backglass.currentData.GrillHeight / factor, size.Width, Backglass.currentData.GrillHeight / factor))
-                    End Using
-                End Using
-            End Using
-        Else
-            newimage = sourceimage.Resized(size)
-            newimage.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
+    Private Function CreateAdjustedImage(ByVal targetSize As Size) As Bitmap
+        Dim resized As Bitmap = If(targetSize = sourceimage.Size, sourceimage.Copy(), sourceimage.Resized(targetSize))
+        If Not chkIgnoreGrill.Enabled Then
+            resized.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
+            Return resized
         End If
 
-        PictureBoxPreview.Image = newimage
+        Dim scaledGrillHeight As Integer = CInt(Math.Round(Backglass.currentData.GrillHeight * targetSize.Height / CDbl(sourceimage.Height)))
+        scaledGrillHeight = Math.Max(1, Math.Min(targetSize.Height, scaledGrillHeight))
+        Dim upperHeight As Integer = targetSize.Height - scaledGrillHeight
+        Dim grillBrightness As Integer = CInt(NumericUpDownGrillBrightness.Value)
+        If Not chkIgnoreGrill.Checked Then grillBrightness += CInt(NumericUpDownBrightness.Value)
+        grillBrightness = Math.Max(-100, Math.Min(100, grillBrightness))
 
-    End Sub
+        Dim result As New Bitmap(targetSize.Width, targetSize.Height, Imaging.PixelFormat.Format32bppArgb)
+        Using backglassimage As Bitmap = resized.PartFromImage(New Rectangle(0, 0, targetSize.Width, upperHeight)),
+              grillimage As Bitmap = resized.PartFromImage(New Rectangle(0, upperHeight, targetSize.Width, scaledGrillHeight)),
+              gr As Graphics = Graphics.FromImage(result)
+            backglassimage.Filters.Brightness(CSng(NumericUpDownBrightness.Value / 100))
+            grillimage.Filters.Brightness(CSng(grillBrightness / 100.0F))
+            gr.PageUnit = GraphicsUnit.Pixel
+            gr.DrawImageUnscaled(backglassimage, 0, 0)
+            gr.DrawImageUnscaled(grillimage, 0, upperHeight)
+        End Using
+        resized.Dispose()
+        Return result
+    End Function
 
 End Class
