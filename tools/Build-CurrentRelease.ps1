@@ -164,13 +164,16 @@ if ($LASTEXITCODE -ne 0) { throw 'B2S Pro Server build failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'x64 B2S Server registration application build failed.' }
 & $msBuild (Join-Path $serverRoot 'b2sbackglassserverregisterapp\B2SBackglassServerRegisterApp.sln') /t:Rebuild /p:Configuration=Release /p:Platform=x86 /m:1 /v:minimal
 if ($LASTEXITCODE -ne 0) { throw 'x86 B2S Server registration application build failed.' }
+& $msBuild (Join-Path $serverRoot 'b2s_screenresidentifier\B2S_ScreenResIdentifier.sln') /t:Rebuild /p:Configuration=Release /p:Platform='Any CPU' /m:1 /v:minimal
+if ($LASTEXITCODE -ne 0) { throw 'B2S Screen Resolution Identifier build failed.' }
 
 $x64Designer = Join-Path $designerRoot 'b2sbackglassdesigner\bin\x64\Release\B2SPro.exe'
 $x86Designer = Join-Path $designerRoot 'b2sbackglassdesigner\bin\x86\Release\B2SPro.exe'
 $serverDll = Join-Path $serverRoot 'b2sbackglassserver\b2sbackglassserver\bin\Release\B2SBackglassServer.dll'
 $serverExe = Join-Path $serverRoot 'b2sbackglassserver\B2SBackglassServer\bin\Release\B2SBackglassServerEXE.exe'
 $registerApp = Join-Path $serverRoot 'b2sbackglassserverregisterapp\b2sbackglassserverregisterapp\bin\x64\Release\B2SBackglassServerRegisterApp.exe'
-foreach ($path in @($x64Designer, $x86Designer, $serverDll, $serverExe, $registerApp)) {
+$screenResIdentifier = Join-Path $serverRoot 'b2s_screenresidentifier\B2S_ScreenResIdentifier\bin\Release\B2S_ScreenResIdentifier.exe'
+foreach ($path in @($x64Designer, $x86Designer, $serverDll, $serverExe, $registerApp, $screenResIdentifier)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Build output is missing: $path" }
 }
 
@@ -229,6 +232,7 @@ foreach ($name in $retiredServerPackageFiles) {
 Copy-Item -LiteralPath $serverDll -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServer.dll') -Force
 Copy-Item -LiteralPath $serverExe -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerEXE.exe') -Force
 Copy-Item -LiteralPath $registerApp -Destination (Join-Path $serverRuntimeStage 'B2SBackglassServerRegisterApp.exe') -Force
+Copy-Item -LiteralPath $screenResIdentifier -Destination (Join-Path $serverRuntimeStage 'B2S_ScreenResIdentifier.exe') -Force
 Copy-Item -LiteralPath $updateChecker -Destination (Join-Path $serverRuntimeStage 'B2SUpdateChecker.exe') -Force
 Copy-Item -LiteralPath (Join-Path $sourceCopyRoot 'CHANGELOG.md') -Destination (Join-Path $serverRuntimeStage 'B2S-Pro-Changelog.md') -Force
 Copy-Item -LiteralPath (Join-Path $serverRoot 'ScreenResTemplate.txt') -Destination (Join-Path $serverRuntimeStage 'ScreenResTemplate.txt') -Force
@@ -378,6 +382,7 @@ try {
         'B2SBackglassServer.dll' = $serverDll
         'B2SBackglassServerEXE.exe' = $serverExe
         'B2SBackglassServerRegisterApp.exe' = $registerApp
+        'B2S_ScreenResIdentifier.exe' = $screenResIdentifier
         'B2SUpdateChecker.exe' = $updateChecker
     }
     foreach ($entryName in $serverRuntimeComparisons.Keys) {

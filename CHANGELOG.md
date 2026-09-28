@@ -4,6 +4,12 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
+### September 28 update — versions unchanged
+
+- Remove the Screen Resolution Identifier's window-position lock option and the Server's corresponding monitor-lock runtime behavior. VPX playfield display selection remains independent of B2S window placement.
+- Rebuild and package the current Screen Resolution Identifier with every release build so setup installs the source-matched utility instead of retaining a baseline copy.
+- Existing 1.0.3 / 3.0.2 installations need to rerun setup manually to receive this same-version update.
+
 ### September 27 update — versions unchanged
 
 - Give grouped trough balls a fixed collision bounce based on arrival speed, with reduced force transferred through adjacent balls and exact return to their authored slots.
