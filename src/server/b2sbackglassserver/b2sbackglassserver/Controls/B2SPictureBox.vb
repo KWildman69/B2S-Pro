@@ -150,6 +150,8 @@ Public Class B2SPictureBox
     Public Property MotionPathRollAngle() As Single = 0.0F
     Public Property MotionPathSequenceGroup() As String = String.Empty
     Public Property MotionPathSequenceOrder() As Integer = 0
+    Public Property MotionPathDrainAll() As Boolean = False
+    Public Property MotionPathGravityDrop() As Boolean = False
     Public Property MotionPathRespawnEnabled() As Boolean = False
     Public Property MotionPathRespawnPoint() As PointF = PointF.Empty
     Public Property MotionPathRespawnDuration() As Integer = 350
@@ -783,6 +785,45 @@ Public Class B2SPictureBox
 
     Public Sub StartMotionPathExit()
         StartMotionPathCore(True)
+    End Sub
+
+    Friend Function MotionPathExitRuntimeRoute() As List(Of PointF)
+        Dim route As New List(Of PointF)()
+        If _motionPathExitPoints Is Nothing OrElse _motionPathExitPoints.Count < 2 Then Return route
+        Dim startCenter As PointF = MotionPathCenter
+        Dim authoredStart As PointF = _motionPathExitPoints(0)
+        Dim scaleX As Single = If(Me.Width > 0, Me.RectangleF.Width / Me.Width, 1.0F)
+        Dim scaleY As Single = If(Me.Height > 0, Me.RectangleF.Height / Me.Height, 1.0F)
+        route.Add(startCenter)
+        For index As Integer = 1 To _motionPathExitPoints.Count - 1
+            route.Add(New PointF(startCenter.X + (_motionPathExitPoints(index).X - authoredStart.X) * scaleX,
+                                 startCenter.Y + (_motionPathExitPoints(index).Y - authoredStart.Y) * scaleY))
+        Next
+        Return route
+    End Function
+
+    Friend Sub StartMotionPathDrainAll(ByVal runtimeRoute As List(Of PointF), ByVal duration As Integer)
+        If runtimeRoute Is Nothing OrElse runtimeRoute.Count < 2 OrElse Me.Parent Is Nothing Then Return
+        If Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
+            Dim routeCopy As New List(Of PointF)(runtimeRoute)
+            Me.Parent.BeginInvoke(New MethodInvoker(Sub() StartMotionPathDrainAll(routeCopy, duration)))
+            Return
+        End If
+        StopTroughCollisionImpulse(True)
+        motionPathTimer.Stop()
+        motionPathClock.Reset()
+        motionPathPaused = False
+        motionPathExternalShift = False
+        motionPathStartRectangle = Me.RectangleF
+        motionPathRuntimePoints = New List(Of PointF)(runtimeRoute)
+        motionPathActiveDuration = Math.Max(250, Math.Min(30000, duration))
+        motionPathStartDelay = 0
+        motionPathActiveLoop = False
+        motionPathLaunchSegmentReported = True
+        SetMotionPathCenter(motionPathRuntimePoints(0))
+        Me.Visible = True
+        motionPathClock.Start()
+        motionPathTimer.Start()
     End Sub
 
     Public ReadOnly Property MotionPathCenter() As PointF

@@ -162,6 +162,8 @@
         Public MotionPathRollEnabled As Boolean = False
         Public MotionPathSequenceGroup As String = String.Empty
         Public MotionPathSequenceOrder As Integer = 0
+        Public MotionPathDrainAll As Boolean = False
+        Public MotionPathGravityDrop As Boolean = False
         Public MotionPathRespawnEnabled As Boolean = False
         Public MotionPathRespawnPoint As PointF = PointF.Empty
         Public MotionPathRespawnDuration As Integer = 350

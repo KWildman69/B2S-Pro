@@ -1545,6 +1545,7 @@ Public Class formBackglass
     Private Sub GetThruAllLamps(ByVal lampsData As String)
 
         Dim pivotLampIDs As New Generic.HashSet(Of Integer)(B2SData.UsedMotionPathLampIDs.Keys)
+        pivotLampIDs.UnionWith(B2SData.UsedMotionPathRemoveLampIDs.Keys)
         pivotLampIDs.UnionWith(B2SData.PivotLampIDs.Keys)
         For Each lampid As Integer In pivotLampIDs
             If lampid < lampsData.Length AndAlso lampid < motionPathLamps.Length Then
@@ -1677,6 +1678,7 @@ Public Class formBackglass
     Private Sub GetThruAllSolenoids(ByVal solenoidsData As String)
 
         Dim pivotSolenoidIDs As New Generic.HashSet(Of Integer)(B2SData.UsedMotionPathSolenoidIDs.Keys)
+        pivotSolenoidIDs.UnionWith(B2SData.UsedMotionPathRemoveSolenoidIDs.Keys)
         pivotSolenoidIDs.UnionWith(B2SData.PivotSolenoidIDs.Keys)
         pivotSolenoidIDs.UnionWith(B2SData.GetPhysicsLauncherIDs(1))
         For Each solenoidid As Integer In pivotSolenoidIDs
@@ -2774,6 +2776,8 @@ Public Class formBackglass
                         Dim motionPathRollEnabled As Boolean = False
                         Dim motionPathSequenceGroup As String = String.Empty
                         Dim motionPathSequenceOrder As Integer = 0
+                        Dim motionPathDrainAll As Boolean = False
+                        Dim motionPathGravityDrop As Boolean = False
                         Dim motionPathRespawnEnabled As Boolean = False
                         Dim motionPathRespawnPoint As PointF = PointF.Empty
                         Dim motionPathRespawnDuration As Integer = 350
@@ -2921,6 +2925,12 @@ Public Class formBackglass
                             Integer.TryParse(innerNode.Attributes("MotionPathSequenceOrder").InnerText, motionPathSequenceOrder)
                             motionPathSequenceOrder = Math.Max(0, Math.Min(999, motionPathSequenceOrder))
                         End If
+                        If isimagesnippit AndAlso innerNode.Attributes("MotionPathDrainAll") IsNot Nothing Then
+                            motionPathDrainAll = (innerNode.Attributes("MotionPathDrainAll").InnerText = "1")
+                        End If
+                        If isimagesnippit AndAlso innerNode.Attributes("MotionPathGravityDrop") IsNot Nothing Then
+                            motionPathGravityDrop = (innerNode.Attributes("MotionPathGravityDrop").InnerText = "1")
+                        End If
                         If isimagesnippit AndAlso innerNode.Attributes("MotionPathRespawnEnabled") IsNot Nothing Then
                             motionPathRespawnEnabled = (innerNode.Attributes("MotionPathRespawnEnabled").InnerText = "1")
                         End If
@@ -3027,6 +3037,8 @@ Public Class formBackglass
                         picbox.MotionPathRollEnabled = motionPathRollEnabled
                         picbox.MotionPathSequenceGroup = motionPathSequenceGroup
                         picbox.MotionPathSequenceOrder = motionPathSequenceOrder
+                        picbox.MotionPathDrainAll = motionPathDrainAll
+                        picbox.MotionPathGravityDrop = motionPathGravityDrop
                         picbox.MotionPathRespawnEnabled = motionPathRespawnEnabled
                         picbox.MotionPathRespawnPoint = motionPathRespawnPoint
                         picbox.MotionPathRespawnDuration = motionPathRespawnDuration
@@ -3130,15 +3142,15 @@ Public Class formBackglass
                             End If
                             B2SData.UsedMotionPathResumeB2SIDs(motionPathResumeB2SID).Add(picbox)
                         End If
-                        If picbox.MotionPathExitPoints.Count >= 2 AndAlso motionPathRemoveSolenoidID > 0 Then
+                        If (picbox.MotionPathExitPoints.Count >= 2 OrElse picbox.MotionPathGravityDrop) AndAlso motionPathRemoveSolenoidID > 0 Then
                             If Not B2SData.UsedMotionPathRemoveSolenoidIDs.ContainsKey(motionPathRemoveSolenoidID) Then B2SData.UsedMotionPathRemoveSolenoidIDs.Add(motionPathRemoveSolenoidID, New List(Of B2SPictureBox)())
                             B2SData.UsedMotionPathRemoveSolenoidIDs(motionPathRemoveSolenoidID).Add(picbox)
                         End If
-                        If picbox.MotionPathExitPoints.Count >= 2 AndAlso motionPathRemoveLampID > 0 Then
+                        If (picbox.MotionPathExitPoints.Count >= 2 OrElse picbox.MotionPathGravityDrop) AndAlso motionPathRemoveLampID > 0 Then
                             If Not B2SData.UsedMotionPathRemoveLampIDs.ContainsKey(motionPathRemoveLampID) Then B2SData.UsedMotionPathRemoveLampIDs.Add(motionPathRemoveLampID, New List(Of B2SPictureBox)())
                             B2SData.UsedMotionPathRemoveLampIDs(motionPathRemoveLampID).Add(picbox)
                         End If
-                        If picbox.MotionPathExitPoints.Count >= 2 AndAlso motionPathRemoveB2SID > 0 Then
+                        If (picbox.MotionPathExitPoints.Count >= 2 OrElse picbox.MotionPathGravityDrop) AndAlso motionPathRemoveB2SID > 0 Then
                             If Not B2SData.UsedMotionPathRemoveB2SIDs.ContainsKey(motionPathRemoveB2SID) Then B2SData.UsedMotionPathRemoveB2SIDs.Add(motionPathRemoveB2SID, New List(Of B2SPictureBox)())
                             B2SData.UsedMotionPathRemoveB2SIDs(motionPathRemoveB2SID).Add(picbox)
                         End If

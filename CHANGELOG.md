@@ -2,6 +2,13 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## 1.0.4 / Server 3.0.3 — 2026-09-29
+
+- Add a trough option that releases every loaded ball to gravity on one trigger, captures dropped balls at an authored return zone, and returns one randomly selected ball through the normal entry trigger and path.
+- Add local Load Balls, Drop All Balls, and Test Trigger controls that use the saved trough path, gravity, boundaries, collision response, selected ball artwork, and rolling behavior.
+- Keep gravity-trough boundary edits synchronized across every ball in the group, and preserve the new trough settings through project saves and DirectB2S exports.
+- Add a separate drain-all option that keeps every occupied ball ordered and non-overlapping along the trough centers and exact authored exit path.
+
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
 ### September 28 update — versions unchanged

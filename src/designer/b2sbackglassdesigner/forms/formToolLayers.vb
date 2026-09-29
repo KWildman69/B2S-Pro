@@ -1264,8 +1264,17 @@ Public Class formToolLayers
                                           CInt(Math.Round(editor.ResultLauncherY - ball.Size.Height / 2.0F)))
             End If
         End Using
+        Dim physicsGroupMembers As List(Of Illumination.BulbInfo) = MotionGroupMembers(ball)
+        If ball.SnippitInfo.MotionPathGravityDrop AndAlso physicsGroupMembers.Count > 1 Then
+            For Each member As Illumination.BulbInfo In physicsGroupMembers
+                CopyTroughPhysicsSettings(ball, member)
+                member.SnippitInfo.MotionPathRollEnabled = ball.SnippitInfo.MotionPathRollEnabled
+                member.SnippitInfo.PhysicsFlipperName = String.Empty
+                member.SnippitInfo.PhysicsLauncherFollowPivot = False
+            Next
+        End If
         MarkDirty()
-        RefreshAll(ball)
+        RefreshAll(ball, physicsGroupMembers)
     End Sub
 
     Private Sub EditMotionPath(sender As Object, e As EventArgs)
@@ -1426,7 +1435,7 @@ Public Class formToolLayers
                 ball.Size = wizard.BallSize
                 ball.Visible = False
                 ball.Location = New Point(CInt(Math.Round(wizard.EntryPath(0).X - ball.Size.Width / 2.0F)), CInt(Math.Round(wizard.EntryPath(0).Y - ball.Size.Height / 2.0F)))
-                ApplyTroughSettings(ball, wizard, slot, index + 1)
+                ApplyTroughSettings(ball, template, wizard, slot, index + 1)
                 If index > 0 Then
                     If ball.ParentForm = eParentForm.DMD Then Backglass.currentTabPage.BackglassData.DMDBulbs.Add(ball) Else Backglass.currentTabPage.BackglassData.Bulbs.Add(ball)
                 End If
@@ -1494,13 +1503,15 @@ Public Class formToolLayers
         Return clone
     End Function
 
-    Private Sub ApplyTroughSettings(ball As Illumination.BulbInfo, wizard As formTroughWizard, slot As PointF, order As Integer)
+    Private Sub ApplyTroughSettings(ball As Illumination.BulbInfo, template As Illumination.BulbInfo,
+                                    wizard As formTroughWizard, slot As PointF, order As Integer)
         Dim entry As List(Of PointF) = BuildEntryPathToSlot(wizard.EntryPath, slot)
         Dim exitPath As List(Of PointF) = wizard.ExitPath
-        exitPath(0) = slot
+        If exitPath.Count > 0 Then exitPath(0) = slot
         With ball.SnippitInfo
             .MotionPathPoints.Clear() : .MotionPathPoints.AddRange(entry)
-            .MotionPathExitPoints.Clear() : .MotionPathExitPoints.AddRange(exitPath)
+            .MotionPathExitPoints.Clear()
+            If Not wizard.GravityDrop Then .MotionPathExitPoints.AddRange(exitPath)
             .MotionPathDuration = wizard.EntryTime : .MotionPathExitDuration = wizard.ExitTime
             .MotionPathSolenoidID = wizard.EntrySolenoidID : .MotionPathLampID = wizard.EntryLampID : .MotionPathB2SID = wizard.EntryB2SID
             .MotionPathStopB2SID = wizard.StopB2SID : .MotionPathResumeB2SID = wizard.ResumeB2SID
@@ -1508,9 +1519,66 @@ Public Class formToolLayers
             .MotionPathQueueTriggers = True : .MotionPathLoop = False
             .MotionPathRollEnabled = wizard.RollEnabled
             .MotionPathSequenceGroup = wizard.GroupName : .MotionPathSequenceOrder = order
+            .MotionPathDrainAll = wizard.DrainAll
+            .MotionPathGravityDrop = wizard.GravityDrop
             .MotionPathRespawnEnabled = wizard.RespawnEnabled
             .MotionPathRespawnPoint = wizard.RespawnStart
             .MotionPathRespawnDuration = wizard.RespawnTime
+        End With
+        CopyTroughPhysicsSettings(template, ball)
+        If wizard.GravityDrop Then
+            ball.SnippitInfo.PhysicsFlipperName = String.Empty
+            ball.SnippitInfo.PhysicsLauncherEnabled = True
+            ball.SnippitInfo.PhysicsLauncherFollowPivot = False
+            ball.SnippitInfo.PhysicsLauncherTriggerType = 1
+            ball.SnippitInfo.PhysicsLauncherTriggerID = 0
+            ball.SnippitInfo.PhysicsLauncherX = wizard.CaptureCenter.X
+            ball.SnippitInfo.PhysicsLauncherY = wizard.CaptureCenter.Y
+            ball.SnippitInfo.PhysicsLauncherAngle = 0.0F
+            ball.SnippitInfo.PhysicsLauncherStrength = 0.0F
+            ball.SnippitInfo.PhysicsLauncherRandomAngle = 0.0F
+            ball.SnippitInfo.PhysicsLauncherRandomStrength = 0.0F
+            ball.SnippitInfo.PhysicsLauncherCaptureRadius = wizard.CaptureRadius
+        End If
+    End Sub
+
+    Private Sub CopyTroughPhysicsSettings(ByVal source As Illumination.BulbInfo, ByVal target As Illumination.BulbInfo)
+        If source Is Nothing OrElse target Is Nothing Then Return
+        If source Is target Then Return
+        With target.SnippitInfo
+            .PhysicsBall = source.SnippitInfo.PhysicsBall
+            .PhysicsFlipperName = source.SnippitInfo.PhysicsFlipperName
+            .PhysicsBounds = source.SnippitInfo.PhysicsBounds
+            .PhysicsGravity = source.SnippitInfo.PhysicsGravity
+            .PhysicsFlipperStrength = source.SnippitInfo.PhysicsFlipperStrength
+            .PhysicsBoundaryBounce = source.SnippitInfo.PhysicsBoundaryBounce
+            .PhysicsFloorPoints.Clear() : .PhysicsFloorPoints.AddRange(source.SnippitInfo.PhysicsFloorPoints)
+            .PhysicsBoundaryPaths.Clear()
+            For Each path As List(Of PointF) In source.SnippitInfo.PhysicsBoundaryPaths
+                .PhysicsBoundaryPaths.Add(New List(Of PointF)(path))
+            Next
+            .PhysicsBoundaryNames.Clear() : .PhysicsBoundaryNames.AddRange(source.SnippitInfo.PhysicsBoundaryNames)
+            .PhysicsBoundaryLocks.Clear() : .PhysicsBoundaryLocks.AddRange(source.SnippitInfo.PhysicsBoundaryLocks)
+            .PhysicsBoundarySegmentBounces.Clear()
+            For Each values As List(Of Single) In source.SnippitInfo.PhysicsBoundarySegmentBounces
+                .PhysicsBoundarySegmentBounces.Add(New List(Of Single)(values))
+            Next
+            .PhysicsObstacles.Clear() : .PhysicsObstacles.AddRange(source.SnippitInfo.PhysicsObstacles)
+            .PhysicsObstacleBounces.Clear() : .PhysicsObstacleBounces.AddRange(source.SnippitInfo.PhysicsObstacleBounces)
+            .PhysicsSwitchZones.Clear() : .PhysicsSwitchZones.AddRange(source.SnippitInfo.PhysicsSwitchZones)
+            .PhysicsSwitchIDs.Clear() : .PhysicsSwitchIDs.AddRange(source.SnippitInfo.PhysicsSwitchIDs)
+            .PhysicsSwitchAngles.Clear() : .PhysicsSwitchAngles.AddRange(source.SnippitInfo.PhysicsSwitchAngles)
+            .PhysicsLauncherEnabled = source.SnippitInfo.PhysicsLauncherEnabled
+            .PhysicsLauncherFollowPivot = False
+            .PhysicsLauncherTriggerType = source.SnippitInfo.PhysicsLauncherTriggerType
+            .PhysicsLauncherTriggerID = source.SnippitInfo.PhysicsLauncherTriggerID
+            .PhysicsLauncherX = source.SnippitInfo.PhysicsLauncherX
+            .PhysicsLauncherY = source.SnippitInfo.PhysicsLauncherY
+            .PhysicsLauncherAngle = source.SnippitInfo.PhysicsLauncherAngle
+            .PhysicsLauncherStrength = source.SnippitInfo.PhysicsLauncherStrength
+            .PhysicsLauncherRandomAngle = source.SnippitInfo.PhysicsLauncherRandomAngle
+            .PhysicsLauncherRandomStrength = source.SnippitInfo.PhysicsLauncherRandomStrength
+            .PhysicsLauncherCaptureRadius = source.SnippitInfo.PhysicsLauncherCaptureRadius
         End With
     End Sub
 

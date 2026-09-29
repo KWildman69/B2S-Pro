@@ -27,6 +27,8 @@ Public Partial Class B2SData
     Private Class PhysicsBallState
         Implements IDisposable
 
+        Public Event LauncherCaptured As EventHandler
+
         Private Const PhysicsSubstepSeconds As Single = 0.001F
         Private Const ShallowSurfaceSlopeLimit As Single = 0.35F
         Private Const ShallowSurfaceRollMultiplier As Single = 2.0F
@@ -57,6 +59,7 @@ Public Partial Class B2SData
         Private ReadOnly timer As New Windows.Forms.Timer() With {.Interval = 16}
         Private ReadOnly clock As New Diagnostics.Stopwatch()
         Private pendingPhysicsSeconds As Double
+        Private physicsActive As Boolean = True
         Private Const MaxPhysicsStepsPerTick As Integer = 250
         Private velocity As PointF = PointF.Empty
         ' Simulation positions and velocities stay in the saved backglass space.
@@ -152,6 +155,7 @@ Public Partial Class B2SData
         End Sub
 
         Public Sub Start()
+            physicsActive = True
             ball.Visible = True
             pendingPhysicsSeconds = 0.0R
 #If PHYSICS_PREVIEW Then
@@ -170,6 +174,7 @@ Public Partial Class B2SData
         End Property
 
         Public Sub AdvanceServerStep()
+            If Not physicsActive Then Return
             If ball.RectangleF.Width <= 0.0F OrElse ball.RectangleF.Height <= 0.0F Then Return
             If Not hasLastFlipperAngle AndAlso PhysicsPivot IsNot Nothing Then
                 lastFlipperAngle = PhysicsPivot.PhysicsPreviousAngle
@@ -187,6 +192,7 @@ Public Partial Class B2SData
         End Sub
 
         Private Sub AdvancePhysics(ByVal elapsed As Double)
+            If Not physicsActive Then Return
             If elapsed <= 0.0R OrElse Double.IsNaN(elapsed) OrElse Double.IsInfinity(elapsed) Then Return
             pendingPhysicsSeconds += elapsed
             Dim flipper As B2SPictureBox = FindPivotPicture(flipperName)
@@ -206,6 +212,29 @@ Public Partial Class B2SData
             Next
             pendingPhysicsSeconds = Math.Max(0.0R, pendingPhysicsSeconds - steps * 0.001R)
         End Sub
+
+        Public Sub ActivateAtCurrentPosition()
+            Dim scaleX As Single = If(authoredBallWidth <= 0.0F OrElse ball.RectangleF.Width <= 0.0F, 1.0F, ball.RectangleF.Width / authoredBallWidth)
+            Dim scaleY As Single = If(authoredBallHeight <= 0.0F OrElse ball.RectangleF.Height <= 0.0F, 1.0F, ball.RectangleF.Height / authoredBallHeight)
+            Dim runtimeCenter As PointF = ball.MotionPathCenter
+            physicsCenter = New PointF(runtimeCenter.X / scaleX, runtimeCenter.Y / scaleY)
+            velocity = PointF.Empty
+            pendingPhysicsSeconds = 0.0R
+            launcherHolding = False
+            launcherArmed = False
+            hasLastFlipperAngle = False
+            physicsActive = True
+            ball.Visible = True
+        End Sub
+
+#If Not PHYSICS_PREVIEW Then
+        Public Sub DeactivateForMotionPath()
+            physicsActive = False
+            velocity = PointF.Empty
+            pendingPhysicsSeconds = 0.0R
+            hasLastFlipperAngle = False
+        End Sub
+#End If
 
 #If PHYSICS_PREVIEW Then
         Public Sub AdvancePreview(ByVal elapsed As Double)
@@ -334,6 +363,7 @@ Public Partial Class B2SData
                 velocity = PointF.Empty
                 launcherArmed = True
                 launcherHolding = True
+                RaiseEvent LauncherCaptured(Me, EventArgs.Empty)
             End If
         End Sub
 

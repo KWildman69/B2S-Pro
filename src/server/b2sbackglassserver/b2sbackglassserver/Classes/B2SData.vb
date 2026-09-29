@@ -320,6 +320,7 @@ Public Partial Class B2SData
     Public Shared ReadOnly StartupPivotPictures As New Generic.List(Of B2SPictureBox)()
     Private Shared ReadOnly PivotPicturesByName As New Generic.Dictionary(Of String, B2SPictureBox)(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly PhysicsBalls As New Generic.List(Of PhysicsBallState)()
+    Private Shared ReadOnly PhysicsBallStatesByPicture As New Generic.Dictionary(Of B2SPictureBox, PhysicsBallState)()
     Private Shared ReadOnly physicsTimer As New Windows.Forms.Timer With {.Interval = 16}
     Private Shared ReadOnly physicsClock As New Diagnostics.Stopwatch()
     Private Shared physicsPendingSeconds As Double
@@ -455,19 +456,43 @@ Public Partial Class B2SData
                                           Optional ByVal boundarySegmentBounces As Generic.List(Of Generic.List(Of Single)) = Nothing,
                                           Optional ByVal obstacleBounces As Generic.List(Of Single) = Nothing)
         If pictureBox Is Nothing OrElse bounds.IsEmpty Then Return
-        Dim normalizedFlipperName As String = If(flipperName, String.Empty).Trim()
+        Dim normalizedFlipperName As String = If(pictureBox.MotionPathGravityDrop, String.Empty, If(flipperName, String.Empty).Trim())
         Dim state As New PhysicsBallState(pictureBox, normalizedFlipperName, bounds,
                                           Math.Max(0.0F, Math.Min(10000.0F, gravity)),
                                           Math.Max(0.0F, Math.Min(5.0F, flipperStrength)),
                                           Math.Max(0.0F, Math.Min(1.0F, boundaryBounce)), boundaryPaths, obstacles, switchZones, launcher,
                                           boundarySegmentBounces, obstacleBounces)
         PhysicsBalls.Add(state)
-        If launcher IsNot Nothing AndAlso launcher.TriggerID > 0 Then
+        PhysicsBallStatesByPicture(pictureBox) = state
+        If pictureBox.MotionPathGravityDrop AndAlso launcher IsNot Nothing AndAlso
+           Not String.IsNullOrWhiteSpace(pictureBox.MotionPathSequenceGroup) Then
+            Dim groupName As String = pictureBox.MotionPathSequenceGroup.Trim()
+            If MotionPathSequenceGroups.ContainsKey(groupName) Then MotionPathSequenceGroups(groupName).RegisterGravityCapture(pictureBox, state)
+        ElseIf launcher IsNot Nothing AndAlso launcher.TriggerID > 0 Then
             Dim routes = If(launcher.TriggerType = 3, PhysicsLauncherB2SIDs, PhysicsLauncherSolenoidIDs)
             If Not routes.ContainsKey(launcher.TriggerID) Then routes.Add(launcher.TriggerID, New Generic.List(Of PhysicsBallState)())
             routes(launcher.TriggerID).Add(state)
         End If
-        state.Start()
+        If pictureBox.MotionPathGravityDrop Then
+            state.DeactivateForMotionPath()
+        Else
+            state.Start()
+        End If
+    End Sub
+
+    Private Shared Function ActivateGravityDrop(ByVal pictureBox As B2SPictureBox) As Boolean
+        Dim state As PhysicsBallState = Nothing
+        If pictureBox Is Nothing OrElse Not PhysicsBallStatesByPicture.TryGetValue(pictureBox, state) Then Return False
+        state.ActivateAtCurrentPosition()
+        StartPhysicsClock()
+        Return True
+    End Function
+
+    Private Shared Sub DeactivateGravityDrop(ByVal pictureBox As B2SPictureBox)
+        Dim state As PhysicsBallState = Nothing
+        If pictureBox IsNot Nothing AndAlso PhysicsBallStatesByPicture.TryGetValue(pictureBox, state) Then
+            state.DeactivateForMotionPath()
+        End If
     End Sub
 
     Public Shared Function FirePhysicsLaunchers(ByVal triggerType As Integer, ByVal triggerID As Integer, ByVal value As Integer) As Boolean
@@ -612,10 +637,16 @@ Public Partial Class B2SData
         Private ReadOnly occupiedMembers As New Generic.HashSet(Of B2SPictureBox)()
         Private ReadOnly pendingOperations As New Generic.Queue(Of Boolean)()
         Private ReadOnly compactionTargets As New Generic.List(Of PointF)()
+        Private ReadOnly activeDrainAllRemovals As New Generic.HashSet(Of B2SPictureBox)()
+        Private ReadOnly gravityCapturePictures As New Generic.Dictionary(Of PhysicsBallState, B2SPictureBox)()
+        Private ReadOnly capturedGravityMembers As New Generic.List(Of B2SPictureBox)()
+        Private ReadOnly capturedGravitySet As New Generic.HashSet(Of B2SPictureBox)()
+        Private ReadOnly gravityReturnRandom As New Random(Guid.NewGuid().GetHashCode())
         Private activeRemoval As B2SPictureBox = Nothing
         Private launchingMember As B2SPictureBox = Nothing
         Private sourceAnchor As B2SPictureBox = Nothing
         Private sourceReady As Boolean = True
+        Private gravityDropAwaitingCapture As Boolean
 
         Public Sub Register(ByVal pictureBox As B2SPictureBox)
             If pictureBox Is Nothing OrElse members.Contains(pictureBox) Then Return
@@ -643,13 +674,31 @@ Public Partial Class B2SData
             End If
         End Sub
 
+        Public Sub RegisterGravityCapture(ByVal pictureBox As B2SPictureBox, ByVal state As PhysicsBallState)
+            If pictureBox Is Nothing OrElse state Is Nothing Then Return
+            gravityCapturePictures(state) = pictureBox
+            RemoveHandler state.LauncherCaptured, AddressOf GravityBallCaptured
+            AddHandler state.LauncherCaptured, AddressOf GravityBallCaptured
+        End Sub
+
+        Private Sub GravityBallCaptured(ByVal sender As Object, ByVal e As EventArgs)
+            Dim state As PhysicsBallState = TryCast(sender, PhysicsBallState)
+            Dim pictureBox As B2SPictureBox = Nothing
+            If state Is Nothing OrElse Not gravityCapturePictures.TryGetValue(state, pictureBox) OrElse
+               Not gravityDropAwaitingCapture OrElse capturedGravitySet.Contains(pictureBox) OrElse occupiedMembers.Contains(pictureBox) Then Return
+            capturedGravitySet.Add(pictureBox)
+            capturedGravityMembers.Add(pictureBox)
+            pictureBox.Visible = False
+            ProcessPendingOperations()
+        End Sub
+
         Public Sub RequestStart()
             If pendingOperations.Count > 0 Then
                 QueueOperation(False)
                 ProcessPendingOperations()
                 Return
             End If
-            If activeRemoval IsNot Nothing Then
+            If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 Then
                 QueueOperation(False)
                 Return
             End If
@@ -661,7 +710,7 @@ Public Partial Class B2SData
                 End If
                 Return
             End If
-            StartEntry()
+            If Not StartEntry() AndAlso GravityDropEnabled() AndAlso gravityDropAwaitingCapture AndAlso QueueEnabled() Then QueueOperation(False)
         End Sub
 
         Public Sub RequestRemove()
@@ -670,11 +719,21 @@ Public Partial Class B2SData
                 ProcessPendingOperations()
                 Return
             End If
+            If activeDrainAllRemovals.Count > 0 Then
+                If QueueEnabled() Then QueueOperation(True)
+                Return
+            End If
             If activeRemoval IsNot Nothing Then
                 If QueueEnabled() Then QueueOperation(True) Else activeRemoval.StartMotionPathExit()
                 Return
             End If
-            StartRemoval()
+            If GravityDropEnabled() Then
+                StartGravityDrop()
+            ElseIf DrainAllEnabled() Then
+                StartAllRemovals()
+            Else
+                StartRemoval()
+            End If
         End Sub
 
         Private Sub QueueOperation(ByVal remove As Boolean)
@@ -687,13 +746,24 @@ Public Partial Class B2SData
                 RemoveHandler member.MotionPathLaunchSegmentCompleted, AddressOf MemberLaunchSegmentCompleted
             Next
             If activeRemoval IsNot Nothing Then RemoveHandler activeRemoval.MotionPathCompleted, AddressOf RemovalCompleted
+            For Each member As B2SPictureBox In activeDrainAllRemovals
+                RemoveHandler member.MotionPathCompleted, AddressOf DrainAllRemovalCompleted
+            Next
             If sourceAnchor IsNot Nothing Then RemoveHandler sourceAnchor.MotionPathSourceRespawnCompleted, AddressOf SourceRespawnCompleted
             activeEntries.Clear()
             activeRemoval = Nothing
+            activeDrainAllRemovals.Clear()
             launchingMember = Nothing
             pendingOperations.Clear()
             compactionTargets.Clear()
             occupiedMembers.Clear()
+            For Each state As PhysicsBallState In gravityCapturePictures.Keys
+                RemoveHandler state.LauncherCaptured, AddressOf GravityBallCaptured
+            Next
+            gravityCapturePictures.Clear()
+            capturedGravityMembers.Clear()
+            capturedGravitySet.Clear()
+            gravityDropAwaitingCapture = False
             For Each member As B2SPictureBox In members
                 If member IsNot Nothing Then member.SetMotionPathSequenceSourceAnchor(False)
             Next
@@ -710,16 +780,42 @@ Public Partial Class B2SData
             Return False
         End Function
 
-        Private Function StartEntry() As Boolean
-            If Not sourceReady OrElse activeRemoval IsNot Nothing Then Return False
-            Dim memberToStart As B2SPictureBox = Nothing
+        Private Function DrainAllEnabled() As Boolean
             For Each member As B2SPictureBox In members
-                If Not occupiedMembers.Contains(member) AndAlso Not activeEntries.Contains(member) Then
-                    memberToStart = member
-                    Exit For
-                End If
+                If member IsNot Nothing AndAlso member.MotionPathDrainAll Then Return True
             Next
+            Return False
+        End Function
+
+        Private Function GravityDropEnabled() As Boolean
+            For Each member As B2SPictureBox In members
+                If member IsNot Nothing AndAlso member.MotionPathGravityDrop Then Return True
+            Next
+            Return False
+        End Function
+
+        Private Function StartEntry() As Boolean
+            If Not sourceReady OrElse activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 Then Return False
+            Dim memberToStart As B2SPictureBox = Nothing
+            If GravityDropEnabled() AndAlso gravityDropAwaitingCapture Then
+                While capturedGravityMembers.Count > 0 AndAlso memberToStart Is Nothing
+                    Dim randomIndex As Integer = gravityReturnRandom.Next(capturedGravityMembers.Count)
+                    Dim capturedMember As B2SPictureBox = capturedGravityMembers(randomIndex)
+                    capturedGravityMembers.RemoveAt(randomIndex)
+                    If capturedGravitySet.Remove(capturedMember) AndAlso Not occupiedMembers.Contains(capturedMember) AndAlso
+                       Not activeEntries.Contains(capturedMember) Then memberToStart = capturedMember
+                End While
+                If memberToStart IsNot Nothing Then AssignNextOpenEntrySlot(memberToStart)
+            Else
+                For Each member As B2SPictureBox In members
+                    If (memberToStart Is Nothing OrElse member.MotionPathSequenceOrder < memberToStart.MotionPathSequenceOrder) AndAlso
+                       Not occupiedMembers.Contains(member) AndAlso Not activeEntries.Contains(member) Then
+                        memberToStart = member
+                    End If
+                Next
+            End If
             If memberToStart Is Nothing Then Return False
+            DeactivateGravityDrop(memberToStart)
             activeEntries.Add(memberToStart)
             RemoveHandler memberToStart.MotionPathCompleted, AddressOf EntryCompleted
             AddHandler memberToStart.MotionPathCompleted, AddressOf EntryCompleted
@@ -727,8 +823,28 @@ Public Partial Class B2SData
             Return True
         End Function
 
+        Private Sub AssignNextOpenEntrySlot(ByVal capturedMember As B2SPictureBox)
+            If capturedMember Is Nothing Then Return
+            Dim slotOwner As B2SPictureBox = Nothing
+            For Each member As B2SPictureBox In members
+                If Not occupiedMembers.Contains(member) AndAlso Not activeEntries.Contains(member) AndAlso
+                   (slotOwner Is Nothing OrElse member.MotionPathSequenceOrder < slotOwner.MotionPathSequenceOrder) Then slotOwner = member
+            Next
+            If slotOwner Is Nothing OrElse slotOwner Is capturedMember Then Return
+
+            Dim capturedPath As New Generic.List(Of PointF)(capturedMember.MotionPathPoints)
+            Dim slotPath As New Generic.List(Of PointF)(slotOwner.MotionPathPoints)
+            Dim capturedOrder As Integer = capturedMember.MotionPathSequenceOrder
+            capturedMember.MotionPathPoints.Clear()
+            capturedMember.MotionPathPoints.AddRange(slotPath)
+            capturedMember.MotionPathSequenceOrder = slotOwner.MotionPathSequenceOrder
+            slotOwner.MotionPathPoints.Clear()
+            slotOwner.MotionPathPoints.AddRange(capturedPath)
+            slotOwner.MotionPathSequenceOrder = capturedOrder
+        End Sub
+
         Private Function StartRemoval() As Boolean
-            If activeRemoval IsNot Nothing OrElse activeEntries.Count > 0 Then Return False
+            If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 OrElse activeEntries.Count > 0 Then Return False
             For index As Integer = 0 To members.Count - 1
                 If occupiedMembers.Contains(members(index)) AndAlso members(index).MotionPathExitPoints.Count >= 2 Then
                     activeRemoval = members(index)
@@ -740,6 +856,92 @@ Public Partial Class B2SData
             AddHandler activeRemoval.MotionPathCompleted, AddressOf RemovalCompleted
             StartCompactionShifts(activeRemoval)
             activeRemoval.StartMotionPathExit()
+            Return True
+        End Function
+
+        Private Function StartAllRemovals() As Boolean
+            If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 OrElse activeEntries.Count > 0 Then Return False
+            Dim removals As New Generic.List(Of B2SPictureBox)()
+            For Each member As B2SPictureBox In members
+                If occupiedMembers.Contains(member) AndAlso member.MotionPathExitPoints.Count >= 2 Then removals.Add(member)
+            Next
+            If removals.Count = 0 Then Return False
+            removals.Sort(Function(left As B2SPictureBox, right As B2SPictureBox)
+                              Return left.MotionPathSequenceOrder.CompareTo(right.MotionPathSequenceOrder)
+                          End Function)
+            For Each member As B2SPictureBox In removals
+                activeDrainAllRemovals.Add(member)
+                RemoveHandler member.MotionPathCompleted, AddressOf DrainAllRemovalCompleted
+                AddHandler member.MotionPathCompleted, AddressOf DrainAllRemovalCompleted
+            Next
+            Dim lead As B2SPictureBox = removals(0)
+            Dim leadRoute As Generic.List(Of PointF) = lead.MotionPathExitRuntimeRoute()
+            Dim leadLength As Double = RuntimePathLength(leadRoute)
+            Dim leadSpeed As Double = If(leadLength > 0.001R,
+                                         leadLength / Math.Max(250, lead.MotionPathExitDuration),
+                                         0.0R)
+            If leadSpeed <= 0.000001R Then
+                For Each member As B2SPictureBox In removals
+                    member.StartMotionPathExit()
+                Next
+                Return True
+            End If
+            For index As Integer = 0 To removals.Count - 1
+                Dim member As B2SPictureBox = removals(index)
+                Dim trainRoute As New Generic.List(Of PointF) From {member.MotionPathCenter}
+                For precedingIndex As Integer = index - 1 To 0 Step -1
+                    AddDistinctRuntimePoint(trainRoute, removals(precedingIndex).MotionPathCenter)
+                Next
+                For routeIndex As Integer = 1 To leadRoute.Count - 1
+                    AddDistinctRuntimePoint(trainRoute, leadRoute(routeIndex))
+                Next
+                Dim memberDuration As Integer = CInt(Math.Round(RuntimePathLength(trainRoute) / leadSpeed))
+                member.StartMotionPathDrainAll(trainRoute, memberDuration)
+            Next
+            Return True
+        End Function
+
+        Private Shared Sub AddDistinctRuntimePoint(ByVal route As Generic.List(Of PointF), ByVal point As PointF)
+            If route.Count = 0 Then
+                route.Add(point)
+                Return
+            End If
+            Dim previous As PointF = route(route.Count - 1)
+            Dim dx As Double = point.X - previous.X
+            Dim dy As Double = point.Y - previous.Y
+            If dx * dx + dy * dy > 0.0001R Then route.Add(point)
+        End Sub
+
+        Private Shared Function RuntimePathLength(ByVal route As Generic.List(Of PointF)) As Double
+            Dim total As Double = 0.0R
+            If route Is Nothing Then Return total
+            For index As Integer = 0 To route.Count - 2
+                Dim dx As Double = route(index + 1).X - route(index).X
+                Dim dy As Double = route(index + 1).Y - route(index).Y
+                total += Math.Sqrt(dx * dx + dy * dy)
+            Next
+            Return total
+        End Function
+
+        Private Function StartGravityDrop() As Boolean
+            If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 OrElse activeEntries.Count > 0 Then Return False
+            Dim released As New Generic.List(Of B2SPictureBox)()
+            capturedGravityMembers.Clear()
+            capturedGravitySet.Clear()
+            gravityDropAwaitingCapture = True
+            For Each member As B2SPictureBox In members
+                If occupiedMembers.Contains(member) AndAlso ActivateGravityDrop(member) Then released.Add(member)
+            Next
+            If released.Count = 0 Then
+                gravityDropAwaitingCapture = False
+                Return False
+            End If
+            For Each member As B2SPictureBox In released
+                occupiedMembers.Remove(member)
+            Next
+            compactionTargets.Clear()
+            UpdateSourceAppearance()
+            ProcessPendingOperations()
             Return True
         End Function
 
@@ -792,13 +994,16 @@ Public Partial Class B2SData
             While pendingOperations.Count > 0
                 Dim remove As Boolean = pendingOperations.Peek()
                 If remove Then
-                    If activeRemoval IsNot Nothing OrElse activeEntries.Count > 0 Then Return
+                    If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 OrElse activeEntries.Count > 0 Then Return
                     pendingOperations.Dequeue()
-                    If StartRemoval() Then Return
+                    If If(GravityDropEnabled(), StartGravityDrop(), If(DrainAllEnabled(), StartAllRemovals(), StartRemoval())) Then Return
                 Else
-                    If activeRemoval IsNot Nothing OrElse Not sourceReady Then Return
-                    pendingOperations.Dequeue()
-                    If StartEntry() Then Return
+                    If activeRemoval IsNot Nothing OrElse activeDrainAllRemovals.Count > 0 OrElse Not sourceReady Then Return
+                    If StartEntry() Then
+                        pendingOperations.Dequeue()
+                        Return
+                    End If
+                    Return
                 End If
             End While
         End Sub
@@ -934,6 +1139,20 @@ Public Partial Class B2SData
                 activeRemoval = Nothing
             End If
             ProcessPendingOperations()
+        End Sub
+
+        Private Sub DrainAllRemovalCompleted(ByVal sender As Object, ByVal e As EventArgs)
+            Dim completedMember As B2SPictureBox = TryCast(sender, B2SPictureBox)
+            If completedMember Is Nothing Then Return
+            RemoveHandler completedMember.MotionPathCompleted, AddressOf DrainAllRemovalCompleted
+            If Not activeDrainAllRemovals.Remove(completedMember) Then Return
+            occupiedMembers.Remove(completedMember)
+            completedMember.Visible = False
+            If activeDrainAllRemovals.Count = 0 Then
+                compactionTargets.Clear()
+                UpdateSourceAppearance()
+                ProcessPendingOperations()
+            End If
         End Sub
     End Class
     Public Shared Property UsedRomGIStringIDs4Fantasy() As Generic.SortedList(Of Integer, B2SBaseBox()) = New Generic.SortedList(Of Integer, B2SBaseBox())
@@ -1402,6 +1621,7 @@ Public Partial Class B2SData
             state.Dispose()
         Next
         PhysicsBalls.Clear()
+        PhysicsBallStatesByPicture.Clear()
         PhysicsLauncherSolenoidIDs.Clear()
         PhysicsLauncherB2SIDs.Clear()
         UsedRomGIStringIDs4Fantasy.Clear()

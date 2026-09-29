@@ -745,6 +745,38 @@ Public Class formTroughWizard
     Private ReadOnly slotCanvas As New TroughSlotCanvas()
     Private ReadOnly countBox As New NumericUpDown()
     Private ReadOnly rollBallCheckBox As New CheckBox()
+    Private ReadOnly drainAllCheckBox As New CheckBox()
+    Private ReadOnly gravityDropCheckBox As New CheckBox()
+    Private ReadOnly drainTriggerTypeBox As New ComboBox()
+    Private ReadOnly drainTriggerIDBox As New NumericUpDown()
+    Private ReadOnly drainTriggerTypeLabel As Label
+    Private ReadOnly drainTriggerIDLabel As Label
+    Private ReadOnly captureRadiusBox As New NumericUpDown()
+    Private ReadOnly captureRadiusLabel As Label
+    Private ReadOnly loadTestButton As New Button()
+    Private ReadOnly dropTestButton As New Button()
+    Private ReadOnly triggerSettingsButton As New Button()
+    Private ReadOnly testTriggerButton As New Button()
+    Private ReadOnly gravityTestTimer As New Timer() With {.Interval = 16}
+    Private ReadOnly gravityTestClock As New Diagnostics.Stopwatch()
+    Private ReadOnly gravityTestSessions As New List(Of PhysicsPreview.B2SData)()
+    Private ReadOnly gravityPreviewQueue As New List(Of Integer)()
+    Private ReadOnly gravityPreviewQueued As New HashSet(Of Integer)()
+    Private ReadOnly gravityReturnRandom As New Random()
+    Private gravityTestElapsed As Double
+    Private gravityTestPendingSeconds As Double
+    Private gravityTestMode As Integer
+    Private gravityReturningIndex As Integer = -1
+    Private gravityReturningSlotIndex As Integer = -1
+    Private gravityReturnElapsed As Double
+    Private ReadOnly gravityReturnedBounds As New Dictionary(Of Integer, RectangleF)()
+    Private ReadOnly gravityReturnedSlots As New Dictionary(Of Integer, Integer)()
+    Private ReadOnly gravityPreviewRollAngles As New Dictionary(Of Integer, Single)()
+    Private ReadOnly gravityPreviewRollCenters As New Dictionary(Of Integer, PointF)()
+    Private ReadOnly gravityReturnedRollAngles As New Dictionary(Of Integer, Single)()
+    Private gravityReturnCollisionStarted As Double = -1.0R
+    Private gravityReturnCollisionBallIndex As Integer = -1
+    Private gravityReturnCollisionSlotIndex As Integer = -1
     Private ReadOnly groupBox As New TextBox()
     Private ReadOnly entryButton As New Button()
     Private ReadOnly exitButton As New Button()
@@ -821,8 +853,43 @@ Public Class formTroughWizard
         rollBallCheckBox.Width = 290
         rollBallCheckBox.Height = 25
         rollBallCheckBox.Margin = New Padding(3)
+        drainAllCheckBox.Text = "Drain all balls on one trigger"
+        drainAllCheckBox.Checked = source.SnippitInfo.MotionPathDrainAll
+        drainAllCheckBox.ForeColor = Color.White
+        drainAllCheckBox.AutoSize = False
+        drainAllCheckBox.Width = 290
+        drainAllCheckBox.Height = 25
+        drainAllCheckBox.Margin = New Padding(3)
+        gravityDropCheckBox.Text = "Release balls to physics on drain"
+        gravityDropCheckBox.Checked = source.SnippitInfo.MotionPathGravityDrop
+        gravityDropCheckBox.ForeColor = Color.White
+        gravityDropCheckBox.AutoSize = False
+        gravityDropCheckBox.Width = 290
+        gravityDropCheckBox.Height = 25
+        gravityDropCheckBox.Margin = New Padding(3)
+        drainTriggerTypeLabel = WizardLabel("Gravity drain trigger type:")
+        drainTriggerIDLabel = WizardLabel("Gravity drain trigger ID:")
+        drainTriggerTypeBox.DropDownStyle = ComboBoxStyle.DropDownList
+        drainTriggerTypeBox.Items.AddRange(New Object() {"Solenoid", "Lamp", "B2S ID"})
+        drainTriggerTypeBox.SelectedIndex = If(removeB2S > 0, 2, If(removeLamp > 0, 1, 0))
+        drainTriggerTypeBox.Width = 290 : drainTriggerTypeBox.Margin = New Padding(3)
+        drainTriggerIDBox.Minimum = 1 : drainTriggerIDBox.Maximum = 255
+        Dim savedDrainTrigger As Integer = If(removeB2S > 0, removeB2S, If(removeLamp > 0, removeLamp, removeSolenoid))
+        drainTriggerIDBox.Value = Math.Max(1, Math.Min(255, savedDrainTrigger))
+        drainTriggerIDBox.Width = 290 : drainTriggerIDBox.Margin = New Padding(3)
+        captureRadiusLabel = WizardLabel("Return capture radius:")
+        captureRadiusBox.Minimum = 5 : captureRadiusBox.Maximum = 500
+        captureRadiusBox.DecimalPlaces = 0
+        captureRadiusBox.Value = CDec(Math.Max(5.0F, Math.Min(500.0F, source.SnippitInfo.PhysicsLauncherCaptureRadius)))
+        captureRadiusBox.Width = 290 : captureRadiusBox.Margin = New Padding(3)
+        AddHandler captureRadiusBox.ValueChanged, Sub()
+                                                      slotCanvas.CaptureRadius = CSng(captureRadiusBox.Value)
+                                                      slotCanvas.Invalidate()
+                                                  End Sub
+        AddHandler gravityDropCheckBox.CheckedChanged, AddressOf GravityDropChanged
         ConfigureButton(entryButton, "1. Draw Entry Path", AddressOf EditEntry)
         ConfigureButton(exitButton, "2. Draw Exit Path", AddressOf EditExit)
+        ConfigureButton(triggerSettingsButton, "Return Trigger / Speed...", AddressOf EditEntry)
         selectedBallLabel.Text = "Selected ball: 1"
         selectedBallLabel.ForeColor = Color.White
         selectedBallLabel.AutoSize = False
@@ -831,11 +898,17 @@ Public Class formTroughWizard
         selectedBallLabel.Margin = New Padding(3)
         ConfigureButton(replaceBallImageButton, "Choose PNG for Selected Ball...", AddressOf ReplaceSelectedBallImage)
         ConfigureButton(resetBallImageButton, "Use Original Ball Image", AddressOf ResetSelectedBallImage)
+        ConfigureButton(loadTestButton, "Load Balls", AddressOf LoadBallsTest)
+        ConfigureButton(dropTestButton, "Drop All Balls", AddressOf DropBallsTest)
+        ConfigureButton(testTriggerButton, "Test Trigger", AddressOf TestReturnTrigger)
         ConfigureButton(createButton, "5. Create Trough", AddressOf CreateTrough)
         ConfigureButton(wizardCancelButton, "Cancel", Sub() DialogResult = DialogResult.Cancel)
-        sidebar.Controls.AddRange(New Control() {setupHeader, groupLabel, groupBox, countLabel, countBox, rollBallCheckBox,
+        sidebar.Controls.AddRange(New Control() {setupHeader, groupLabel, groupBox, countLabel, countBox, rollBallCheckBox, drainAllCheckBox, gravityDropCheckBox,
+                                                 drainTriggerTypeLabel, drainTriggerTypeBox, drainTriggerIDLabel, drainTriggerIDBox,
+                                                 triggerSettingsButton, captureRadiusLabel, captureRadiusBox,
                                                  WizardHeader("PATHS"), entryButton, exitButton,
                                                  WizardHeader("BALL IMAGES"), selectedBallLabel, replaceBallImageButton, resetBallImageButton,
+                                                 WizardHeader("LOCAL TEST"), loadTestButton, dropTestButton, testTriggerButton,
                                                  WizardHeader("SAVE OR CANCEL"), createButton, wizardCancelButton})
 
         statusLabel.Dock = DockStyle.Bottom : statusLabel.Height = 30 : statusLabel.TextAlign = ContentAlignment.MiddleCenter
@@ -845,6 +918,10 @@ Public Class formTroughWizard
         slotCanvas.BallImages = ballImages
         Dim first As PointF = If(entryPoints.Count > 0, entryPoints(entryPoints.Count - 1), New PointF(snippet.Location.X + snippet.Size.Width / 2.0F, snippet.Location.Y + snippet.Size.Height / 2.0F))
         slotCanvas.SnippetSize = _ballSize
+        slotCanvas.CaptureCenter = If(source.SnippitInfo.PhysicsLauncherEnabled,
+                                      New PointF(source.SnippitInfo.PhysicsLauncherX, source.SnippitInfo.PhysicsLauncherY),
+                                      If(entryPoints.Count > 0, entryPoints(0), originalStart))
+        slotCanvas.CaptureRadius = CSng(captureRadiusBox.Value)
         slotCanvas.FirstCenter = first
         slotCanvas.LastCenter = If(orderedMembers.Count >= 2,
                                    ExistingPathEndpoint(orderedMembers(orderedMembers.Count - 1)),
@@ -854,9 +931,33 @@ Public Class formTroughWizard
         AddHandler countBox.ValueChanged, AddressOf BallCountEditorChanged
         AddHandler countBox.TextChanged, AddressOf BallCountEditorChanged
         AddHandler slotCanvas.SelectedSlotChanged, AddressOf SelectedBallChanged
+        AddHandler gravityTestTimer.Tick, AddressOf GravityTestTick
         slotCanvas.SlotCount = DisplayedBallCount()
+        UpdateTriggerSettingsButton()
+        UpdateGravityDrainControls()
         UpdateSelectedBallLabel()
         Controls.Add(slotCanvas) : Controls.Add(statusLabel) : Controls.Add(sidebar)
+    End Sub
+
+    Private Sub GravityDropChanged(ByVal sender As Object, ByVal e As EventArgs)
+        UpdateGravityDrainControls()
+    End Sub
+
+    Private Sub UpdateGravityDrainControls()
+        Dim gravityDrain As Boolean = gravityDropCheckBox.Checked
+        exitButton.Enabled = Not gravityDrain
+        drainTriggerTypeLabel.Visible = gravityDrain
+        drainTriggerTypeBox.Visible = gravityDrain
+        drainTriggerIDLabel.Visible = gravityDrain
+        drainTriggerIDBox.Visible = gravityDrain
+        triggerSettingsButton.Visible = gravityDrain
+        captureRadiusLabel.Visible = gravityDrain
+        captureRadiusBox.Visible = gravityDrain
+        testTriggerButton.Visible = gravityDrain
+        slotCanvas.CaptureEnabled = gravityDrain
+        slotCanvas.Invalidate()
+        If gravityDrain Then drainAllCheckBox.Checked = True
+        drainAllCheckBox.Enabled = Not gravityDrain
     End Sub
 
     Private Sub BallCountEditorChanged(sender As Object, e As EventArgs)
@@ -1046,7 +1147,20 @@ Public Class formTroughWizard
             rollBallCheckBox.Checked = editor.ResultRollEnabled
             slotCanvas.FirstCenter = entryPoints(entryPoints.Count - 1) : slotCanvas.Invalidate()
             entryButton.Text = "✓ Entry Path"
+            UpdateTriggerSettingsButton()
         End Using
+    End Sub
+
+    Private Sub UpdateTriggerSettingsButton()
+        Dim triggerDescription As String = "Automatic"
+        If entrySolenoid > 0 Then
+            triggerDescription = "Solenoid " & entrySolenoid.ToString()
+        ElseIf entryLamp > 0 Then
+            triggerDescription = "Lamp " & entryLamp.ToString()
+        ElseIf entryB2S > 0 Then
+            triggerDescription = "B2S ID " & entryB2S.ToString()
+        End If
+        triggerSettingsButton.Text = "Trigger: " & triggerDescription & " — " & Math.Max(250, entryDuration).ToString() & " ms..."
     End Sub
 
     Private Sub EditExit(sender As Object, e As EventArgs)
@@ -1063,9 +1177,10 @@ Public Class formTroughWizard
     Private Function CreatePathEditorSource() As Illumination.BulbInfo
         Dim originalCenter As New PointF(source.Location.X + source.Size.Width / 2.0F,
                                          source.Location.Y + source.Size.Height / 2.0F)
+        Dim editorBallIndex As Integer = Math.Max(0, Math.Min(ballImages.Count - 1, selectedBallIndex))
         Dim editorSource As New Illumination.BulbInfo With {
             .Name = source.Name,
-            .Image = ballImages(0),
+            .Image = ballImages(editorBallIndex),
             .Location = New Point(CInt(Math.Round(originalCenter.X - _ballSize.Width / 2.0F)),
                                   CInt(Math.Round(originalCenter.Y - _ballSize.Height / 2.0F))),
             .Size = _ballSize,
@@ -1077,13 +1192,15 @@ Public Class formTroughWizard
             .MotionPathExitPoints.AddRange(exitPoints)
             .MotionPathDuration = entryDuration
             .MotionPathExitDuration = exitDuration
-            .MotionPathSolenoidID = entrySolenoid : .MotionPathLampID = entryLamp : .MotionPathB2SID = entryB2S
+            .MotionPathSolenoidID = EntrySolenoidID : .MotionPathLampID = EntryLampID : .MotionPathB2SID = EntryB2SID
             .MotionPathStopB2SID = stopB2S : .MotionPathResumeB2SID = resumeB2S
             .MotionPathRemoveSolenoidID = removeSolenoid : .MotionPathRemoveLampID = removeLamp : .MotionPathRemoveB2SID = removeB2S
             .MotionPathQueueTriggers = source.SnippitInfo.MotionPathQueueTriggers
             .MotionPathRollEnabled = rollBallCheckBox.Checked
             .MotionPathSequenceGroup = source.SnippitInfo.MotionPathSequenceGroup
             .MotionPathSequenceOrder = source.SnippitInfo.MotionPathSequenceOrder
+            .MotionPathDrainAll = drainAllCheckBox.Checked
+            .MotionPathGravityDrop = gravityDropCheckBox.Checked
             .MotionPathRespawnEnabled = troughRespawnEnabled
             .MotionPathRespawnPoint = troughRespawnStart
             .MotionPathRespawnDuration = troughRespawnDuration
@@ -1099,10 +1216,428 @@ Public Class formTroughWizard
                           snippet.Location.Y + snippet.Size.Height / 2.0F)
     End Function
 
+    Private Sub LoadBallsTest(ByVal sender As Object, ByVal e As EventArgs)
+        If entryPoints.Count < 2 Then
+            MessageBox.Show(Me, "Draw the entry path first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        EndGravityTest()
+        slotCanvas.PreviewActive = True
+        slotCanvas.PreviewBallBounds.Clear()
+        slotCanvas.PreviewBallAngles.Clear()
+        gravityTestElapsed = 0.0R
+        gravityTestMode = 1
+        statusLabel.Text = "Loading balls through the authored entry path..."
+        gravityTestClock.Restart()
+        gravityTestTimer.Start()
+    End Sub
+
+    Private Sub DropBallsTest(ByVal sender As Object, ByVal e As EventArgs)
+        If Not gravityDropCheckBox.Checked Then
+            MessageBox.Show(Me, "Enable 'Release balls to physics on drain' first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        If Not source.SnippitInfo.PhysicsBall OrElse source.SnippitInfo.PhysicsBoundaryPaths.Count = 0 Then
+            MessageBox.Show(Me, "Configure Physics Boundaries on the selected ball first.",
+                            Text, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        If slotCanvas.PreviewBallBounds.Count <> DisplayedBallCount() Then SetLoadedPreviewPositions()
+        DisposeGravityTestSessions()
+        Dim zones As New List(Of PhysicsPreview.B2SData.PhysicsSwitchZone)()
+        For index As Integer = 0 To source.SnippitInfo.PhysicsSwitchZones.Count - 1
+            If index < source.SnippitInfo.PhysicsSwitchIDs.Count Then
+                zones.Add(New PhysicsPreview.B2SData.PhysicsSwitchZone With {
+                    .Bounds = source.SnippitInfo.PhysicsSwitchZones(index),
+                    .SwitchID = source.SnippitInfo.PhysicsSwitchIDs(index),
+                    .Angle = If(index < source.SnippitInfo.PhysicsSwitchAngles.Count, source.SnippitInfo.PhysicsSwitchAngles(index), 0.0F)})
+            End If
+        Next
+        Dim launcher As New PhysicsPreview.B2SData.PhysicsLauncher With {
+            .TriggerType = 1,
+            .TriggerID = 0,
+            .Origin = slotCanvas.CaptureCenter,
+            .Angle = 0.0F,
+            .Strength = 0.0F,
+            .RandomAngle = 0.0F,
+            .RandomStrength = 0.0F,
+            .CaptureRadius = CSng(captureRadiusBox.Value),
+            .FollowPivot = False}
+        For index As Integer = 0 To slotCanvas.PreviewBallBounds.Count - 1
+            Dim session As New PhysicsPreview.B2SData()
+            Dim ballBounds As Rectangle = Rectangle.Round(slotCanvas.PreviewBallBounds(index))
+            session.Body.RollEnabled = rollBallCheckBox.Checked
+            session.Configure(ballBounds, New RectangleF(0, 0, wizardBackgroundImage.Width, wizardBackgroundImage.Height),
+                              source.SnippitInfo.PhysicsGravity, source.SnippitInfo.PhysicsFlipperStrength,
+                              source.SnippitInfo.PhysicsBoundaryBounce, source.SnippitInfo.PhysicsBoundaryPaths,
+                              source.SnippitInfo.PhysicsObstacles, zones, launcher,
+                              source.SnippitInfo.PhysicsBoundarySegmentBounces, True, source.SnippitInfo.PhysicsObstacleBounces)
+            session.ReleaseAtCurrentPosition()
+            Dim sessionIndex As Integer = index
+            session.AddLauncherCapturedHandler(Sub(senderObject As Object, eventArgs As EventArgs) PreviewLauncherCaptured(sessionIndex))
+            gravityTestSessions.Add(session)
+        Next
+        gravityTestElapsed = 0.0R
+        gravityTestPendingSeconds = 0.0R
+        gravityReturningIndex = -1 : gravityReturningSlotIndex = -1 : gravityReturnElapsed = 0.0R
+        gravityReturnedBounds.Clear()
+        gravityReturnedSlots.Clear()
+        gravityReturnCollisionStarted = -1.0R : gravityReturnCollisionBallIndex = -1 : gravityReturnCollisionSlotIndex = -1
+        gravityTestMode = 2
+        statusLabel.Text = "Dropping every loaded ball to physics. Captured balls wait for the Return trigger."
+        gravityTestClock.Restart()
+        gravityTestTimer.Start()
+    End Sub
+
+    Private Sub PreviewLauncherCaptured(ByVal sessionIndex As Integer)
+        If gravityPreviewQueued.Contains(sessionIndex) Then Return
+        gravityPreviewQueued.Add(sessionIndex)
+        gravityPreviewQueue.Add(sessionIndex)
+        slotCanvas.HiddenPreviewBallIndices.Add(sessionIndex)
+            statusLabel.Text = gravityPreviewQueue.Count.ToString() & " ball(s) waiting at RETURN CAPTURE."
+    End Sub
+
+    Private Sub TestReturnTrigger(ByVal sender As Object, ByVal e As EventArgs)
+        If gravityReturningIndex >= 0 Then
+            statusLabel.Text = "Wait for the current ball to finish its entry path."
+            Return
+        End If
+        While gravityPreviewQueue.Count > 0
+            Dim randomIndex As Integer = gravityReturnRandom.Next(gravityPreviewQueue.Count)
+            Dim sessionIndex As Integer = gravityPreviewQueue(randomIndex)
+            gravityPreviewQueue.RemoveAt(randomIndex)
+            If Not gravityPreviewQueued.Remove(sessionIndex) Then Continue While
+            If sessionIndex < 0 OrElse sessionIndex >= gravityTestSessions.Count Then Continue While
+            slotCanvas.HiddenPreviewBallIndices.Remove(sessionIndex)
+            gravityReturningIndex = sessionIndex
+            gravityReturningSlotIndex = Math.Min(DisplayedBallCount() - 1, gravityReturnedBounds.Count)
+            gravityReturnElapsed = 0.0R
+            gravityReturnedBounds.Remove(sessionIndex)
+            gravityReturnedRollAngles.Remove(sessionIndex)
+            gravityPreviewRollAngles(sessionIndex) = gravityTestSessions(sessionIndex).Body.RollAngle
+            gravityPreviewRollCenters.Remove(sessionIndex)
+            statusLabel.Text = "Returning one captured ball through its authored entry path."
+            gravityTestClock.Restart() : gravityTestTimer.Start()
+            slotCanvas.Invalidate()
+            Return
+        End While
+        statusLabel.Text = "No captured balls are waiting at RETURN CAPTURE."
+    End Sub
+
+    Private Sub GravityTestTick(ByVal sender As Object, ByVal e As EventArgs)
+        Dim elapsed As Double = gravityTestClock.Elapsed.TotalSeconds
+        gravityTestClock.Restart()
+        If elapsed <= 0.0R OrElse Double.IsNaN(elapsed) OrElse Double.IsInfinity(elapsed) Then Return
+        If gravityTestMode = 1 Then
+            gravityTestElapsed += elapsed * 1000.0R
+            UpdateLoadingPreview()
+        ElseIf gravityTestMode = 2 Then
+            gravityTestElapsed += elapsed * 1000.0R
+            gravityTestPendingSeconds += elapsed
+            Dim steps As Integer = CInt(Math.Min(250, Math.Floor((gravityTestPendingSeconds + 0.000000001R) / 0.001R)))
+            For stepIndex As Integer = 1 To steps
+                For Each session As PhysicsPreview.B2SData In gravityTestSessions
+                    session.Advance(0.001R)
+                Next
+            Next
+            gravityTestPendingSeconds = Math.Max(0.0R, gravityTestPendingSeconds - steps * 0.001R)
+            slotCanvas.PreviewBallBounds.Clear() : slotCanvas.PreviewBallAngles.Clear()
+            For Each session As PhysicsPreview.B2SData In gravityTestSessions
+                slotCanvas.PreviewBallBounds.Add(session.Body.RectangleF)
+                slotCanvas.PreviewBallAngles.Add(session.Body.RollAngle)
+            Next
+            For Each returned In gravityReturnedBounds
+                If returned.Key >= 0 AndAlso returned.Key < slotCanvas.PreviewBallBounds.Count Then
+                    slotCanvas.PreviewBallBounds(returned.Key) = returned.Value
+                    If gravityReturnedRollAngles.ContainsKey(returned.Key) Then slotCanvas.PreviewBallAngles(returned.Key) = gravityReturnedRollAngles(returned.Key)
+                End If
+            Next
+            If gravityReturningIndex >= 0 AndAlso gravityReturningIndex < slotCanvas.PreviewBallBounds.Count Then
+                gravityReturnElapsed += elapsed * 1000.0R
+                Dim progress As Single = CSng(Math.Min(1.0R, gravityReturnElapsed / Math.Max(250, entryDuration)))
+                Dim route As List(Of PointF) = BuildPreviewEntryPath(SlotCenter(gravityReturningSlotIndex))
+                Dim center As PointF = PointOnPath(route, progress)
+                Dim returningBounds As New RectangleF(center.X - _ballSize.Width / 2.0F,
+                                                       center.Y - _ballSize.Height / 2.0F,
+                                                       _ballSize.Width, _ballSize.Height)
+                slotCanvas.PreviewBallBounds(gravityReturningIndex) = returningBounds
+                slotCanvas.PreviewBallAngles(gravityReturningIndex) = AdvancePreviewRoll(gravityReturningIndex, center)
+                If progress >= 1.0F Then
+                    Dim completedBallIndex As Integer = gravityReturningIndex
+                    Dim completedSlotIndex As Integer = gravityReturningSlotIndex
+                    gravityReturnedBounds(completedBallIndex) = returningBounds
+                    gravityReturnedSlots(completedBallIndex) = completedSlotIndex
+                    gravityReturnedRollAngles(completedBallIndex) = slotCanvas.PreviewBallAngles(completedBallIndex)
+                    If completedSlotIndex > 0 Then
+                        gravityReturnCollisionStarted = gravityTestElapsed
+                        gravityReturnCollisionBallIndex = completedBallIndex
+                        gravityReturnCollisionSlotIndex = completedSlotIndex
+                    End If
+                    gravityReturningIndex = -1
+                    gravityReturningSlotIndex = -1
+                    gravityReturnElapsed = 0.0R
+                    statusLabel.Text = "Ball returned through the entry path."
+                End If
+            End If
+            ApplyReturnCollisionPreview()
+            slotCanvas.Invalidate()
+        End If
+    End Sub
+
+    Private Sub ApplyReturnCollisionPreview()
+        If gravityReturnCollisionStarted < 0.0R OrElse gravityReturnCollisionSlotIndex <= 0 Then Return
+        Dim collisionElapsed As Double = gravityTestElapsed - gravityReturnCollisionStarted
+        Dim maxDuration As Double = 180.0R + Math.Max(0, gravityReturnCollisionSlotIndex - 1) * 18.0R
+        If collisionElapsed >= maxDuration Then
+            gravityReturnCollisionStarted = -1.0R
+            gravityReturnCollisionBallIndex = -1
+            gravityReturnCollisionSlotIndex = -1
+            Return
+        End If
+
+        Dim arrivingSlot As PointF = SlotCenter(gravityReturnCollisionSlotIndex)
+        Dim previousSlot As PointF = SlotCenter(gravityReturnCollisionSlotIndex - 1)
+        Dim dx As Single = previousSlot.X - arrivingSlot.X, dy As Single = previousSlot.Y - arrivingSlot.Y
+        Dim length As Double = Math.Sqrt(dx * dx + dy * dy)
+        If length <= 0.001R Then Return
+        Dim direction As New PointF(CSng(dx / length), CSng(dy / length))
+        Dim diameter As Single = Math.Max(1.0F, Math.Min(_ballSize.Width, _ballSize.Height))
+        Dim route As List(Of PointF) = BuildPreviewEntryPath(arrivingSlot)
+        Dim arrivalSpeed As Single = CSng(PreviewPathLength(route) / Math.Max(1, entryDuration))
+        Dim amplitude As Single = arrivalSpeed * 4.5F
+        amplitude = Math.Max(diameter * 0.012F, Math.Min(diameter * 0.04F, amplitude)) * 30.0F
+
+        For Each returnedSlot In gravityReturnedSlots
+            Dim ballIndex As Integer = returnedSlot.Key
+            Dim slotIndex As Integer = returnedSlot.Value
+            If ballIndex < 0 OrElse ballIndex >= slotCanvas.PreviewBallBounds.Count Then Continue For
+            Dim memberAmplitude As Single = 0.0F
+            Dim memberDirection As Single = 1.0F
+            Dim delay As Double = 0.0R
+            If ballIndex = gravityReturnCollisionBallIndex Then
+                memberAmplitude = amplitude * 0.35F
+                memberDirection = -1.0F
+            ElseIf slotIndex < gravityReturnCollisionSlotIndex Then
+                Dim distanceFromImpact As Integer = gravityReturnCollisionSlotIndex - 1 - slotIndex
+                memberAmplitude = amplitude * CSng(Math.Pow(0.58R, distanceFromImpact))
+                delay = distanceFromImpact * 18.0R
+            End If
+            If memberAmplitude <= 0.0F OrElse collisionElapsed < delay Then Continue For
+            Dim progress As Double = (collisionElapsed - delay) / 180.0R
+            If progress < 0.0R OrElse progress >= 1.0R Then Continue For
+            Dim bounce As Single = CSng(memberAmplitude * Math.Sin(Math.PI * progress) * Math.Exp(-1.2R * progress) * memberDirection)
+            Dim baseBounds As RectangleF = gravityReturnedBounds(ballIndex)
+            Dim bouncedBounds As New RectangleF(baseBounds.X + direction.X * bounce,
+                                                baseBounds.Y + direction.Y * bounce,
+                                                baseBounds.Width, baseBounds.Height)
+            slotCanvas.PreviewBallBounds(ballIndex) = bouncedBounds
+            Dim bouncedCenter As New PointF(bouncedBounds.Left + bouncedBounds.Width / 2.0F,
+                                            bouncedBounds.Top + bouncedBounds.Height / 2.0F)
+            slotCanvas.PreviewBallAngles(ballIndex) = AdvancePreviewRoll(ballIndex, bouncedCenter)
+            gravityReturnedRollAngles(ballIndex) = slotCanvas.PreviewBallAngles(ballIndex)
+        Next
+    End Sub
+
+    Private Sub UpdateLoadingPreview()
+        slotCanvas.PreviewBallBounds.Clear() : slotCanvas.PreviewBallAngles.Clear()
+        Dim allLoaded As Boolean = True
+        For index As Integer = 0 To DisplayedBallCount() - 1
+            Dim delay As Double = index * 180.0R
+            If gravityTestElapsed < delay Then allLoaded = False : Continue For
+            Dim progress As Single = CSng(Math.Min(1.0R, (gravityTestElapsed - delay) / Math.Max(250, entryDuration)))
+            If progress < 1.0F Then allLoaded = False
+            Dim slot As PointF = SlotCenter(index)
+            Dim route As List(Of PointF) = BuildPreviewEntryPath(slot)
+            Dim center As PointF = PointOnPath(route, progress)
+            If progress >= 1.0F Then
+                Dim collisionOffset As PointF = LoadingCollisionOffset(index, gravityTestElapsed)
+                center = New PointF(center.X + collisionOffset.X, center.Y + collisionOffset.Y)
+            End If
+            slotCanvas.PreviewBallBounds.Add(New RectangleF(center.X - _ballSize.Width / 2.0F, center.Y - _ballSize.Height / 2.0F,
+                                                            _ballSize.Width, _ballSize.Height))
+            slotCanvas.PreviewBallAngles.Add(AdvancePreviewRoll(index, center))
+        Next
+        slotCanvas.Invalidate()
+        Dim lastArrival As Double = (DisplayedBallCount() - 1) * 180.0R + Math.Max(250, entryDuration)
+        If allLoaded AndAlso gravityTestElapsed >= lastArrival + 180.0R Then
+            gravityTestTimer.Stop()
+            statusLabel.Text = "Balls loaded. Press Drop All Balls to release them straight down."
+        End If
+    End Sub
+
+    Private Sub SetLoadedPreviewPositions()
+        slotCanvas.PreviewActive = True
+        slotCanvas.PreviewBallBounds.Clear() : slotCanvas.PreviewBallAngles.Clear()
+        For index As Integer = 0 To DisplayedBallCount() - 1
+            Dim center As PointF = SlotCenter(index)
+            slotCanvas.PreviewBallBounds.Add(New RectangleF(center.X - _ballSize.Width / 2.0F, center.Y - _ballSize.Height / 2.0F,
+                                                            _ballSize.Width, _ballSize.Height))
+            slotCanvas.PreviewBallAngles.Add(0.0F)
+        Next
+        slotCanvas.Invalidate()
+    End Sub
+
+    Private Function AdvancePreviewRoll(ByVal ballIndex As Integer, ByVal currentCenter As PointF) As Single
+        Dim angle As Single = If(gravityPreviewRollAngles.ContainsKey(ballIndex), gravityPreviewRollAngles(ballIndex), 0.0F)
+        If gravityPreviewRollCenters.ContainsKey(ballIndex) Then
+            Dim previousCenter As PointF = gravityPreviewRollCenters(ballIndex)
+            If rollBallCheckBox.Checked Then
+                Dim dx As Single = currentCenter.X - previousCenter.X
+                Dim dy As Single = currentCenter.Y - previousCenter.Y
+                Dim distance As Double = Math.Sqrt(dx * dx + dy * dy)
+                If distance > 0.0001R Then
+                    Dim direction As Single = If(Math.Abs(dx) >= Math.Abs(dy), Math.Sign(dx), Math.Sign(dy))
+                    If direction <> 0.0F Then
+                        Dim radius As Single = Math.Max(1.0F, Math.Min(_ballSize.Width, _ballSize.Height) / 2.0F)
+                        angle = CSng((angle + direction * distance / radius * 180.0R / Math.PI) Mod 360.0R)
+                    End If
+                End If
+            End If
+        End If
+        gravityPreviewRollCenters(ballIndex) = currentCenter
+        gravityPreviewRollAngles(ballIndex) = angle
+        Return angle
+    End Function
+
+    Private Function SlotCenter(ByVal index As Integer) As PointF
+        Dim t As Single = If(DisplayedBallCount() <= 1, 0.0F, index / CSng(DisplayedBallCount() - 1))
+        Return New PointF(slotCanvas.FirstCenter.X + (slotCanvas.LastCenter.X - slotCanvas.FirstCenter.X) * t,
+                          slotCanvas.FirstCenter.Y + (slotCanvas.LastCenter.Y - slotCanvas.FirstCenter.Y) * t)
+    End Function
+
+    Private Function LoadingCollisionOffset(ByVal ballIndex As Integer, ByVal elapsedMilliseconds As Double) As PointF
+        Dim offset As PointF = PointF.Empty
+        Dim diameter As Single = Math.Max(1.0F, Math.Min(_ballSize.Width, _ballSize.Height))
+        For arrivingIndex As Integer = 1 To DisplayedBallCount() - 1
+            Dim collisionTime As Double = arrivingIndex * 180.0R + Math.Max(250, entryDuration)
+            Dim collisionProgress As Double = (elapsedMilliseconds - collisionTime) / 180.0R
+            If collisionProgress < 0.0R OrElse collisionProgress >= 1.0R Then Continue For
+            Dim arrivingSlot As PointF = SlotCenter(arrivingIndex)
+            Dim previousSlot As PointF = SlotCenter(arrivingIndex - 1)
+            Dim dx As Single = previousSlot.X - arrivingSlot.X, dy As Single = previousSlot.Y - arrivingSlot.Y
+            Dim length As Double = Math.Sqrt(dx * dx + dy * dy)
+            If length <= 0.001R Then Continue For
+            Dim direction As New PointF(CSng(dx / length), CSng(dy / length))
+            Dim route As List(Of PointF) = BuildPreviewEntryPath(arrivingSlot)
+            Dim arrivalSpeed As Single = CSng(PreviewPathLength(route) / Math.Max(1, entryDuration))
+            Dim amplitude As Single = arrivalSpeed * 4.5F
+            amplitude = Math.Max(diameter * 0.012F, Math.Min(diameter * 0.04F, amplitude)) * 30.0F
+            Dim memberAmplitude As Single = 0.0F
+            Dim memberDirection As Single = 1.0F
+            If ballIndex = arrivingIndex Then
+                memberAmplitude = amplitude * 0.35F
+                memberDirection = -1.0F
+            ElseIf ballIndex < arrivingIndex Then
+                memberAmplitude = amplitude * CSng(Math.Pow(0.58R, arrivingIndex - 1 - ballIndex))
+            End If
+            If memberAmplitude <= 0.0F Then Continue For
+            Dim bounce As Single = CSng(memberAmplitude * Math.Sin(Math.PI * collisionProgress) * Math.Exp(-1.2R * collisionProgress) * memberDirection)
+            offset.X += direction.X * bounce
+            offset.Y += direction.Y * bounce
+        Next
+        Return offset
+    End Function
+
+    Private Shared Function PreviewPathLength(ByVal points As List(Of PointF)) As Double
+        Dim total As Double = 0.0R
+        If points Is Nothing Then Return total
+        For index As Integer = 0 To points.Count - 2
+            Dim dx As Double = points(index + 1).X - points(index).X, dy As Double = points(index + 1).Y - points(index).Y
+            total += Math.Sqrt(dx * dx + dy * dy)
+        Next
+        Return total
+    End Function
+
+    Private Function BuildPreviewEntryPath(ByVal slot As PointF) As List(Of PointF)
+        If entryPoints Is Nothing OrElse entryPoints.Count < 2 Then Return New List(Of PointF)()
+        Dim bestSegment As Integer = entryPoints.Count - 2
+        Dim bestT As Single = 1.0F
+        Dim bestDistance As Double = Double.MaxValue
+        Dim bestProjection As PointF = entryPoints(entryPoints.Count - 1)
+        For index As Integer = 0 To entryPoints.Count - 2
+            Dim a As PointF = entryPoints(index), b As PointF = entryPoints(index + 1)
+            Dim dx As Double = b.X - a.X, dy As Double = b.Y - a.Y
+            Dim lengthSquared As Double = dx * dx + dy * dy
+            Dim t As Double = If(lengthSquared <= 0.0001R, 0.0R, ((slot.X - a.X) * dx + (slot.Y - a.Y) * dy) / lengthSquared)
+            t = Math.Max(0.0R, Math.Min(1.0R, t))
+            Dim projection As New PointF(CSng(a.X + dx * t), CSng(a.Y + dy * t))
+            Dim distance As Double = PreviewDistanceSquared(slot, projection)
+            If distance < bestDistance - 0.001R OrElse (Math.Abs(distance - bestDistance) <= 0.001R AndAlso index >= bestSegment) Then
+                bestDistance = distance : bestSegment = index : bestT = CSng(t) : bestProjection = projection
+            End If
+        Next
+        Dim result As New List(Of PointF)()
+        For index As Integer = 0 To bestSegment : result.Add(entryPoints(index)) : Next
+        If bestT > 0.001F AndAlso PreviewDistanceSquared(result(result.Count - 1), bestProjection) > 0.01R Then result.Add(bestProjection)
+        If PreviewDistanceSquared(result(result.Count - 1), slot) > 0.01R Then result.Add(slot) Else result(result.Count - 1) = slot
+        If result.Count = 1 Then result.Insert(0, entryPoints(0))
+        Return result
+    End Function
+
+    Private Shared Function PreviewDistanceSquared(ByVal left As PointF, ByVal right As PointF) As Double
+        Dim dx As Double = left.X - right.X, dy As Double = left.Y - right.Y
+        Return dx * dx + dy * dy
+    End Function
+
+    Private Shared Function PointOnPath(ByVal points As List(Of PointF), ByVal progress As Single) As PointF
+        If points Is Nothing OrElse points.Count = 0 Then Return PointF.Empty
+        If points.Count = 1 Then Return points(0)
+        Dim lengths As New List(Of Double)(), total As Double = 0.0R
+        For index As Integer = 0 To points.Count - 2
+            Dim dx As Double = points(index + 1).X - points(index).X, dy As Double = points(index + 1).Y - points(index).Y
+            Dim length As Double = Math.Sqrt(dx * dx + dy * dy)
+            lengths.Add(length) : total += length
+        Next
+        If total <= 0.0001R Then Return points(points.Count - 1)
+        Dim target As Double = Math.Max(0.0R, Math.Min(1.0R, progress)) * total
+        For index As Integer = 0 To lengths.Count - 1
+            If target <= lengths(index) OrElse index = lengths.Count - 1 Then
+                Dim t As Double = If(lengths(index) <= 0.0001R, 1.0R, target / lengths(index))
+                Return New PointF(CSng(points(index).X + (points(index + 1).X - points(index).X) * t),
+                                  CSng(points(index).Y + (points(index + 1).Y - points(index).Y) * t))
+            End If
+            target -= lengths(index)
+        Next
+        Return points(points.Count - 1)
+    End Function
+
+    Private Sub EndGravityTest()
+        gravityTestTimer.Stop() : gravityTestClock.Reset()
+        gravityTestMode = 0 : gravityTestElapsed = 0.0R : gravityTestPendingSeconds = 0.0R
+        gravityReturningIndex = -1 : gravityReturningSlotIndex = -1 : gravityReturnElapsed = 0.0R
+        gravityReturnedBounds.Clear()
+        gravityReturnedSlots.Clear()
+        gravityReturnedRollAngles.Clear()
+        gravityPreviewRollAngles.Clear()
+        gravityPreviewRollCenters.Clear()
+        gravityReturnCollisionStarted = -1.0R : gravityReturnCollisionBallIndex = -1 : gravityReturnCollisionSlotIndex = -1
+        DisposeGravityTestSessions()
+    End Sub
+
+    Private Sub DisposeGravityTestSessions()
+        For Each session As PhysicsPreview.B2SData In gravityTestSessions
+            session.Dispose()
+        Next
+        gravityTestSessions.Clear()
+        gravityPreviewQueue.Clear() : gravityPreviewQueued.Clear()
+        slotCanvas.HiddenPreviewBallIndices.Clear()
+    End Sub
+
     Private Sub CreateTrough(sender As Object, e As EventArgs)
         If groupBox.Text.Trim().Length = 0 Then MessageBox.Show(Me, "Enter a group name.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information) : Return
         If entryPoints.Count < 2 Then MessageBox.Show(Me, "Draw the entry path first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information) : Return
-        If exitPoints.Count < 2 Then MessageBox.Show(Me, "Draw the exit path first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information) : Return
+        If Not gravityDropCheckBox.Checked AndAlso exitPoints.Count < 2 Then MessageBox.Show(Me, "Draw the exit path first.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information) : Return
+        If gravityDropCheckBox.Checked AndAlso (Not source.SnippitInfo.PhysicsBall OrElse
+                                                 source.SnippitInfo.PhysicsBoundaryPaths.Count = 0) Then
+            MessageBox.Show(Me, "Configure Physics Boundaries on the selected ball before enabling physics release.",
+                            Text, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        If gravityDropCheckBox.Checked AndAlso EntrySolenoidID = 0 AndAlso EntryLampID = 0 AndAlso EntryB2SID = 0 Then
+            MessageBox.Show(Me, "Open Trigger Settings and select the trigger that shoots one captured ball through the entry path.",
+                            Text, MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
         DialogResult = DialogResult.OK : Close()
     End Sub
 
@@ -1143,6 +1678,16 @@ Public Class formTroughWizard
     Public ReadOnly Property RollEnabled As Boolean
         Get
             Return rollBallCheckBox.Checked
+        End Get
+    End Property
+    Public ReadOnly Property DrainAll As Boolean
+        Get
+            Return drainAllCheckBox.Checked
+        End Get
+    End Property
+    Public ReadOnly Property GravityDrop As Boolean
+        Get
+            Return gravityDropCheckBox.Checked
         End Get
     End Property
     Public ReadOnly Property RespawnStart As PointF
@@ -1190,6 +1735,16 @@ Public Class formTroughWizard
             Return entryB2S
         End Get
     End Property
+    Public ReadOnly Property CaptureCenter As PointF
+        Get
+            Return slotCanvas.CaptureCenter
+        End Get
+    End Property
+    Public ReadOnly Property CaptureRadius As Single
+        Get
+            Return CSng(captureRadiusBox.Value)
+        End Get
+    End Property
     Public ReadOnly Property StopB2SID As Integer
         Get
             Return stopB2S
@@ -1202,22 +1757,24 @@ Public Class formTroughWizard
     End Property
     Public ReadOnly Property RemoveSolenoidID As Integer
         Get
-            Return removeSolenoid
+            Return If(gravityDropCheckBox.Checked AndAlso drainTriggerTypeBox.SelectedIndex = 0, CInt(drainTriggerIDBox.Value), If(gravityDropCheckBox.Checked, 0, removeSolenoid))
         End Get
     End Property
     Public ReadOnly Property RemoveLampID As Integer
         Get
-            Return removeLamp
+            Return If(gravityDropCheckBox.Checked AndAlso drainTriggerTypeBox.SelectedIndex = 1, CInt(drainTriggerIDBox.Value), If(gravityDropCheckBox.Checked, 0, removeLamp))
         End Get
     End Property
     Public ReadOnly Property RemoveB2SID As Integer
         Get
-            Return removeB2S
+            Return If(gravityDropCheckBox.Checked AndAlso drainTriggerTypeBox.SelectedIndex = 2, Math.Min(250, CInt(drainTriggerIDBox.Value)), If(gravityDropCheckBox.Checked, 0, removeB2S))
         End Get
     End Property
 
     Protected Overrides Sub Dispose(disposing As Boolean)
         If disposing Then
+            EndGravityTest()
+            gravityTestTimer.Dispose()
             wizardBackgroundImage.Dispose()
             For Each image As Image In ballImages
                 image.Dispose()
@@ -1231,8 +1788,15 @@ Public Class formTroughWizard
         Inherits EditorZoomCanvas
         Public BackglassImage As Image, SnippetImage As Image, SnippetSize As Size
         Public BallImages As IList(Of Image)
+        Public PreviewActive As Boolean
+        Public ReadOnly PreviewBallBounds As New List(Of RectangleF)()
+        Public ReadOnly PreviewBallAngles As New List(Of Single)()
+        Public ReadOnly HiddenPreviewBallIndices As New HashSet(Of Integer)()
         Private _firstCenter As PointF
         Private _lastCenter As PointF
+        Private _captureCenter As PointF
+        Public CaptureEnabled As Boolean
+        Public CaptureRadius As Single = 45.0F
         Public SlotCount As Integer = 10
         Public SelectedSlotIndex As Integer = 0
         Public Event SelectedSlotChanged As EventHandler
@@ -1274,6 +1838,14 @@ Public Class formTroughWizard
                 _lastCenter = ClampCenter(value)
             End Set
         End Property
+        Public Property CaptureCenter As PointF
+            Get
+                Return _captureCenter
+            End Get
+            Set(value As PointF)
+                _captureCenter = ClampCenter(value)
+            End Set
+        End Property
         Private Function ClampCenter(value As PointF) As PointF
             If BackglassImage Is Nothing Then Return value
 
@@ -1285,6 +1857,38 @@ Public Class formTroughWizard
         Protected Overrides Sub OnPaint(e As PaintEventArgs)
             MyBase.OnPaint(e) : If BackglassImage Is Nothing Then Return
             Dim r=ViewRect() : e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic : e.Graphics.DrawImage(BackglassImage,r)
+            If CaptureEnabled Then
+                Dim captureView As PointF = ToView(CaptureCenter)
+                Dim radiusView As Single = Math.Max(5.0F, CaptureRadius * r.Width / BackglassImage.Width)
+                Using capturePen As New Pen(Color.Magenta, 3)
+                    capturePen.DashStyle = DashStyle.Dash
+                    e.Graphics.DrawEllipse(capturePen, captureView.X - radiusView, captureView.Y - radiusView, radiusView * 2.0F, radiusView * 2.0F)
+                End Using
+                e.Graphics.FillEllipse(Brushes.Magenta, captureView.X - 4.0F, captureView.Y - 4.0F, 8.0F, 8.0F)
+                e.Graphics.DrawString("RETURN CAPTURE", Font, Brushes.Magenta, captureView.X - radiusView, captureView.Y - radiusView - 18.0F)
+            End If
+            If PreviewActive Then
+                For index As Integer = 0 To PreviewBallBounds.Count - 1
+                    If HiddenPreviewBallIndices.Contains(index) Then Continue For
+                    Dim bounds As RectangleF = PreviewBallBounds(index)
+                    Dim topLeft As PointF = ToView(bounds.Location)
+                    Dim bottomRight As PointF = ToView(New PointF(bounds.Right, bounds.Bottom))
+                    Dim viewBounds As New RectangleF(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
+                    Dim image As Image = SnippetImage
+                    If BallImages IsNot Nothing AndAlso index < BallImages.Count AndAlso BallImages(index) IsNot Nothing Then image = BallImages(index)
+                    If image IsNot Nothing Then
+                        Dim angle As Single = If(index < PreviewBallAngles.Count, PreviewBallAngles(index), 0.0F)
+                        Dim center As New PointF(viewBounds.X + viewBounds.Width / 2.0F, viewBounds.Y + viewBounds.Height / 2.0F)
+                        Dim saved = e.Graphics.Save()
+                        e.Graphics.TranslateTransform(center.X, center.Y)
+                        e.Graphics.RotateTransform(angle)
+                        e.Graphics.TranslateTransform(-center.X, -center.Y)
+                        e.Graphics.DrawImage(image, viewBounds)
+                        e.Graphics.Restore(saved)
+                    End If
+                Next
+                Return
+            End If
             If SlotCount < 2 Then Return
             For i As Integer=0 To SlotCount-1
                 Dim t As Single=i/CSng(SlotCount-1), c As New PointF(FirstCenter.X+(LastCenter.X-FirstCenter.X)*t,FirstCenter.Y+(LastCenter.Y-FirstCenter.Y)*t), v=ToView(c)
@@ -1305,6 +1909,10 @@ Public Class formTroughWizard
         End Sub
         Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
             If BeginNavigation(e) Then Return
+            If CaptureEnabled AndAlso Distance(e.Location, ToView(CaptureCenter)) < 40 Then
+                dragIndex = 2
+                Return
+            End If
             Dim nearestIndex As Integer = -1
             Dim nearestDistance As Double = Double.MaxValue
             For index As Integer = 0 To SlotCount - 1
@@ -1332,7 +1940,13 @@ Public Class formTroughWizard
         Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
             If MoveNavigation(e) Then Return
             If dragIndex<0 Then Return
-            If dragIndex=0 Then FirstCenter=ToImage(e.Location) Else LastCenter=ToImage(e.Location)
+            If dragIndex=0 Then
+                FirstCenter=ToImage(e.Location)
+            ElseIf dragIndex=1 Then
+                LastCenter=ToImage(e.Location)
+            Else
+                CaptureCenter=ToImage(e.Location)
+            End If
             Invalidate()
         End Sub
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)

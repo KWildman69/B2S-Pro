@@ -410,6 +410,8 @@ Public Class Save
                         bulb.SnippitInfo.MotionPathRollEnabled = (ReadIntAttribute(innerNode, "MotionPathRollEnabled", 0, 0, 1) = 1)
                         bulb.SnippitInfo.MotionPathSequenceGroup = If(innerNode.Attributes("MotionPathSequenceGroup") Is Nothing, String.Empty, innerNode.Attributes("MotionPathSequenceGroup").InnerText.Trim())
                         bulb.SnippitInfo.MotionPathSequenceOrder = ReadIntAttribute(innerNode, "MotionPathSequenceOrder", 0, 0, 999)
+                        bulb.SnippitInfo.MotionPathDrainAll = (ReadIntAttribute(innerNode, "MotionPathDrainAll", 0, 0, 1) = 1)
+                        bulb.SnippitInfo.MotionPathGravityDrop = (ReadIntAttribute(innerNode, "MotionPathGravityDrop", 0, 0, 1) = 1)
                         bulb.SnippitInfo.MotionPathRespawnEnabled = (ReadIntAttribute(innerNode, "MotionPathRespawnEnabled", 0, 0, 1) = 1)
                         bulb.SnippitInfo.MotionPathRespawnPoint = New PointF(
                             ReadSingleAttribute(innerNode, "MotionPathRespawnX", 0.0F, -100000.0F, 100000.0F),
@@ -922,6 +924,8 @@ Public Class Save
                                 If Not String.IsNullOrWhiteSpace(.SnippitInfo.MotionPathSequenceGroup) Then
                                     nodeBulb.SetAttribute("MotionPathSequenceGroup", .SnippitInfo.MotionPathSequenceGroup.Trim())
                                     nodeBulb.SetAttribute("MotionPathSequenceOrder", Math.Max(1, Math.Min(999, .SnippitInfo.MotionPathSequenceOrder)).ToString())
+                                    If .SnippitInfo.MotionPathDrainAll Then nodeBulb.SetAttribute("MotionPathDrainAll", "1")
+                                    If .SnippitInfo.MotionPathGravityDrop Then nodeBulb.SetAttribute("MotionPathGravityDrop", "1")
                                     If .SnippitInfo.MotionPathRespawnEnabled Then
                                         nodeBulb.SetAttribute("MotionPathRespawnEnabled", "1")
                                         nodeBulb.SetAttribute("MotionPathRespawnX", .SnippitInfo.MotionPathRespawnPoint.X.ToString("R", Globalization.CultureInfo.InvariantCulture))
@@ -929,9 +933,11 @@ Public Class Save
                                         nodeBulb.SetAttribute("MotionPathRespawnDuration", Math.Max(50, Math.Min(5000, .SnippitInfo.MotionPathRespawnDuration)).ToString())
                                     End If
                                 End If
-                                If .SnippitInfo.MotionPathExitPoints.Count >= 2 Then
-                                    nodeBulb.SetAttribute("MotionPathExitPoints", SerializeMotionPathPoints(.SnippitInfo.MotionPathExitPoints))
-                                    nodeBulb.SetAttribute("MotionPathExitDuration", Math.Max(250, Math.Min(30000, .SnippitInfo.MotionPathExitDuration)).ToString())
+                                If .SnippitInfo.MotionPathExitPoints.Count >= 2 OrElse .SnippitInfo.MotionPathGravityDrop Then
+                                    If .SnippitInfo.MotionPathExitPoints.Count >= 2 Then
+                                        nodeBulb.SetAttribute("MotionPathExitPoints", SerializeMotionPathPoints(.SnippitInfo.MotionPathExitPoints))
+                                        nodeBulb.SetAttribute("MotionPathExitDuration", Math.Max(250, Math.Min(30000, .SnippitInfo.MotionPathExitDuration)).ToString())
+                                    End If
                                     nodeBulb.SetAttribute("MotionPathRemoveSolenoidID", Math.Max(0, Math.Min(255, .SnippitInfo.MotionPathRemoveSolenoidID)).ToString())
                                     nodeBulb.SetAttribute("MotionPathRemoveLampID", Math.Max(0, Math.Min(255, .SnippitInfo.MotionPathRemoveLampID)).ToString())
                                     nodeBulb.SetAttribute("MotionPathRemoveB2SID", Math.Max(0, Math.Min(250, .SnippitInfo.MotionPathRemoveB2SID)).ToString())
