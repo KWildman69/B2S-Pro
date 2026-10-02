@@ -13,7 +13,7 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 - Remove the gravity-trough return-capture zone and hidden parking behavior. Released balls remain visible physics objects and are reused from their actual resting positions.
 - Keep gravity-trough ball artwork round while preserving its visible authored area on non-uniformly scaled backglass displays. Normal troughs and other physics artwork retain their existing scaling behavior.
-- Dispose temporary illuminated-reel export images promptly and reuse a successful Step 1 export in Step 2 without changing an EM project's blank ROM name.
+- Dispose temporary illuminated-reel export images promptly during DirectB2S creation.
 - Existing 1.0.4 / 3.0.3 installations need to rerun setup manually to receive this same-version update.
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
