@@ -346,7 +346,13 @@ Public Class formVPM
 
         Else
 
-            Backglass.currentData.GameName = cmbROMName.Text
+            ' The ROM selector is meaningful only for VPinMAME previews.  The
+            ' original/EM preview deliberately leaves it blank; writing that
+            ' blank value into the project here dirtied a just-exported design
+            ' and forced the complete B2S Pro file to be generated a second time.
+            If isVPinMAMEBackglass Then
+                Backglass.currentData.GameName = cmbROMName.Text
+            End If
 
             ' Reuse Step 1's successful export while the design revision still
             ' matches. If anything changed (or no file exists), rebuild so the

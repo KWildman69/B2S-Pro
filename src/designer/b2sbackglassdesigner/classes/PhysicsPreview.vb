@@ -105,9 +105,6 @@ Namespace PhysicsPreview
         Public Sub ReleaseAtCurrentPosition()
             If state IsNot Nothing Then state.ActivateAtCurrentPosition()
         End Sub
-        Public Sub AddLauncherCapturedHandler(ByVal handler As EventHandler)
-            If state IsNot Nothing Then AddHandler state.LauncherCaptured, handler
-        End Sub
         Public Sub Dispose() Implements IDisposable.Dispose
             If state IsNot Nothing Then state.Dispose() : state = Nothing
         End Sub

@@ -521,12 +521,26 @@ Public Class Coding
                                 nodeReelIlluImageSet(i).AppendChild(nodeReelIlluImage)
                                 nodeReelIlluImage.SetAttribute("Name", reelimage.Key)
                                 nodeReelIlluImage.SetAttribute("CountOfIntermediates", If(isLED, "0", Backglass.currentData.ReelIntermediateImageCount.ToString()))
-                                nodeReelIlluImage.SetAttribute("Image", ImageToBase64(Backglass.currentTabPage.DrawIlluminatedReelImage(reelimage.Value, reelilluintensity, reelillulocation)))
+                                Dim illuminatedReelImage As Image = Backglass.currentTabPage.DrawIlluminatedReelImage(reelimage.Value, reelilluintensity, reelillulocation)
+                                Try
+                                    nodeReelIlluImage.SetAttribute("Image", ImageToBase64(illuminatedReelImage))
+                                Finally
+                                    If illuminatedReelImage IsNot Nothing AndAlso Not Object.ReferenceEquals(illuminatedReelImage, reelimage.Value) Then
+                                        illuminatedReelImage.Dispose()
+                                    End If
+                                End Try
                                 If Not isLED Then
                                     If reelintermediates.ContainsKey(reelimage.Key) Then
                                         Dim j As Integer = 1
                                         For Each intermediateimage As Image In reelintermediates(reelimage.Key)
-                                            nodeReelIlluImage.SetAttribute("IntermediateImage" & j.ToString(), ImageToBase64(Backglass.currentTabPage.DrawIlluminatedReelImage(intermediateimage, reelilluintensity, reelillulocation)))
+                                            Dim illuminatedIntermediate As Image = Backglass.currentTabPage.DrawIlluminatedReelImage(intermediateimage, reelilluintensity, reelillulocation)
+                                            Try
+                                                nodeReelIlluImage.SetAttribute("IntermediateImage" & j.ToString(), ImageToBase64(illuminatedIntermediate))
+                                            Finally
+                                                If illuminatedIntermediate IsNot Nothing AndAlso Not Object.ReferenceEquals(illuminatedIntermediate, intermediateimage) Then
+                                                    illuminatedIntermediate.Dispose()
+                                                End If
+                                            End Try
                                             j += 1
                                         Next
                                     End If
@@ -1841,7 +1855,14 @@ Public Class Coding
                 Dim keyinfo As String() = key.Split(Chr(1))
                 Dim reelintensity As Integer = CInt(keyinfo(keyinfo.Length - 2))
                 Dim reelillulocation As Integer = CInt(keyinfo(keyinfo.Length - 1))
-                nodeReelIlluImage(j).SetAttribute("IntermediateImage" & (i + 1).ToString(), ImageToBase64(Backglass.currentTabPage.DrawIlluminatedReelImage(intermediateimage, reelintensity, reelillulocation)))
+                Dim illuminatedIntermediate As Image = Backglass.currentTabPage.DrawIlluminatedReelImage(intermediateimage, reelintensity, reelillulocation)
+                Try
+                    nodeReelIlluImage(j).SetAttribute("IntermediateImage" & (i + 1).ToString(), ImageToBase64(illuminatedIntermediate))
+                Finally
+                    If illuminatedIntermediate IsNot Nothing AndAlso Not Object.ReferenceEquals(illuminatedIntermediate, intermediateimage) Then
+                        illuminatedIntermediate.Dispose()
+                    End If
+                End Try
             Next
             intermediateimage.Dispose()
             lastimage.Dispose()

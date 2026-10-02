@@ -1528,17 +1528,17 @@ Public Class formToolLayers
         CopyTroughPhysicsSettings(template, ball)
         If wizard.GravityDrop Then
             ball.SnippitInfo.PhysicsFlipperName = String.Empty
-            ball.SnippitInfo.PhysicsLauncherEnabled = True
+            ball.SnippitInfo.PhysicsLauncherEnabled = False
             ball.SnippitInfo.PhysicsLauncherFollowPivot = False
             ball.SnippitInfo.PhysicsLauncherTriggerType = 1
             ball.SnippitInfo.PhysicsLauncherTriggerID = 0
-            ball.SnippitInfo.PhysicsLauncherX = wizard.CaptureCenter.X
-            ball.SnippitInfo.PhysicsLauncherY = wizard.CaptureCenter.Y
+            ball.SnippitInfo.PhysicsLauncherX = 0.0F
+            ball.SnippitInfo.PhysicsLauncherY = 0.0F
             ball.SnippitInfo.PhysicsLauncherAngle = 0.0F
             ball.SnippitInfo.PhysicsLauncherStrength = 0.0F
             ball.SnippitInfo.PhysicsLauncherRandomAngle = 0.0F
             ball.SnippitInfo.PhysicsLauncherRandomStrength = 0.0F
-            ball.SnippitInfo.PhysicsLauncherCaptureRadius = wizard.CaptureRadius
+            ball.SnippitInfo.PhysicsLauncherCaptureRadius = 45.0F
         End If
     End Sub
 

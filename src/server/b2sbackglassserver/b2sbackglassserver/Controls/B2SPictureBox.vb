@@ -83,6 +83,7 @@ Public Class B2SPictureBox
 
     Public Property IsImageSnippit() As Boolean = False
     Public Property PreservePhysicsArtworkAspect() As Boolean = False
+    Public Property PreservePhysicsArtworkArea() As Boolean = False
     Public Property HasFullResolutionSnippet() As Boolean = False
     Public Property PhysicsSelectionMaskAlpha() As Byte()
     Public Property PhysicsSelectionMaskSize() As Size = Size.Empty
@@ -90,7 +91,15 @@ Public Class B2SPictureBox
         Get
             Dim bounds As RectangleF = Me.RectangleF
             If Not PreservePhysicsArtworkAspect OrElse bounds.IsEmpty OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return bounds
-            Dim scale As Single = Math.Min(bounds.Width / Me.Width, bounds.Height / Me.Height)
+            Dim scaleX As Single = bounds.Width / Me.Width
+            Dim scaleY As Single = bounds.Height / Me.Height
+            ' A gravity trough is authored against the full Designer canvas. If
+            ' that canvas is stretched differently in X and Y at runtime, keep
+            ' the round ball's transformed area instead of shrinking it to the
+            ' smaller axis. Other physics artwork retains its established rule.
+            Dim scale As Single = If(PreservePhysicsArtworkArea,
+                                     CSng(Math.Sqrt(Math.Max(0.0F, scaleX * scaleY))),
+                                     Math.Min(scaleX, scaleY))
             Dim width As Single = Me.Width * scale, height As Single = Me.Height * scale
             Dim anchorX As Single = If(PivotRotation, RotationPivotX, 0.5F)
             Dim anchorY As Single = If(PivotRotation, RotationPivotY, 0.5F)
@@ -164,6 +173,24 @@ Public Class B2SPictureBox
             Return _motionPathPoints
         End Get
     End Property
+
+    Friend Sub SwapMotionPathEntryRouteWith(ByVal other As B2SPictureBox)
+        If other Is Nothing OrElse other Is Me Then Return
+
+        Dim thisAuthoredRoute As New List(Of PointF)(_motionPathPoints)
+        _motionPathPoints.Clear()
+        _motionPathPoints.AddRange(other._motionPathPoints)
+        other._motionPathPoints.Clear()
+        other._motionPathPoints.AddRange(thisAuthoredRoute)
+
+        ' Entry routes are converted to screen coordinates once and cached. A
+        ' gravity-return ball must inherit the cached route for its newly assigned
+        ' slot as well as the authored route, otherwise it returns to its old slot.
+        Dim thisRuntimeRoute As List(Of PointF) = motionPathRuntimeEntryPoints
+        motionPathRuntimeEntryPoints = other.motionPathRuntimeEntryPoints
+        other.motionPathRuntimeEntryPoints = thisRuntimeRoute
+    End Sub
+
     Public ReadOnly Property MotionPathExitPoints() As List(Of PointF)
         Get
             Return _motionPathExitPoints
@@ -616,7 +643,11 @@ Public Class B2SPictureBox
     End Sub
 
     Public Sub StartMotionPath()
-        StartMotionPathCore(False)
+        StartMotionPathCore(False, False)
+    End Sub
+
+    Friend Sub StartMotionPathFromCurrentPosition()
+        StartMotionPathCore(False, True)
     End Sub
 
     Public Sub SetMotionPathSequenceSourceAnchor(ByVal enabled As Boolean)
@@ -784,7 +815,7 @@ Public Class B2SPictureBox
     End Sub
 
     Public Sub StartMotionPathExit()
-        StartMotionPathCore(True)
+        StartMotionPathCore(True, False)
     End Sub
 
     Friend Function MotionPathExitRuntimeRoute() As List(Of PointF)
@@ -909,12 +940,14 @@ Public Class B2SPictureBox
         motionPathTimer.Start()
     End Sub
 
-    Private Sub StartMotionPathCore(ByVal useExitPath As Boolean)
+    Private Sub StartMotionPathCore(ByVal useExitPath As Boolean, ByVal startFromCurrentPosition As Boolean)
         Dim sourcePoints As List(Of PointF) = If(useExitPath, _motionPathExitPoints, _motionPathPoints)
         If sourcePoints.Count < 2 OrElse Me.Parent Is Nothing Then Return
         If Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
             If useExitPath Then
                 Me.Parent.BeginInvoke(New MethodInvoker(AddressOf StartMotionPathExit))
+            ElseIf startFromCurrentPosition Then
+                Me.Parent.BeginInvoke(New MethodInvoker(AddressOf StartMotionPathFromCurrentPosition))
             Else
                 Me.Parent.BeginInvoke(New MethodInvoker(AddressOf StartMotionPath))
             End If
@@ -963,6 +996,16 @@ Public Class B2SPictureBox
             motionPathRuntimePrepared = True
         End If
         motionPathRuntimePoints = If(useExitPath, motionPathRuntimeExitPoints, motionPathRuntimeEntryPoints)
+        If Not useExitPath AndAlso startFromCurrentPosition Then
+            Dim routeFromCurrentPosition As New List(Of PointF) From {MotionPathCenter}
+            For Each point As PointF In motionPathRuntimeEntryPoints
+                Dim previous As PointF = routeFromCurrentPosition(routeFromCurrentPosition.Count - 1)
+                Dim dx As Single = point.X - previous.X
+                Dim dy As Single = point.Y - previous.Y
+                If dx * dx + dy * dy > 0.0001F Then routeFromCurrentPosition.Add(point)
+            Next
+            motionPathRuntimePoints = routeFromCurrentPosition
+        End If
         If Not useExitPath Then
             _motionPathArrivalSpeed = CSng(MotionPathLength(motionPathRuntimePoints) / Math.Max(1, motionPathActiveDuration))
         End If

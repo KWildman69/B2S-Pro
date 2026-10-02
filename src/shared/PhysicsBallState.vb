@@ -233,7 +233,10 @@ Public Partial Class B2SData
             velocity = PointF.Empty
             pendingPhysicsSeconds = 0.0R
             hasLastFlipperAngle = False
+            launcherHolding = False
+            launcherArmed = False
         End Sub
+
 #End If
 
 #If PHYSICS_PREVIEW Then
@@ -273,10 +276,10 @@ Public Partial Class B2SData
             Dim scaleX As Single = If(authoredBallWidth <= 0.0F, 1.0F, ball.RectangleF.Width / authoredBallWidth)
             Dim scaleY As Single = If(authoredBallHeight <= 0.0F, 1.0F, ball.RectangleF.Height / authoredBallHeight)
             If launcherHolding AndAlso launcher IsNot Nothing Then
-                Dim origin As PointF = PointF.Empty, angle As Single = 0.0F
-                GetLauncherPose(origin, angle)
-                physicsCenter = origin
-                ball.SetMotionPathPosition(New PointF(origin.X * scaleX, origin.Y * scaleY))
+                Dim holdCenter As PointF = PointF.Empty, angle As Single = 0.0F
+                GetLauncherPose(holdCenter, angle)
+                physicsCenter = holdCenter
+                ball.SetMotionPathPosition(New PointF(holdCenter.X * scaleX, holdCenter.Y * scaleY))
                 velocity = PointF.Empty
                 Return
             End If

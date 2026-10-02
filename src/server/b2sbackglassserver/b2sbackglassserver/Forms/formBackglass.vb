@@ -3009,6 +3009,7 @@ Public Class formBackglass
                         ' editor placement stays exact. A ball keeps a round visual while
                         ' its center follows those same scaled coordinates.
                         picbox.PreservePhysicsArtworkAspect = physicsBall
+                        picbox.PreservePhysicsArtworkArea = physicsBall AndAlso motionPathGravityDrop
                         If physicsBall AndAlso innerNode.Attributes("PhysicsSelectionMaskData") IsNot Nothing Then
                             Dim physicsMaskSize As Size = Size.Empty
                             picbox.PhysicsSelectionMaskAlpha = DecodePhysicsSelectionMask(innerNode.Attributes("PhysicsSelectionMaskData").InnerText,

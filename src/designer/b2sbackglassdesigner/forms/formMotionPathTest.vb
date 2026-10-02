@@ -751,8 +751,6 @@ Public Class formTroughWizard
     Private ReadOnly drainTriggerIDBox As New NumericUpDown()
     Private ReadOnly drainTriggerTypeLabel As Label
     Private ReadOnly drainTriggerIDLabel As Label
-    Private ReadOnly captureRadiusBox As New NumericUpDown()
-    Private ReadOnly captureRadiusLabel As Label
     Private ReadOnly loadTestButton As New Button()
     Private ReadOnly dropTestButton As New Button()
     Private ReadOnly triggerSettingsButton As New Button()
@@ -768,6 +766,7 @@ Public Class formTroughWizard
     Private gravityTestMode As Integer
     Private gravityReturningIndex As Integer = -1
     Private gravityReturningSlotIndex As Integer = -1
+    Private gravityReturningStartCenter As PointF = PointF.Empty
     Private gravityReturnElapsed As Double
     Private ReadOnly gravityReturnedBounds As New Dictionary(Of Integer, RectangleF)()
     Private ReadOnly gravityReturnedSlots As New Dictionary(Of Integer, Integer)()
@@ -877,15 +876,6 @@ Public Class formTroughWizard
         Dim savedDrainTrigger As Integer = If(removeB2S > 0, removeB2S, If(removeLamp > 0, removeLamp, removeSolenoid))
         drainTriggerIDBox.Value = Math.Max(1, Math.Min(255, savedDrainTrigger))
         drainTriggerIDBox.Width = 290 : drainTriggerIDBox.Margin = New Padding(3)
-        captureRadiusLabel = WizardLabel("Return capture radius:")
-        captureRadiusBox.Minimum = 5 : captureRadiusBox.Maximum = 500
-        captureRadiusBox.DecimalPlaces = 0
-        captureRadiusBox.Value = CDec(Math.Max(5.0F, Math.Min(500.0F, source.SnippitInfo.PhysicsLauncherCaptureRadius)))
-        captureRadiusBox.Width = 290 : captureRadiusBox.Margin = New Padding(3)
-        AddHandler captureRadiusBox.ValueChanged, Sub()
-                                                      slotCanvas.CaptureRadius = CSng(captureRadiusBox.Value)
-                                                      slotCanvas.Invalidate()
-                                                  End Sub
         AddHandler gravityDropCheckBox.CheckedChanged, AddressOf GravityDropChanged
         ConfigureButton(entryButton, "1. Draw Entry Path", AddressOf EditEntry)
         ConfigureButton(exitButton, "2. Draw Exit Path", AddressOf EditExit)
@@ -905,7 +895,7 @@ Public Class formTroughWizard
         ConfigureButton(wizardCancelButton, "Cancel", Sub() DialogResult = DialogResult.Cancel)
         sidebar.Controls.AddRange(New Control() {setupHeader, groupLabel, groupBox, countLabel, countBox, rollBallCheckBox, drainAllCheckBox, gravityDropCheckBox,
                                                  drainTriggerTypeLabel, drainTriggerTypeBox, drainTriggerIDLabel, drainTriggerIDBox,
-                                                 triggerSettingsButton, captureRadiusLabel, captureRadiusBox,
+                                                 triggerSettingsButton,
                                                  WizardHeader("PATHS"), entryButton, exitButton,
                                                  WizardHeader("BALL IMAGES"), selectedBallLabel, replaceBallImageButton, resetBallImageButton,
                                                  WizardHeader("LOCAL TEST"), loadTestButton, dropTestButton, testTriggerButton,
@@ -918,10 +908,6 @@ Public Class formTroughWizard
         slotCanvas.BallImages = ballImages
         Dim first As PointF = If(entryPoints.Count > 0, entryPoints(entryPoints.Count - 1), New PointF(snippet.Location.X + snippet.Size.Width / 2.0F, snippet.Location.Y + snippet.Size.Height / 2.0F))
         slotCanvas.SnippetSize = _ballSize
-        slotCanvas.CaptureCenter = If(source.SnippitInfo.PhysicsLauncherEnabled,
-                                      New PointF(source.SnippitInfo.PhysicsLauncherX, source.SnippitInfo.PhysicsLauncherY),
-                                      If(entryPoints.Count > 0, entryPoints(0), originalStart))
-        slotCanvas.CaptureRadius = CSng(captureRadiusBox.Value)
         slotCanvas.FirstCenter = first
         slotCanvas.LastCenter = If(orderedMembers.Count >= 2,
                                    ExistingPathEndpoint(orderedMembers(orderedMembers.Count - 1)),
@@ -951,10 +937,7 @@ Public Class formTroughWizard
         drainTriggerIDLabel.Visible = gravityDrain
         drainTriggerIDBox.Visible = gravityDrain
         triggerSettingsButton.Visible = gravityDrain
-        captureRadiusLabel.Visible = gravityDrain
-        captureRadiusBox.Visible = gravityDrain
         testTriggerButton.Visible = gravityDrain
-        slotCanvas.CaptureEnabled = gravityDrain
         slotCanvas.Invalidate()
         If gravityDrain Then drainAllCheckBox.Checked = True
         drainAllCheckBox.Enabled = Not gravityDrain
@@ -1253,16 +1236,6 @@ Public Class formTroughWizard
                     .Angle = If(index < source.SnippitInfo.PhysicsSwitchAngles.Count, source.SnippitInfo.PhysicsSwitchAngles(index), 0.0F)})
             End If
         Next
-        Dim launcher As New PhysicsPreview.B2SData.PhysicsLauncher With {
-            .TriggerType = 1,
-            .TriggerID = 0,
-            .Origin = slotCanvas.CaptureCenter,
-            .Angle = 0.0F,
-            .Strength = 0.0F,
-            .RandomAngle = 0.0F,
-            .RandomStrength = 0.0F,
-            .CaptureRadius = CSng(captureRadiusBox.Value),
-            .FollowPivot = False}
         For index As Integer = 0 To slotCanvas.PreviewBallBounds.Count - 1
             Dim session As New PhysicsPreview.B2SData()
             Dim ballBounds As Rectangle = Rectangle.Round(slotCanvas.PreviewBallBounds(index))
@@ -1270,12 +1243,12 @@ Public Class formTroughWizard
             session.Configure(ballBounds, New RectangleF(0, 0, wizardBackgroundImage.Width, wizardBackgroundImage.Height),
                               source.SnippitInfo.PhysicsGravity, source.SnippitInfo.PhysicsFlipperStrength,
                               source.SnippitInfo.PhysicsBoundaryBounce, source.SnippitInfo.PhysicsBoundaryPaths,
-                              source.SnippitInfo.PhysicsObstacles, zones, launcher,
+                              source.SnippitInfo.PhysicsObstacles, zones, Nothing,
                               source.SnippitInfo.PhysicsBoundarySegmentBounces, True, source.SnippitInfo.PhysicsObstacleBounces)
             session.ReleaseAtCurrentPosition()
-            Dim sessionIndex As Integer = index
-            session.AddLauncherCapturedHandler(Sub(senderObject As Object, eventArgs As EventArgs) PreviewLauncherCaptured(sessionIndex))
             gravityTestSessions.Add(session)
+            gravityPreviewQueued.Add(index)
+            gravityPreviewQueue.Add(index)
         Next
         gravityTestElapsed = 0.0R
         gravityTestPendingSeconds = 0.0R
@@ -1284,17 +1257,9 @@ Public Class formTroughWizard
         gravityReturnedSlots.Clear()
         gravityReturnCollisionStarted = -1.0R : gravityReturnCollisionBallIndex = -1 : gravityReturnCollisionSlotIndex = -1
         gravityTestMode = 2
-        statusLabel.Text = "Dropping every loaded ball to physics. Captured balls wait for the Return trigger."
+        statusLabel.Text = "Dropping every loaded ball to physics. Each ball remains available where it settles."
         gravityTestClock.Restart()
         gravityTestTimer.Start()
-    End Sub
-
-    Private Sub PreviewLauncherCaptured(ByVal sessionIndex As Integer)
-        If gravityPreviewQueued.Contains(sessionIndex) Then Return
-        gravityPreviewQueued.Add(sessionIndex)
-        gravityPreviewQueue.Add(sessionIndex)
-        slotCanvas.HiddenPreviewBallIndices.Add(sessionIndex)
-            statusLabel.Text = gravityPreviewQueue.Count.ToString() & " ball(s) waiting at RETURN CAPTURE."
     End Sub
 
     Private Sub TestReturnTrigger(ByVal sender As Object, ByVal e As EventArgs)
@@ -1308,20 +1273,22 @@ Public Class formTroughWizard
             gravityPreviewQueue.RemoveAt(randomIndex)
             If Not gravityPreviewQueued.Remove(sessionIndex) Then Continue While
             If sessionIndex < 0 OrElse sessionIndex >= gravityTestSessions.Count Then Continue While
-            slotCanvas.HiddenPreviewBallIndices.Remove(sessionIndex)
             gravityReturningIndex = sessionIndex
             gravityReturningSlotIndex = Math.Min(DisplayedBallCount() - 1, gravityReturnedBounds.Count)
             gravityReturnElapsed = 0.0R
+            Dim currentBounds As RectangleF = gravityTestSessions(sessionIndex).Body.RectangleF
+            gravityReturningStartCenter = New PointF(currentBounds.Left + currentBounds.Width / 2.0F,
+                                                      currentBounds.Top + currentBounds.Height / 2.0F)
             gravityReturnedBounds.Remove(sessionIndex)
             gravityReturnedRollAngles.Remove(sessionIndex)
             gravityPreviewRollAngles(sessionIndex) = gravityTestSessions(sessionIndex).Body.RollAngle
             gravityPreviewRollCenters.Remove(sessionIndex)
-            statusLabel.Text = "Returning one captured ball through its authored entry path."
+            statusLabel.Text = "Returning one available ball from its current position through the authored entry path."
             gravityTestClock.Restart() : gravityTestTimer.Start()
             slotCanvas.Invalidate()
             Return
         End While
-        statusLabel.Text = "No captured balls are waiting at RETURN CAPTURE."
+        statusLabel.Text = "No released balls are available."
     End Sub
 
     Private Sub GravityTestTick(ByVal sender As Object, ByVal e As EventArgs)
@@ -1356,6 +1323,10 @@ Public Class formTroughWizard
                 gravityReturnElapsed += elapsed * 1000.0R
                 Dim progress As Single = CSng(Math.Min(1.0R, gravityReturnElapsed / Math.Max(250, entryDuration)))
                 Dim route As List(Of PointF) = BuildPreviewEntryPath(SlotCenter(gravityReturningSlotIndex))
+                If route.Count = 0 OrElse Math.Abs(route(0).X - gravityReturningStartCenter.X) > 0.01F OrElse
+                   Math.Abs(route(0).Y - gravityReturningStartCenter.Y) > 0.01F Then
+                    route.Insert(0, gravityReturningStartCenter)
+                End If
                 Dim center As PointF = PointOnPath(route, progress)
                 Dim returningBounds As New RectangleF(center.X - _ballSize.Width / 2.0F,
                                                        center.Y - _ballSize.Height / 2.0F,
@@ -1375,6 +1346,7 @@ Public Class formTroughWizard
                     End If
                     gravityReturningIndex = -1
                     gravityReturningSlotIndex = -1
+                    gravityReturningStartCenter = PointF.Empty
                     gravityReturnElapsed = 0.0R
                     statusLabel.Text = "Ball returned through the entry path."
                 End If
@@ -1605,6 +1577,7 @@ Public Class formTroughWizard
         gravityTestTimer.Stop() : gravityTestClock.Reset()
         gravityTestMode = 0 : gravityTestElapsed = 0.0R : gravityTestPendingSeconds = 0.0R
         gravityReturningIndex = -1 : gravityReturningSlotIndex = -1 : gravityReturnElapsed = 0.0R
+        gravityReturningStartCenter = PointF.Empty
         gravityReturnedBounds.Clear()
         gravityReturnedSlots.Clear()
         gravityReturnedRollAngles.Clear()
@@ -1620,7 +1593,6 @@ Public Class formTroughWizard
         Next
         gravityTestSessions.Clear()
         gravityPreviewQueue.Clear() : gravityPreviewQueued.Clear()
-        slotCanvas.HiddenPreviewBallIndices.Clear()
     End Sub
 
     Private Sub CreateTrough(sender As Object, e As EventArgs)
@@ -1735,16 +1707,6 @@ Public Class formTroughWizard
             Return entryB2S
         End Get
     End Property
-    Public ReadOnly Property CaptureCenter As PointF
-        Get
-            Return slotCanvas.CaptureCenter
-        End Get
-    End Property
-    Public ReadOnly Property CaptureRadius As Single
-        Get
-            Return CSng(captureRadiusBox.Value)
-        End Get
-    End Property
     Public ReadOnly Property StopB2SID As Integer
         Get
             Return stopB2S
@@ -1791,12 +1753,8 @@ Public Class formTroughWizard
         Public PreviewActive As Boolean
         Public ReadOnly PreviewBallBounds As New List(Of RectangleF)()
         Public ReadOnly PreviewBallAngles As New List(Of Single)()
-        Public ReadOnly HiddenPreviewBallIndices As New HashSet(Of Integer)()
         Private _firstCenter As PointF
         Private _lastCenter As PointF
-        Private _captureCenter As PointF
-        Public CaptureEnabled As Boolean
-        Public CaptureRadius As Single = 45.0F
         Public SlotCount As Integer = 10
         Public SelectedSlotIndex As Integer = 0
         Public Event SelectedSlotChanged As EventHandler
@@ -1838,14 +1796,6 @@ Public Class formTroughWizard
                 _lastCenter = ClampCenter(value)
             End Set
         End Property
-        Public Property CaptureCenter As PointF
-            Get
-                Return _captureCenter
-            End Get
-            Set(value As PointF)
-                _captureCenter = ClampCenter(value)
-            End Set
-        End Property
         Private Function ClampCenter(value As PointF) As PointF
             If BackglassImage Is Nothing Then Return value
 
@@ -1857,19 +1807,8 @@ Public Class formTroughWizard
         Protected Overrides Sub OnPaint(e As PaintEventArgs)
             MyBase.OnPaint(e) : If BackglassImage Is Nothing Then Return
             Dim r=ViewRect() : e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic : e.Graphics.DrawImage(BackglassImage,r)
-            If CaptureEnabled Then
-                Dim captureView As PointF = ToView(CaptureCenter)
-                Dim radiusView As Single = Math.Max(5.0F, CaptureRadius * r.Width / BackglassImage.Width)
-                Using capturePen As New Pen(Color.Magenta, 3)
-                    capturePen.DashStyle = DashStyle.Dash
-                    e.Graphics.DrawEllipse(capturePen, captureView.X - radiusView, captureView.Y - radiusView, radiusView * 2.0F, radiusView * 2.0F)
-                End Using
-                e.Graphics.FillEllipse(Brushes.Magenta, captureView.X - 4.0F, captureView.Y - 4.0F, 8.0F, 8.0F)
-                e.Graphics.DrawString("RETURN CAPTURE", Font, Brushes.Magenta, captureView.X - radiusView, captureView.Y - radiusView - 18.0F)
-            End If
             If PreviewActive Then
                 For index As Integer = 0 To PreviewBallBounds.Count - 1
-                    If HiddenPreviewBallIndices.Contains(index) Then Continue For
                     Dim bounds As RectangleF = PreviewBallBounds(index)
                     Dim topLeft As PointF = ToView(bounds.Location)
                     Dim bottomRight As PointF = ToView(New PointF(bounds.Right, bounds.Bottom))
@@ -1909,10 +1848,6 @@ Public Class formTroughWizard
         End Sub
         Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
             If BeginNavigation(e) Then Return
-            If CaptureEnabled AndAlso Distance(e.Location, ToView(CaptureCenter)) < 40 Then
-                dragIndex = 2
-                Return
-            End If
             Dim nearestIndex As Integer = -1
             Dim nearestDistance As Double = Double.MaxValue
             For index As Integer = 0 To SlotCount - 1
@@ -1944,8 +1879,6 @@ Public Class formTroughWizard
                 FirstCenter=ToImage(e.Location)
             ElseIf dragIndex=1 Then
                 LastCenter=ToImage(e.Location)
-            Else
-                CaptureCenter=ToImage(e.Location)
             End If
             Invalidate()
         End Sub

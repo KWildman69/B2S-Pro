@@ -4,10 +4,17 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 ## 1.0.4 / Server 3.0.3 — 2026-09-29
 
-- Add a trough option that releases every loaded ball to gravity on one trigger, captures dropped balls at an authored return zone, and returns one randomly selected ball through the normal entry trigger and path.
+- Add a trough option that releases every loaded ball to gravity on one trigger, keeps each dropped ball live where it settles, and returns one randomly selected available ball from that position through the normal entry trigger and path.
 - Add local Load Balls, Drop All Balls, and Test Trigger controls that use the saved trough path, gravity, boundaries, collision response, selected ball artwork, and rolling behavior.
 - Keep gravity-trough boundary edits synchronized across every ball in the group, and preserve the new trough settings through project saves and DirectB2S exports.
 - Add a separate drain-all option that keeps every occupied ball ordered and non-overlapping along the trough centers and exact authored exit path.
+
+### October 2 update — versions unchanged
+
+- Remove the gravity-trough return-capture zone and hidden parking behavior. Released balls remain visible physics objects and are reused from their actual resting positions.
+- Keep gravity-trough ball artwork round while preserving its visible authored area on non-uniformly scaled backglass displays. Normal troughs and other physics artwork retain their existing scaling behavior.
+- Dispose temporary illuminated-reel export images promptly and reuse a successful Step 1 export in Step 2 without changing an EM project's blank ROM name.
+- Existing 1.0.4 / 3.0.3 installations need to rerun setup manually to receive this same-version update.
 
 ## 1.0.3 / Server 3.0.2 — 2026-09-23
 
