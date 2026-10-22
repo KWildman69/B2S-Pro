@@ -306,6 +306,7 @@ namespace B2SPro.Setup
             }
             _root.Controls.Add(CreatePathRow(SetupEdition.ServerOnly ? "2. B2S Server folder — automatically detected" : "B2S Server folder — automatically detected", _serverFolder, delegate { BrowseFolder(_serverFolder); }, "Change..."), 0, nextRow++);
             _serverFolder.ReadOnly = false;
+            _serverFolder.TextChanged += delegate { UpdateServerDestinationStatus(); };
             if (!SetupEdition.ServerOnly) _root.Controls.Add(CreateArchitectureRow(), 0, nextRow++);
             _root.Controls.Add(CreateSourcePanel(), 0, nextRow++);
             _root.Controls.Add(CreateUpdateNotificationPanel(), 0, nextRow++);
@@ -481,10 +482,21 @@ namespace B2SPro.Setup
             bool replaceServerFolder = ServerLocator.ShouldReplaceSuggestion(_serverFolder.Text, _suggestedServerFolder);
             _suggestedServerFolder = serverSuggestion;
             if (replaceServerFolder) _serverFolder.Text = serverSuggestion;
-            if (File.Exists(Path.Combine(_serverFolder.Text, "B2SBackglassServer.dll")))
-                _status.Text = "Existing B2S Server detected: " + _serverFolder.Text;
+            UpdateServerDestinationStatus();
+        }
+
+        private void UpdateServerDestinationStatus()
+        {
+            string serverFolder = _serverFolder.Text.Trim();
+            if (String.IsNullOrWhiteSpace(serverFolder))
+            {
+                _status.Text = "Choose the B2S Server folder.";
+                return;
+            }
+            if (File.Exists(Path.Combine(serverFolder, "B2SBackglassServer.dll")))
+                _status.Text = "Existing B2S Server detected: " + serverFolder;
             else
-                _status.Text = "Fresh installation: the complete server will be installed in " + _serverFolder.Text;
+                _status.Text = "Fresh installation: the complete server will be installed in " + serverFolder;
         }
 
         private void BrowseFolder(TextBox destination)
