@@ -7,6 +7,7 @@ Public Class B2SReelBox
     Inherits B2SBaseBox
 
     Public KeepDigitAspect As Boolean = False
+    Public ReelDigitWidth As Integer = 0
 
     Public Enum eScoreType
         NotUsed = 0
@@ -103,7 +104,9 @@ Public Class B2SReelBox
 
     Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         If KeepDigitAspect Then
-            Using fitted As Bitmap = ReelImageSizing.Fit(reelImage, ClientSize)
+            Using fitted As Bitmap = If(ReelDigitWidth > 0,
+                                        ReelImageSizing.StretchToWidth(reelImage, ClientSize, ReelDigitWidth),
+                                        ReelImageSizing.Fit(reelImage, ClientSize))
                 DrawReelImageCore(graphics, fitted, cacheName & "|aspect")
             End Using
         Else
@@ -137,19 +140,8 @@ Public Class B2SReelBox
 
         graphics.DrawImage(imageToDraw, Me.ClientRectangle)
 
-        ' Score controls are WinForms child controls and normally always appear
-        ' above their parent's background. For a reel placed behind the canvas,
-        ' composite the matching canvas patch over the live reel frame. Canvas
-        ' transparency exposes the reel while opaque artwork remains in front.
-        If _BehindCanvas AndAlso Me.Parent IsNot Nothing AndAlso Me.Parent.BackgroundImage IsNot Nothing Then
-            Dim canvas As Image = Me.Parent.BackgroundImage
-            Dim source As New Rectangle(Me.Left, Me.Top, Me.Width, Me.Height)
-            graphics.DrawImage(canvas, Me.ClientRectangle, source, GraphicsUnit.Pixel)
-        End If
-
-        ' Glass sits in front of both the reel and the canvas. Each digit crops
-        ' its aligned piece from one display-wide overlay, so the reflection is
-        ' continuous across the complete score window.
+        ' Each digit crops its aligned piece from one display-wide overlay, so
+        ' the reflection is continuous across the complete score window.
         If Reel3DEnabled AndAlso Reel3DDisplayWidth > 2 Then
             Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & ClientSize.Height.ToString() &
                                        "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString()
@@ -170,6 +162,17 @@ Public Class B2SReelBox
                                        GraphicsUnit.Pixel)
                 End If
             End If
+        End If
+
+        ' Score controls are WinForms child controls and normally always appear
+        ' above their parent's background. For a reel placed behind the canvas,
+        ' composite the matching canvas patch after both the reel and its glass.
+        ' Canvas transparency exposes the complete 3D reel only through the
+        ' score openings while opaque artwork covers both passes.
+        If _BehindCanvas AndAlso Me.Parent IsNot Nothing AndAlso Me.Parent.BackgroundImage IsNot Nothing Then
+            Dim canvas As Image = Me.Parent.BackgroundImage
+            Dim source As New Rectangle(Me.Left, Me.Top, Me.Width, Me.Height)
+            graphics.DrawImage(canvas, Me.ClientRectangle, source, GraphicsUnit.Pixel)
         End If
     End Sub
 

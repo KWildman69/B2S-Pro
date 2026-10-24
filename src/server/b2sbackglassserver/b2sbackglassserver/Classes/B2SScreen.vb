@@ -684,6 +684,10 @@ Public Class B2SScreen
         If TypeOf _cntrl Is B2SLEDBox OrElse TypeOf _cntrl Is B2SReelBox Then
             _cntrl.Location = New Point(Point.Round(_cntrl.RectangleF.Location))
             _cntrl.Size = New Size(Size.Round(_cntrl.RectangleF.Size))
+            Dim reel As B2SReelBox = TryCast(_cntrl, B2SReelBox)
+            If reel IsNot Nothing AndAlso reel.ReelDigitWidth > 0 Then
+                reel.ReelDigitWidth = Math.Max(1, CInt(Math.Round(reel.ReelDigitWidth / _rescaleX)))
+            End If
         End If
 
         ' maybe flip DMD images

@@ -3345,6 +3345,9 @@ Public Class formBackglass
                         End If
                         Dim reeltype As String = innerNode.Attributes("ReelType").InnerText
                         Dim keepDigitAspect As Boolean = innerNode.Attributes("KeepDigitAspect") IsNot Nothing AndAlso innerNode.Attributes("KeepDigitAspect").InnerText = "1"
+                        Dim reelDigitWidth As Integer = 0
+                        If innerNode.Attributes("ReelDigitWidth") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("ReelDigitWidth").InnerText, reelDigitWidth)
+                        reelDigitWidth = Math.Max(0, reelDigitWidth)
                         Dim reellitcolor As Color = String2Color(innerNode.Attributes("ReelLitColor").InnerText)
                         Dim reeldarkcolor As Color = String2Color(innerNode.Attributes("ReelDarkColor").InnerText)
                         Dim d7glow As Single = CSng(innerNode.Attributes("Glow").InnerText) / 100
@@ -3618,6 +3621,7 @@ Public Class formBackglass
                                 reel.RomIDValue = romidvalue
                                 reel.BehindCanvas = behindCanvas
                                 reel.KeepDigitAspect = keepDigitAspect
+                                reel.ReelDigitWidth = reelDigitWidth
                                 reel.Reel3DEnabled = reel3DEnabled
                                 reel.Reel3DBrightness = reel3DBrightness
                                 reel.Reel3DTemperature = reel3DTemperature
