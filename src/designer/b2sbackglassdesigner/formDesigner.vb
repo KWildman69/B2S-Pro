@@ -1,4 +1,4 @@
-﻿Imports System
+Imports System
 Imports System.IO
 Imports System.Runtime.InteropServices
 
@@ -23,6 +23,8 @@ Public Class formDesigner
     Private tsbMakeSnippetEnhanced As ToolStripButton
     Private tsbAddFlasherEnhanced As ToolStripButton
     Private tsbAddTextEnhanced As ToolStripButton
+    Private tsbGenerateInfinityLights As ToolStripButton
+    Private tsmiGenerateInfinityLights As ToolStripMenuItem
     Private tsbManageAnimationsEnhanced As ToolStripButton
     Private tsbChooseReelTypeEnhanced As ToolStripButton
     Private tsbBackglassBrightnessEnhanced As ToolStripButton
@@ -117,6 +119,7 @@ Public Class formDesigner
         InitializeEnhancedEditMenu()
         InitializeThemeMenu()
         InitializeB2SProVisuals()
+        InitializeInfinityLightsCommand()
         InitializeLayersPanel()
         InitializeAutoSave()
         ' Reparenting and toolbar styling can recreate the native hosted controls.
@@ -128,6 +131,30 @@ Public Class formDesigner
         ' monitor-aware layout restore always runs during normal startup.
         WindowStateManager.Attach(Me)
 
+    End Sub
+
+    Private Sub InitializeInfinityLightsCommand()
+        tsmiGenerateInfinityLights = New ToolStripMenuItem("Generate Infinity Lights...", InfinityLightGenerator.CreateToolbarIcon())
+        tsmiGenerateInfinityLights.ToolTipText = "Replace the selected light box with generated bulb rings and a looping animation"
+        AddHandler tsmiGenerateInfinityLights.Click, AddressOf GenerateInfinityLights_Click
+        Dim insertIndex As Integer = tsmiIllumination.DropDownItems.IndexOf(tsmiManageAnimations)
+        If insertIndex < 0 Then insertIndex = tsmiIllumination.DropDownItems.Count
+        tsmiIllumination.DropDownItems.Insert(insertIndex, tsmiGenerateInfinityLights)
+
+        tsbGenerateInfinityLights = New ToolStripButton() With {
+            .Name = "tsbGenerateInfinityLights",
+            .Text = "Infinity" & vbCrLf & "Lights",
+            .ToolTipText = "Generate animated infinity lights inside the selected light box",
+            .Enabled = tsmiAddNewBulbFrame.Enabled,
+            .Image = InfinityLightGenerator.CreateToolbarIcon(),
+            .DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        }
+        AddHandler tsbGenerateInfinityLights.Click, AddressOf GenerateInfinityLights_Click
+        AddHandler tsmiAddNewBulbFrame.EnabledChanged,
+            Sub() tsbGenerateInfinityLights.Enabled = tsmiAddNewBulbFrame.Enabled
+        Dim toolbarIndex As Integer = tsB2SDesigner.Items.IndexOf(tsbAddSnippetEnhanced) + 1
+        tsB2SDesigner.Items.Insert(toolbarIndex, tsbGenerateInfinityLights)
+        B2SProMainToolbar.Apply(tsB2SDesigner)
     End Sub
 
 #End Region
@@ -2180,6 +2207,8 @@ Public Class formDesigner
 
         target.LightPurpose = source.LightPurpose
         target.ArtworkPixelLighting = source.ArtworkPixelLighting
+        target.DynamicFrontLighting = source.DynamicFrontLighting
+        target.DynamicFrontShowLight = source.DynamicFrontShowLight
         target.GlowSpread = source.GlowSpread
         target.GlowSoftness = source.GlowSoftness
         target.GlowIntensity = source.GlowIntensity
@@ -3016,6 +3045,212 @@ Public Class formDesigner
             ' add bulb
             Backglass.currentTabPage.Illumination_AddBulb()
         End If
+    End Sub
+
+    Private Sub GenerateInfinityLights_Click(ByVal sender As Object, ByVal e As EventArgs)
+        If Backglass.currentTabPage Is Nothing OrElse Backglass.currentData Is Nothing Then Return
+
+        Dim boundary As Illumination.BulbInfo = Backglass.currentTabPage.SelectedBulb
+        If boundary Is Nothing OrElse boundary.IsImageSnippit OrElse boundary.Size.Width < 40 OrElse boundary.Size.Height < 40 Then
+            MessageBox.Show(Me,
+                            "Add or select one regular light box and size it around the area where the infinity lights belong. That selected box defines the outer boundary.",
+                            "Generate Infinity Lights", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        Dim boundaryRectangle As New Rectangle(boundary.Location, boundary.Size)
+        Dim background As Image = If(boundary.ParentForm = eParentForm.DMD, Backglass.currentData.DMDImage, Backglass.currentData.Image)
+        Dim selectionArtwork As Bitmap = Backglass.currentTabPage.CurrentPictureBox.CreateLayeredPreviewImageForBulbs(
+            New Generic.List(Of Illumination.BulbInfo) From {boundary}, Nothing)
+        Using selectionArtwork
+        Using editor As New formInfinityLights(boundaryRectangle, background, String.Empty, boundary, selectionArtwork)
+            If editor.ShowDialog(Me) <> DialogResult.OK Then Return
+            Dim infinitySettings As Illumination.BulbInfo = editor.SettingsBulb
+
+            Dim targetBulbs As Illumination.BulbCollection = If(boundary.ParentForm = eParentForm.DMD,
+                                                                 Backglass.currentData.DMDBulbs,
+                                                                 Backglass.currentData.Bulbs)
+            Dim groupNumber As Integer = 1
+            Dim groupName As String
+            Do
+                groupName = "Infinity Lights " & groupNumber.ToString()
+                groupNumber += 1
+            Loop While Backglass.currentData.Animations.Any(Function(item) item.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase)) OrElse
+                       targetBulbs.Any(Function(item) item.Name.StartsWith(groupName & " Bulb ", StringComparison.OrdinalIgnoreCase))
+
+            Dim generatedIndex As Integer = 0
+            Dim generatedBulbs As New List(Of Illumination.BulbInfo)()
+            Dim alignedBulbCount As Integer = InfinityLightGenerator.PerimeterBulbCount(New Rectangle(Point.Empty, boundaryRectangle.Size), editor.Spacing)
+            Dim pictureAnimationPrefix As String = "PA_InfinityLights" & (groupNumber - 1).ToString() & "_"
+            Dim effectSettings As List(Of InfinityEffectSetting) = editor.Effects
+            Dim serializedSettings As String = editor.SerializeSettings()
+            Dim effectFrames As New List(Of List(Of Illumination.BulbInfo))()
+            Dim uniqueFrames As New Dictionary(Of String, Illumination.BulbInfo)(StringComparer.Ordinal)
+            Dim baseInterval As Integer = effectSettings(0).Speed
+            If editor.ShowAllBulbs Then
+                Dim baseBulb As New Illumination.BulbInfo() With {
+                    .Name = "InfinityLights" & (groupNumber - 1).ToString() & "_Base",
+                    .Location = boundaryRectangle.Location,
+                    .Size = boundaryRectangle.Size,
+                    .ParentForm = boundary.ParentForm,
+                    .IsImageSnippit = True,
+                    .Image = InfinityLightGenerator.CreateStaticBulbLayer(boundaryRectangle.Size, editor.Depth, editor.DepthInset,
+                                                                          alignedBulbCount, editor.BulbSize),
+                    .InitialState = 2,
+                    .Visible = True,
+                    .DualMode = boundary.DualMode,
+                    .ZOrder = boundary.ZOrder
+                }
+                CopyInfinityMaskSettings(infinitySettings, baseBulb)
+                baseBulb.SnippitInfo.Brightness = 100
+                baseBulb.SnippitInfo.InfinityLightsGroup = groupName
+                baseBulb.SnippitInfo.InfinityLightsSettings = serializedSettings
+                targetBulbs.Add(baseBulb)
+                generatedBulbs.Add(baseBulb)
+                Undo.AddEntry(New Undo.UndoEntry(Undo.Type.BulbAdded, baseBulb, boundary.ParentForm = eParentForm.DMD))
+            End If
+            For Each effectSetting As InfinityEffectSetting In effectSettings
+                baseInterval = InfinityLightGenerator.GreatestCommonDivisor(baseInterval, effectSetting.Speed)
+                Dim frames As New List(Of Illumination.BulbInfo)()
+                Dim animationFrameCount As Integer = InfinityLightGenerator.EffectFrameCount(effectSetting.Effect, editor.Depth, alignedBulbCount)
+                For phase As Integer = 0 To animationFrameCount - 1
+                    Dim renderedFrame As Bitmap = InfinityLightGenerator.CreateAnimatedFrameImage(boundaryRectangle.Size,
+                                                                                                   editor.Depth,
+                                                                                                   editor.DepthInset,
+                                                                                                   alignedBulbCount,
+                                                                                                   editor.BulbSize,
+                                                                                                   editor.Kelvin,
+                                                                                                   editor.BulbColor,
+                                                                                                   effectSetting.Effect,
+                                                                                                   phase,
+                                                                                                   animationFrameCount,
+                                                                                                   editor.RowsLit,
+                                                                                                   editor.EvenlySpacedLines,
+                                                                                                   editor.Brightness,
+                                                                                                   editor.ColorStrength,
+                                                                                                    False,
+                                                                                                    editor.GlowRadius,
+                                                                                                    editor.EdgeSoftness,
+                                                                                                    editor.OutwardDiffusion)
+                    Dim visualKey As String = InfinityLightGenerator.VisualDigest(renderedFrame)
+                    Dim existingFrame As Illumination.BulbInfo = Nothing
+                    If uniqueFrames.TryGetValue(visualKey, existingFrame) Then
+                        renderedFrame.Dispose()
+                        frames.Add(existingFrame)
+                        Continue For
+                    End If
+                    generatedIndex += 1
+                    Dim bulb As New Illumination.BulbInfo() With {
+                        .Name = pictureAnimationPrefix & generatedIndex.ToString("000"),
+                        .Location = boundaryRectangle.Location,
+                        .Size = boundaryRectangle.Size,
+                        .ParentForm = boundary.ParentForm,
+                        .IsImageSnippit = True,
+                        .Image = renderedFrame,
+                        .InitialState = 0,
+                        .Visible = True,
+                        .DualMode = boundary.DualMode,
+                        .ZOrder = boundary.ZOrder
+                    }
+                    CopyInfinityMaskSettings(infinitySettings, bulb)
+                    bulb.SnippitInfo.Brightness = 100
+                    bulb.SnippitInfo.InfinityLightsGroup = groupName
+                    bulb.SnippitInfo.InfinityLightsSettings = serializedSettings
+                    targetBulbs.Add(bulb)
+                    generatedBulbs.Add(bulb)
+                    frames.Add(bulb)
+                    uniqueFrames.Add(visualKey, bulb)
+                    Undo.AddEntry(New Undo.UndoEntry(Undo.Type.BulbAdded, bulb, boundary.ParentForm = eParentForm.DMD))
+                Next
+                effectFrames.Add(frames)
+            Next
+
+            If generatedBulbs.Count = 0 Then
+                For Each bulb As Illumination.BulbInfo In generatedBulbs
+                    targetBulbs.Remove(bulb)
+                    If bulb.Image IsNot Nothing Then bulb.Image.Dispose()
+                Next
+                MessageBox.Show(Me, "The selected area is too small for those bulb and depth settings.", "Generate Infinity Lights", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            targetBulbs.Remove(boundary)
+            Undo.AddEntry(New Undo.UndoEntry(Undo.Type.BulbRemoved, boundary))
+
+            Dim generatedAnimation As New Animation.AnimationHeader() With {
+                .Name = groupName,
+                .DualMode = boundary.DualMode,
+                .Interval = baseInterval,
+                .Loops = 0,
+                .StartAnimationAtBackglassStartup = True,
+                .LightsStateAtAnimationStart = Animation.AnimationHeader.eLightsStateAtAnimationStart.InvolvedLightsOff,
+                .LightsStateAtAnimationEnd = Animation.AnimationHeader.eLightsStateAtAnimationEnd.InvolvedLightsOff,
+                .AnimationStopBehaviour = Animation.AnimationHeader.eAnimationStopBehaviour.StopImmediatelly,
+                .BringToFront = False
+            }
+            BuildInfinityAnimationSteps(generatedAnimation, effectSettings, effectFrames, baseInterval)
+            Backglass.currentData.Animations.Add(generatedAnimation)
+            Backglass.currentData.IsDirty = True
+            Backglass.currentTabPage.Mouse.SelectedBulb = generatedBulbs(0)
+            Backglass.currentTabPage.RefreshIllumination()
+            Backglass.currentTabPage.Invalidate()
+            LoadToolIlluminationForm()
+        End Using
+        End Using
+    End Sub
+
+    Private Shared Sub BuildInfinityAnimationSteps(ByVal animation As Animation.AnimationHeader,
+                                                    ByVal effectSettings As List(Of InfinityEffectSetting),
+                                                    ByVal effectFrames As List(Of List(Of Illumination.BulbInfo)),
+                                                    ByVal baseInterval As Integer)
+        Dim playback As New List(Of KeyValuePair(Of Illumination.BulbInfo, Integer))()
+        For effectIndex As Integer = 0 To effectSettings.Count - 1
+            Dim intervalMultiplier As Integer = Math.Max(1, effectSettings(effectIndex).Speed \ baseInterval)
+            For cycle As Integer = 1 To effectSettings(effectIndex).Cycles
+                For Each frame As Illumination.BulbInfo In effectFrames(effectIndex)
+                    If playback.Count > 0 AndAlso Object.ReferenceEquals(playback(playback.Count - 1).Key, frame) Then
+                        Dim combinedWait As Integer = playback(playback.Count - 1).Value + intervalMultiplier
+                        playback(playback.Count - 1) = New KeyValuePair(Of Illumination.BulbInfo, Integer)(frame, combinedWait)
+                    Else
+                        playback.Add(New KeyValuePair(Of Illumination.BulbInfo, Integer)(frame, intervalMultiplier))
+                    End If
+                Next
+            Next
+        Next
+
+        animation.AnimationSteps.Clear()
+        For phase As Integer = 0 To playback.Count - 1
+            Dim previousPhase As Integer = If(phase = 0, playback.Count - 1, phase - 1)
+            Dim sameAsPrevious As Boolean = Object.ReferenceEquals(playback(phase).Key, playback(previousPhase).Key)
+            animation.AnimationSteps.Add(New Animation.AnimationStep() With {
+                .Step = phase + 1,
+                .On = playback(phase).Key.Name,
+                .WaitLoopsAfterOn = 0,
+                .Off = If(sameAsPrevious, String.Empty, playback(previousPhase).Key.Name),
+                .WaitLoopsAfterOff = playback(phase).Value
+            })
+        Next
+    End Sub
+
+    Private Shared Sub CopyInfinityMaskSettings(ByVal source As Illumination.BulbInfo,
+                                                 ByVal target As Illumination.BulbInfo)
+        If source Is Nothing OrElse target Is Nothing Then Return
+        target.SelectionMaskData = source.SelectionMaskData
+        target.SelectionTolerance = source.SelectionTolerance
+        target.SelectionFeather = source.SelectionFeather
+        target.MaskRadius = source.MaskRadius
+        target.MaskSmartRadius = source.MaskSmartRadius
+        target.MaskSmooth = source.MaskSmooth
+        target.MaskFeather = source.MaskFeather
+        target.MaskContrast = source.MaskContrast
+        target.MaskShiftEdge = source.MaskShiftEdge
+        target.GlowSpread = source.GlowSpread
+        target.GlowSoftness = source.GlowSoftness
+        target.GlowFalloff = source.GlowFalloff
+        target.InFrontOfGlobalMask = source.InFrontOfGlobalMask
+        target.GlobalMaskLayerExplicit = source.GlobalMaskLayerExplicit
+        target.LightBehindCanvas = source.LightBehindCanvas
+        target.SnippitInfo.BehindCanvas = source.SnippitInfo.BehindCanvas OrElse source.LightBehindCanvas
     End Sub
     Private Sub AddNewFlasher_Click(ByVal sender As Object, ByVal e As EventArgs)
         If Backglass.currentTabPage Is Nothing Then Return
@@ -3897,6 +4132,10 @@ Public Class formDesigner
         Dim selected As Illumination.BulbInfo = Backglass.currentTabPage.SelectedBulb
         objectSettingsDialogOpen = True
         Try
+            If selected.IsImageSnippit AndAlso Not String.IsNullOrEmpty(selected.SnippitInfo.InfinityLightsSettings) Then
+                EditSelectedInfinityLights(selected)
+                Return
+            End If
             If selected.IsImageSnippit AndAlso selected.IlluMode <> Illumination.eIlluMode.Flasher Then
                 OpenSelectedSnippitProperties(selected)
                 Return
@@ -3924,6 +4163,142 @@ Public Class formDesigner
         Finally
             objectSettingsDialogOpen = False
         End Try
+    End Sub
+
+    Private Sub EditSelectedInfinityLights(ByVal selected As Illumination.BulbInfo)
+        If selected Is Nothing OrElse Backglass.currentData Is Nothing OrElse Backglass.currentTabPage Is Nothing Then Return
+        Dim groupName As String = selected.SnippitInfo.InfinityLightsGroup
+        If String.IsNullOrEmpty(groupName) Then Return
+
+        Dim targetBulbs As Illumination.BulbCollection = If(selected.ParentForm = eParentForm.DMD,
+                                                             Backglass.currentData.DMDBulbs,
+                                                             Backglass.currentData.Bulbs)
+        Dim oldFrames As List(Of Illumination.BulbInfo) = targetBulbs.Where(
+            Function(item) item.IsImageSnippit AndAlso item.SnippitInfo.InfinityLightsGroup.Equals(groupName, StringComparison.OrdinalIgnoreCase)).ToList()
+        If oldFrames.Count = 0 Then Return
+
+        Dim boundaryRectangle As New Rectangle(selected.Location, selected.Size)
+        Dim background As Image = If(selected.ParentForm = eParentForm.DMD, Backglass.currentData.DMDImage, Backglass.currentData.Image)
+        Dim selectionArtwork As Bitmap = Backglass.currentTabPage.CurrentPictureBox.CreateLayeredPreviewImageForBulbs(oldFrames, Nothing)
+        Using selectionArtwork
+        Using editor As New formInfinityLights(boundaryRectangle, background, selected.SnippitInfo.InfinityLightsSettings, selected, selectionArtwork)
+            If editor.ShowDialog(Me) <> DialogResult.OK Then Return
+
+            Dim effectSettings As List(Of InfinityEffectSetting) = editor.Effects
+            Dim serializedSettings As String = editor.SerializeSettings()
+            Dim infinitySettings As Illumination.BulbInfo = editor.SettingsBulb
+            Dim alignedBulbCount As Integer = InfinityLightGenerator.PerimeterBulbCount(New Rectangle(Point.Empty, boundaryRectangle.Size), editor.Spacing)
+            Dim existingAnimationFrame As Illumination.BulbInfo = oldFrames.FirstOrDefault(
+                Function(item) item.Name.StartsWith("PA_", StringComparison.OrdinalIgnoreCase))
+            Dim existingAnimationName As String = If(existingAnimationFrame Is Nothing, selected.Name, existingAnimationFrame.Name)
+            Dim separator As Integer = existingAnimationName.LastIndexOf("_"c)
+            Dim pictureAnimationPrefix As String = If(separator >= 0, existingAnimationName.Substring(0, separator + 1), "PA_InfinityLightsEdit_")
+            Dim generatedIndex As Integer = 0
+            Dim replacementFrames As New List(Of Illumination.BulbInfo)()
+            Dim effectFrames As New List(Of List(Of Illumination.BulbInfo))()
+            Dim uniqueFrames As New Dictionary(Of String, Illumination.BulbInfo)(StringComparer.Ordinal)
+            Dim baseInterval As Integer = effectSettings(0).Speed
+
+            Try
+                If editor.ShowAllBulbs Then
+                    Dim baseFrame As New Illumination.BulbInfo() With {
+                        .Name = pictureAnimationPrefix.Substring(3).TrimEnd("_"c) & "_Base",
+                        .Location = boundaryRectangle.Location,
+                        .Size = boundaryRectangle.Size,
+                        .ParentForm = selected.ParentForm,
+                        .IsImageSnippit = True,
+                        .Image = InfinityLightGenerator.CreateStaticBulbLayer(boundaryRectangle.Size, editor.Depth, editor.DepthInset,
+                                                                              alignedBulbCount, editor.BulbSize),
+                        .InitialState = 2,
+                        .Visible = True,
+                        .DualMode = selected.DualMode,
+                        .ZOrder = selected.ZOrder
+                    }
+                    CopyInfinityMaskSettings(infinitySettings, baseFrame)
+                    baseFrame.SnippitInfo.Brightness = 100
+                    baseFrame.SnippitInfo.InfinityLightsGroup = groupName
+                    baseFrame.SnippitInfo.InfinityLightsSettings = serializedSettings
+                    replacementFrames.Add(baseFrame)
+                End If
+                For Each effectSetting As InfinityEffectSetting In effectSettings
+                    baseInterval = InfinityLightGenerator.GreatestCommonDivisor(baseInterval, effectSetting.Speed)
+                    Dim frames As New List(Of Illumination.BulbInfo)()
+                    Dim animationFrameCount As Integer = InfinityLightGenerator.EffectFrameCount(effectSetting.Effect, editor.Depth, alignedBulbCount)
+                    For phase As Integer = 0 To animationFrameCount - 1
+                        Dim renderedFrame As Bitmap = InfinityLightGenerator.CreateAnimatedFrameImage(boundaryRectangle.Size, editor.Depth, editor.DepthInset,
+                                                                                                      alignedBulbCount, editor.BulbSize, editor.Kelvin,
+                                                                                                      editor.BulbColor, effectSetting.Effect, phase,
+                                                                                                      animationFrameCount, editor.RowsLit,
+                                                                                                       editor.EvenlySpacedLines, editor.Brightness, editor.ColorStrength, False,
+                                                                                                       editor.GlowRadius, editor.EdgeSoftness, editor.OutwardDiffusion)
+                        Dim visualKey As String = InfinityLightGenerator.VisualDigest(renderedFrame)
+                        Dim existingFrame As Illumination.BulbInfo = Nothing
+                        If uniqueFrames.TryGetValue(visualKey, existingFrame) Then
+                            renderedFrame.Dispose()
+                            frames.Add(existingFrame)
+                            Continue For
+                        End If
+                        generatedIndex += 1
+                        Dim frame As New Illumination.BulbInfo() With {
+                            .Name = pictureAnimationPrefix & generatedIndex.ToString("000"),
+                            .Location = boundaryRectangle.Location,
+                            .Size = boundaryRectangle.Size,
+                            .ParentForm = selected.ParentForm,
+                            .IsImageSnippit = True,
+                            .Image = renderedFrame,
+                            .InitialState = 0,
+                            .Visible = True,
+                            .DualMode = selected.DualMode,
+                            .ZOrder = selected.ZOrder
+                        }
+                        CopyInfinityMaskSettings(infinitySettings, frame)
+                        frame.SnippitInfo.Brightness = 100
+                        frame.SnippitInfo.InfinityLightsGroup = groupName
+                        frame.SnippitInfo.InfinityLightsSettings = serializedSettings
+                        replacementFrames.Add(frame)
+                        frames.Add(frame)
+                        uniqueFrames.Add(visualKey, frame)
+                    Next
+                    effectFrames.Add(frames)
+                Next
+            Catch
+                For Each frame As Illumination.BulbInfo In replacementFrames
+                    If frame.Image IsNot Nothing Then frame.Image.Dispose()
+                Next
+                Throw
+            End Try
+
+            If replacementFrames.Count = 0 Then Return
+            For Each oldFrame As Illumination.BulbInfo In oldFrames
+                targetBulbs.Remove(oldFrame)
+                If oldFrame.Image IsNot Nothing Then oldFrame.Image.Dispose()
+            Next
+            For Each frame As Illumination.BulbInfo In replacementFrames
+                targetBulbs.Add(frame)
+            Next
+
+            Dim infinityAnimation As Animation.AnimationHeader = Backglass.currentData.Animations.FirstOrDefault(
+                Function(item) item.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase))
+            If infinityAnimation Is Nothing Then
+                infinityAnimation = New Animation.AnimationHeader() With {
+                    .Name = groupName, .DualMode = selected.DualMode, .Loops = 0,
+                    .StartAnimationAtBackglassStartup = True,
+                    .LightsStateAtAnimationStart = Animation.AnimationHeader.eLightsStateAtAnimationStart.InvolvedLightsOff,
+                    .LightsStateAtAnimationEnd = Animation.AnimationHeader.eLightsStateAtAnimationEnd.InvolvedLightsOff,
+                    .AnimationStopBehaviour = Animation.AnimationHeader.eAnimationStopBehaviour.StopImmediatelly
+                }
+                Backglass.currentData.Animations.Add(infinityAnimation)
+            End If
+            infinityAnimation.Interval = baseInterval
+            BuildInfinityAnimationSteps(infinityAnimation, effectSettings, effectFrames, baseInterval)
+
+            Backglass.currentData.IsDirty = True
+            Backglass.currentTabPage.Mouse.SelectedBulb = replacementFrames(0)
+            Backglass.currentTabPage.RefreshIllumination()
+            Backglass.currentTabPage.Invalidate()
+            LoadToolIlluminationForm()
+        End Using
+        End Using
     End Sub
 
     Private Sub OpenSelectedSnippitProperties(ByVal selected As Illumination.BulbInfo)
@@ -4336,3 +4711,4 @@ Public Class formDesigner
 
 
 End Class
+

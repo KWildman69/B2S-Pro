@@ -190,6 +190,7 @@ Public Class Save
                         score.ID = CInt(innerNode.Attributes("ID").InnerText)
                         score.ReelType = innerNode.Attributes("ReelType").InnerText
                         If innerNode.Attributes("KeepDigitAspect") IsNot Nothing Then score.KeepDigitAspect = (innerNode.Attributes("KeepDigitAspect").InnerText = "1")
+                        If innerNode.Attributes("ReelDigitWidth") IsNot Nothing Then score.ReelDigitWidth = Math.Max(0, CInt(innerNode.Attributes("ReelDigitWidth").InnerText))
                         score.ReelColor = _backglassData.ReelColor
                         If innerNode.Attributes("ReelColor") IsNot Nothing Then
                             score.ReelColor = String2Color(innerNode.Attributes("ReelColor").InnerText.Replace(";", "."))
@@ -316,6 +317,8 @@ Public Class Save
                                                                      "ArtworkPixelLighting",
                                                                      If(defaultArtworkPixelLighting, 1, 0),
                                                                      0, 1) = 1)
+                        bulb.DynamicFrontLighting = (ReadIntAttribute(innerNode, "DynamicFrontLighting", 0, 0, 1) = 1)
+                        bulb.DynamicFrontShowLight = (ReadIntAttribute(innerNode, "DynamicFrontShowLight", 0, 0, 1) = 1)
                         bulb.BlinkEnabled = (ReadIntAttribute(innerNode, "BlinkEnabled", 0, 0, 1) = 1)
                         bulb.BlinkInterval = ReadIntAttribute(innerNode, "BlinkInterval", 500, 1, 60000)
                         ' Read enhanced/flasher values defensively.  Older projects and interrupted
@@ -401,6 +404,8 @@ Public Class Save
                         End If
                         bulb.SnippitInfo.Brightness = ReadIntAttribute(innerNode, "SnippitBrightness", 100, 0, 200)
                         bulb.SnippitInfo.BehindCanvas = (ReadIntAttribute(innerNode, "SnippitBehindCanvas", 0, 0, 1) = 1)
+                        bulb.SnippitInfo.InfinityLightsGroup = If(innerNode.Attributes("InfinityLightsGroup") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsGroup").InnerText)
+                        bulb.SnippitInfo.InfinityLightsSettings = If(innerNode.Attributes("InfinityLightsSettings") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsSettings").InnerText)
                         bulb.SnippitInfo.MotionPathDuration = ReadIntAttribute(innerNode, "MotionPathDuration", 3000, 250, 30000)
                         bulb.SnippitInfo.MotionPathLoop = (ReadIntAttribute(innerNode, "MotionPathLoop", 0, 0, 1) = 1)
                         bulb.SnippitInfo.MotionPathSwitchID = ReadIntAttribute(innerNode, "MotionPathSwitchID", 0, 0, 255)
@@ -733,6 +738,7 @@ Public Class Save
                             nodeScore.SetAttribute("Parent", If((score.Key >= 1000000), "DMD", "Backglass"))
                             nodeScore.SetAttribute("ReelType", .ReelType.ToString())
                             If ReelLibraryChanges.KeepDigitAspect(score.Value) Then nodeScore.SetAttribute("KeepDigitAspect", "1")
+                            If .ReelDigitWidth > 0 Then nodeScore.SetAttribute("ReelDigitWidth", .ReelDigitWidth.ToString())
                             If .ReelColor <> Nothing Then
                                 nodeScore.SetAttribute("ReelColor", Color2String(.ReelColor))
                             End If
@@ -820,6 +826,8 @@ Public Class Save
                             nodeBulb.SetAttribute("Intensity", .Intensity.ToString())
                             nodeBulb.SetAttribute("LightPurpose", CInt(.LightPurpose).ToString())
                             nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
+                            nodeBulb.SetAttribute("DynamicFrontLighting", If(.DynamicFrontLighting, "1", "0"))
+                            nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
                             nodeBulb.SetAttribute("BlinkEnabled", If(.BlinkEnabled, "1", "0"))
                             nodeBulb.SetAttribute("BlinkInterval", Math.Max(1, Math.Min(60000, .BlinkInterval)).ToString())
                             nodeBulb.SetAttribute("GlowSpread", .GlowSpread.ToString())
@@ -870,6 +878,8 @@ Public Class Save
                             nodeBulb.SetAttribute("SnippitType", CInt(.SnippitInfo.SnippitType).ToString())
                             nodeBulb.SetAttribute("SnippitBrightness", Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)).ToString())
                             nodeBulb.SetAttribute("SnippitBehindCanvas", If(.SnippitInfo.BehindCanvas, "1", "0"))
+                            If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup) Then nodeBulb.SetAttribute("InfinityLightsGroup", .SnippitInfo.InfinityLightsGroup)
+                            If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsSettings) Then nodeBulb.SetAttribute("InfinityLightsSettings", .SnippitInfo.InfinityLightsSettings)
                             If .IsImageSnippit Then
                                 nodeBulb.SetAttribute("PivotAnimation", If(.SnippitInfo.PivotAnimationEnabled, "1", "0"))
                                 nodeBulb.SetAttribute("PivotX", .SnippitInfo.PivotX.ToString(Globalization.CultureInfo.InvariantCulture))

@@ -43,6 +43,13 @@
         ' flashers without changing their lamp identity or trigger behavior.
         ' False preserves imported legacy directB2S illumination exactly.
         Public ArtworkPixelLighting As Boolean = False
+        ' Opt-in runtime lighting for moving artwork. The saved light field is
+        ' applied to the snippet's current frame instead of exporting one frozen
+        ' illuminated snapshot. False preserves every existing backglass path.
+        Public DynamicFrontLighting As Boolean = False
+        ' Optionally keep the authored light visible through its normal Quick
+        ' Selection mask while dynamic lighting redraws moving snippets above it.
+        Public DynamicFrontShowLight As Boolean = False
 
         Public ReadOnly Property UsesArtworkPixelRenderer As Boolean
             Get
@@ -229,6 +236,11 @@
         Public PhysicsLauncherRandomAngle As Single = 0.0F
         Public PhysicsLauncherRandomStrength As Single = 0.0F
         Public PhysicsLauncherCaptureRadius As Single = 45.0F
+
+        ' Present only on frames created by the Infinity Lights generator.
+        ' Empty values preserve every normal and legacy snippet path.
+        Public InfinityLightsGroup As String = String.Empty
+        Public InfinityLightsSettings As String = String.Empty
 
         Public Function UpgradeLegacySelfRotation(ByVal triggerID As Integer,
                                                   ByVal triggerType As eRomIDType) As Boolean

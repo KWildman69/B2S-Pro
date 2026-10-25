@@ -82,6 +82,16 @@ Public Class formVPM
     End Function
 
     Private Function B2SServerExecutablePath() As String
+        Dim designerDirectory As String = My.Application.Info.DirectoryPath
+        Dim sameDirectoryExe As String = IO.Path.Combine(designerDirectory, "B2SBackglassServerEXE.exe")
+        If IO.File.Exists(sameDirectoryExe) Then Return sameDirectoryExe
+
+        Dim visualPinballDirectory As String = IO.Path.GetDirectoryName(designerDirectory)
+        If Not String.IsNullOrEmpty(visualPinballDirectory) Then
+            Dim siblingServerExe As String = IO.Path.Combine(visualPinballDirectory, "B2SServer", "B2SBackglassServerEXE.exe")
+            If IO.File.Exists(siblingServerExe) Then Return siblingServerExe
+        End If
+
         Try
             Using progIdKey As RegistryKey = Registry.ClassesRoot.OpenSubKey("B2S.Server\CLSID")
                 If progIdKey Is Nothing Then Return String.Empty

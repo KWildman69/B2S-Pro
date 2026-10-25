@@ -77,6 +77,126 @@ Namespace Illumination
                                 transmitTransparentCanvas)
         End Function
 
+        ' Infinity lights are stored as transparent image snippets. Reuse the
+        ' flasher light-field math on their existing alpha instead of inventing
+        ' a second glow model. A zeroed control set is an exact no-op so older
+        ' Infinity settings retain their current appearance.
+        Public Shared Function ApplyTransparentGlow(ByVal source As Bitmap,
+                                                    ByVal glowSpread As Integer,
+                                                    ByVal edgeSoftness As Integer,
+                                                    ByVal outwardDiffusion As Integer) As Bitmap
+            If source Is Nothing Then Return Nothing
+            If glowSpread <= 0 AndAlso edgeSoftness <= 0 AndAlso outwardDiffusion <= 0 Then Return New Bitmap(source)
+
+            Dim width As Integer = source.Width
+            Dim height As Integer = source.Height
+            If width <= 0 OrElse height <= 0 Then Return New Bitmap(source)
+
+            Dim bounds As New Rectangle(0, 0, width, height)
+            Dim sourceData As BitmapData = source.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
+            Dim sourceRaw(Math.Abs(sourceData.Stride) * height - 1) As Byte
+            Dim alpha(width * height - 1) As Byte
+            Dim weightedRed As Long = 0
+            Dim weightedGreen As Long = 0
+            Dim weightedBlue As Long = 0
+            Dim totalWeight As Long = 0
+            Try
+                Marshal.Copy(sourceData.Scan0, sourceRaw, 0, sourceRaw.Length)
+                Dim stride As Integer = Math.Abs(sourceData.Stride)
+                For y As Integer = 0 To height - 1
+                    Dim row As Integer = If(sourceData.Stride >= 0, y, height - 1 - y) * stride
+                    For x As Integer = 0 To width - 1
+                        Dim pixel As Integer = row + x * 4
+                        Dim value As Byte = sourceRaw(pixel + 3)
+                        alpha(y * width + x) = value
+                        If value > 0 Then
+                            weightedBlue += CLng(sourceRaw(pixel)) * value
+                            weightedGreen += CLng(sourceRaw(pixel + 1)) * value
+                            weightedRed += CLng(sourceRaw(pixel + 2)) * value
+                            totalWeight += value
+                        End If
+                    Next
+                Next
+            Finally
+                source.UnlockBits(sourceData)
+            End Try
+
+            Dim field As Byte() = BuildSingleLightField(alpha, width, height, glowSpread, outwardDiffusion, edgeSoftness)
+            If field Is Nothing Then Return New Bitmap(source)
+
+            Dim haloRed As Integer = If(totalWeight > 0, CInt(weightedRed \ totalWeight), 255)
+            Dim haloGreen As Integer = If(totalWeight > 0, CInt(weightedGreen \ totalWeight), 255)
+            Dim haloBlue As Integer = If(totalWeight > 0, CInt(weightedBlue \ totalWeight), 255)
+            Dim result As New Bitmap(width, height, PixelFormat.Format32bppArgb)
+            Dim resultData As BitmapData = result.LockBits(bounds, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb)
+            Try
+                Dim resultStride As Integer = Math.Abs(resultData.Stride)
+                Dim resultRaw(resultStride * height - 1) As Byte
+                Dim sourceStride As Integer = sourceRaw.Length \ height
+                For y As Integer = 0 To height - 1
+                    Dim sourceRow As Integer = If(sourceData.Stride >= 0, y, height - 1 - y) * sourceStride
+                    Dim resultRow As Integer = If(resultData.Stride >= 0, y, height - 1 - y) * resultStride
+                    For x As Integer = 0 To width - 1
+                        Dim sourcePixel As Integer = sourceRow + x * 4
+                        Dim resultPixel As Integer = resultRow + x * 4
+                        Dim originalAlpha As Integer = sourceRaw(sourcePixel + 3)
+                        Dim glowAlpha As Integer = field(y * width + x)
+                        If originalAlpha > 0 Then
+                            resultRaw(resultPixel) = sourceRaw(sourcePixel)
+                            resultRaw(resultPixel + 1) = sourceRaw(sourcePixel + 1)
+                            resultRaw(resultPixel + 2) = sourceRaw(sourcePixel + 2)
+                            resultRaw(resultPixel + 3) = CByte(Math.Max(originalAlpha, glowAlpha))
+                        ElseIf glowAlpha > 0 Then
+                            resultRaw(resultPixel) = CByte(haloBlue)
+                            resultRaw(resultPixel + 1) = CByte(haloGreen)
+                            resultRaw(resultPixel + 2) = CByte(haloRed)
+                            resultRaw(resultPixel + 3) = CByte(glowAlpha)
+                        End If
+                    Next
+                Next
+                Marshal.Copy(resultRaw, 0, resultData.Scan0, resultRaw.Length)
+            Finally
+                result.UnlockBits(resultData)
+            End Try
+            Return result
+        End Function
+
+        ' Apply the same Photoshop-style mask controls used by the Flasher menu
+        ' to a decoded full-canvas mask. RGB is left untouched; only alpha changes.
+        Public Shared Sub RefineMaskBitmap(ByVal mask As Bitmap,
+                                           ByVal radius As Integer,
+                                           ByVal smooth As Integer,
+                                           ByVal feather As Integer,
+                                           ByVal shiftEdge As Integer)
+            If mask Is Nothing OrElse mask.Width <= 0 OrElse mask.Height <= 0 Then Return
+            If radius = 0 AndAlso smooth = 0 AndAlso feather = 0 AndAlso shiftEdge = 0 Then Return
+
+            Dim bounds As New Rectangle(0, 0, mask.Width, mask.Height)
+            Dim data As BitmapData = mask.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
+            Try
+                Dim stride As Integer = Math.Abs(data.Stride)
+                Dim raw(stride * mask.Height - 1) As Byte
+                Dim alpha(mask.Width * mask.Height - 1) As Byte
+                Marshal.Copy(data.Scan0, raw, 0, raw.Length)
+                For y As Integer = 0 To mask.Height - 1
+                    Dim row As Integer = If(data.Stride >= 0, y, mask.Height - 1 - y) * stride
+                    For x As Integer = 0 To mask.Width - 1
+                        alpha(y * mask.Width + x) = raw(row + x * 4 + 3)
+                    Next
+                Next
+                ApplyPhotoshopMaskRefinement(alpha, mask.Width, mask.Height, radius, False, smooth, feather, 0, shiftEdge)
+                For y As Integer = 0 To mask.Height - 1
+                    Dim row As Integer = If(data.Stride >= 0, y, mask.Height - 1 - y) * stride
+                    For x As Integer = 0 To mask.Width - 1
+                        raw(row + x * 4 + 3) = alpha(y * mask.Width + x)
+                    Next
+                Next
+                Marshal.Copy(raw, 0, data.Scan0, raw.Length)
+            Finally
+                mask.UnlockBits(data)
+            End Try
+        End Sub
+
         ' Illuminate the real artwork pixels with an existing light alpha field.
         ' This is used by Flasher Light objects that do not have a hand-drawn
         ' Quick Selection mask. The old synthetic light supplies shape/feather
@@ -589,28 +709,62 @@ Namespace Illumination
                                        ByVal radius As Integer)
             If alpha Is Nothing OrElse radius <= 0 Then Return
 
-            Dim current(alpha.Length - 1) As Byte
-            Array.Copy(alpha, current, alpha.Length)
+            ' Repeating a 3x3 maximum dilation N times is exactly one square
+            ' maximum filter with radius N. The separable sliding-window form
+            ' produces the same pixels in two passes.
+            Dim horizontal(alpha.Length - 1) As Byte
+            Dim output(alpha.Length - 1) As Byte
 
-            For pass As Integer = 1 To radius
-                Dim nextPass(current.Length - 1) As Byte
-                For y As Integer = 0 To height - 1
+            Threading.Tasks.Parallel.For(0, height,
+                Sub(y As Integer)
+                    Dim deque(width - 1) As Integer
+                    Dim head As Integer = 0
+                    Dim tail As Integer = -1
+                    Dim nextToAdd As Integer = 0
+                    Dim row As Integer = y * width
                     For x As Integer = 0 To width - 1
-                        Dim maximum As Integer = 0
-                        For yy As Integer = Math.Max(0, y - 1) To Math.Min(height - 1, y + 1)
-                            Dim row As Integer = yy * width
-                            For xx As Integer = Math.Max(0, x - 1) To Math.Min(width - 1, x + 1)
-                                Dim value As Integer = current(row + xx)
-                                If value > maximum Then maximum = value
-                            Next
-                        Next
-                        nextPass(y * width + x) = CByte(maximum)
+                        Dim right As Integer = Math.Min(width - 1, x + radius)
+                        While nextToAdd <= right
+                            While tail >= head AndAlso alpha(row + deque(tail)) <= alpha(row + nextToAdd)
+                                tail -= 1
+                            End While
+                            tail += 1
+                            deque(tail) = nextToAdd
+                            nextToAdd += 1
+                        End While
+                        Dim left As Integer = Math.Max(0, x - radius)
+                        While tail >= head AndAlso deque(head) < left
+                            head += 1
+                        End While
+                        horizontal(row + x) = alpha(row + deque(head))
                     Next
-                Next
-                current = nextPass
-            Next
+                End Sub)
 
-            Array.Copy(current, alpha, alpha.Length)
+            Threading.Tasks.Parallel.For(0, width,
+                Sub(x As Integer)
+                    Dim deque(height - 1) As Integer
+                    Dim head As Integer = 0
+                    Dim tail As Integer = -1
+                    Dim nextToAdd As Integer = 0
+                    For y As Integer = 0 To height - 1
+                        Dim bottom As Integer = Math.Min(height - 1, y + radius)
+                        While nextToAdd <= bottom
+                            While tail >= head AndAlso horizontal(deque(tail) * width + x) <= horizontal(nextToAdd * width + x)
+                                tail -= 1
+                            End While
+                            tail += 1
+                            deque(tail) = nextToAdd
+                            nextToAdd += 1
+                        End While
+                        Dim top As Integer = Math.Max(0, y - radius)
+                        While tail >= head AndAlso deque(head) < top
+                            head += 1
+                        End While
+                        output(y * width + x) = horizontal(deque(head) * width + x)
+                    Next
+                End Sub)
+
+            Array.Copy(output, alpha, alpha.Length)
         End Sub
 
         Private Shared Function BuildTransitionMask(ByVal mask As Byte(),
@@ -944,29 +1098,31 @@ Namespace Illumination
             Dim output(alpha.Length - 1) As Byte
             Dim window As Integer = radius * 2 + 1
 
-            For y As Integer = 0 To height - 1
-                Dim total As Integer = 0
-                For x As Integer = -radius To radius
-                    total += alpha(y * width + Math.Max(0, Math.Min(width - 1, x)))
-                Next
-                For x As Integer = 0 To width - 1
-                    horizontal(y * width + x) = CByte(total \ window)
-                    total += alpha(y * width + Math.Min(width - 1, x + radius + 1))
-                    total -= alpha(y * width + Math.Max(0, x - radius))
-                Next
-            Next
+            Threading.Tasks.Parallel.For(0, height,
+                Sub(y As Integer)
+                    Dim total As Integer = 0
+                    For x As Integer = -radius To radius
+                        total += alpha(y * width + Math.Max(0, Math.Min(width - 1, x)))
+                    Next
+                    For x As Integer = 0 To width - 1
+                        horizontal(y * width + x) = CByte(total \ window)
+                        total += alpha(y * width + Math.Min(width - 1, x + radius + 1))
+                        total -= alpha(y * width + Math.Max(0, x - radius))
+                    Next
+                End Sub)
 
-            For x As Integer = 0 To width - 1
-                Dim total As Integer = 0
-                For y As Integer = -radius To radius
-                    total += horizontal(Math.Max(0, Math.Min(height - 1, y)) * width + x)
-                Next
-                For y As Integer = 0 To height - 1
-                    output(y * width + x) = CByte(total \ window)
-                    total += horizontal(Math.Min(height - 1, y + radius + 1) * width + x)
-                    total -= horizontal(Math.Max(0, y - radius) * width + x)
-                Next
-            Next
+            Threading.Tasks.Parallel.For(0, width,
+                Sub(x As Integer)
+                    Dim total As Integer = 0
+                    For y As Integer = -radius To radius
+                        total += horizontal(Math.Max(0, Math.Min(height - 1, y)) * width + x)
+                    Next
+                    For y As Integer = 0 To height - 1
+                        output(y * width + x) = CByte(total \ window)
+                        total += horizontal(Math.Min(height - 1, y + radius + 1) * width + x)
+                        total -= horizontal(Math.Max(0, y - radius) * width + x)
+                    Next
+                End Sub)
             Array.Copy(output, alpha, alpha.Length)
         End Sub
 

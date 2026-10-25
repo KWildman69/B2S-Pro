@@ -521,6 +521,7 @@ Public Class Mouse
 
     Private currentStartLocation As Point = Nothing
     Private currentStartSize As Size = Nothing
+    Private currentStartReelDigitWidth As Integer = 0
     Private currentMouseLocation As Point = Nothing
     Private dragStarted As Boolean = False
 
@@ -528,6 +529,31 @@ Public Class Mouse
     Private moveParentLocation As Point = Nothing
 
     Public Property factor() As Double = 1
+
+    Private Function ScoreDigitCellSize(ByVal score As ReelAndLED.ScoreInfo, ByVal scoreSize As Size) As Size
+        If score Is Nothing OrElse score.Digits <= 0 OrElse scoreSize.Width <= 1 OrElse scoreSize.Height <= 1 Then Return Size.Empty
+        Dim width As Single = (scoreSize.Width - score.Spacing / 2.0F * (score.Digits - 1)) / score.Digits
+        Do While width * score.Digits > scoreSize.Width - 1 AndAlso width > 1
+            width -= 1
+        Loop
+        Return New Size(Math.Max(1, CInt(width)), Math.Max(1, scoreSize.Height - 1))
+    End Function
+
+    Private Function DisplayedReelDigitWidth(ByVal score As ReelAndLED.ScoreInfo, ByVal scoreSize As Size) As Integer
+        If score Is Nothing Then Return 0
+        If score.ReelDigitWidth > 0 Then Return score.ReelDigitWidth
+        Dim cellSize As Size = ScoreDigitCellSize(score, scoreSize)
+        If cellSize.IsEmpty Then Return 0
+        Dim source As Image = GetReelImage(score.ReelType,
+                                           score.ReelColor,
+                                           Backglass.currentData.UseDream7LEDs,
+                                           Backglass.currentData.D7Thickness,
+                                           Backglass.currentData.D7Shear,
+                                           Backglass.currentData.D7Glow,
+                                           cellSize)
+        If source Is Nothing Then Return 0
+        Return ReelImageSizing.FittedContentSize(source, cellSize).Width
+    End Function
 
     Public ReadOnly Property IsMouseOverGrillRemover() As Boolean
         Get
@@ -910,6 +936,21 @@ Public Class Mouse
                 If current.Size.Width < minsize OrElse current.Size.Height < minsize Then
                     current.Size = New Size(Math.Max(current.Size.Width, minsize), Math.Max(current.Size.Height, minsize))
                 End If
+                ' Proportional imported reel art is normally fitted inside each
+                ' digit cell. A top/bottom handle changes only the digit height;
+                ' retain the width that was visible when the drag started. A
+                ' corner changes both axes, so apply only its per-cell width
+                ' delta. Side-only resizing keeps the established fit behavior.
+                If currentScore IsNot Nothing AndAlso ReelLibraryChanges.KeepDigitAspect(currentScore) AndAlso
+                   (IsMatchingTop OrElse IsMatchingBottom) AndAlso currentStartReelDigitWidth > 0 Then
+                    Dim digitWidth As Integer = currentStartReelDigitWidth
+                    If IsMatchingLeft OrElse IsMatchingRight Then
+                        Dim startCell As Size = ScoreDigitCellSize(currentScore, currentStartSize)
+                        Dim currentCell As Size = ScoreDigitCellSize(currentScore, currentScore.Size)
+                        digitWidth += currentCell.Width - startCell.Width
+                    End If
+                    currentScore.ReelDigitWidth = Math.Max(1, digitWidth)
+                End If
                 ' Imported picture-sequence frames occupy one shared rectangle.
                 ' Resizing any frame therefore resizes and repositions the whole
                 ' automatically selected PA_ group as one editor object.
@@ -1012,7 +1053,13 @@ Public Class Mouse
             If current IsNot Nothing Then
                 currentStartLocation = current.Location
                 currentStartSize = current.Size
-                If currentScore IsNot Nothing Then rotationStartAngle = currentScore.RotationAngle
+                currentStartReelDigitWidth = 0
+                If currentScore IsNot Nothing Then
+                    rotationStartAngle = currentScore.RotationAngle
+                    If ReelLibraryChanges.KeepDigitAspect(currentScore) Then
+                        currentStartReelDigitWidth = DisplayedReelDigitWidth(currentScore, currentStartSize)
+                    End If
+                End If
                 If currentBulb IsNot Nothing AndAlso Not currentBulb.IsImageSnippit Then lightRotationPendingAngle = currentBulb.LightRotationAngle
                 currentMouseLocation = New Point(e.X, e.Y)
                 ' SelectedBulb/SelectedScore already raises SelectedItemClicked when

@@ -275,6 +275,9 @@
     <Compile Include="Forms\formLightDiffusionEditor.vb">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Forms\formInfinityLights.vb">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Forms\formTextSettingsEditor.vb">
       <SubType>Form</SubType>
     </Compile>
@@ -758,6 +761,7 @@
     <EmbeddedResource Include="Resources\B2SProLogo.png">
       <LogicalName>B2SProLogo.png</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources\InfinityBulb.png"><LogicalName>B2SPro.InfinityBulb.png</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="Resources\B2SProHelp.chm">
       <LogicalName>B2SProHelp.chm</LogicalName>
     </EmbeddedResource>

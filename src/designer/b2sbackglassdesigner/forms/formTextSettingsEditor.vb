@@ -204,7 +204,6 @@ Public Class formTextSettingsEditor
 
         previewTimer = New Timer With {.Interval = 90}
         AddHandler previewTimer.Tick, AddressOf PreviewTimer_Tick
-        AddHandler textValue.KeyPress, AddressOf TextValue_KeyPress
         AddHandler textValue.TextChanged, AddressOf TextControlChanged
         AddHandler fontButton.Click, AddressOf ChooseFont_Click
         AddHandler alignLeft.CheckedChanged, AddressOf AlignmentChanged
@@ -324,12 +323,6 @@ Public Class formTextSettingsEditor
             item.TextAlignment = bulb.TextAlignment
         Next
         MarkChanged()
-    End Sub
-
-    Private Sub TextValue_KeyPress(ByVal sender As Object, ByVal e As KeyPressEventArgs)
-        If Not Char.IsLetter(e.KeyChar) Then Return
-        Dim lowerCase As Boolean = (Control.ModifierKeys And Keys.Shift) = Keys.Shift OrElse Control.IsKeyLocked(Keys.CapsLock)
-        e.KeyChar = If(lowerCase, Char.ToLower(e.KeyChar), Char.ToUpper(e.KeyChar))
     End Sub
 
     Private Sub TextControlChanged(ByVal sender As Object, ByVal e As EventArgs)

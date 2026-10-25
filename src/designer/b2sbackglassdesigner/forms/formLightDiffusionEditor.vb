@@ -41,6 +41,7 @@ Public Class formLightDiffusionEditor
     Private flasherDescriptionLabel As Label
     Private flasherSettingsGroup As GroupBox
     Private flasherPreviewModeGroup As GroupBox
+    Private dynamicLightingGroup As GroupBox
     Private flasherQuickSelectButton As Button
     Private flasherCopyButton As Button
     Private flasherPasteButton As Button
@@ -107,6 +108,8 @@ Public Class formLightDiffusionEditor
     Private previewIndependentBlinkSource As Bitmap
     Private blinkerEnabled As CheckBox
     Private blinkerInterval As NumericUpDown
+    Private dynamicFrontLighting As CheckBox
+    Private dynamicFrontShowLight As CheckBox
     Private isUpdatingLivePreview As Boolean = False
     Private isInitializing As Boolean = True
     Private flashColorButton As Button
@@ -122,6 +125,8 @@ Public Class formLightDiffusionEditor
     Private currentProfileIsFlasher As Boolean
     Private ReadOnly originalBlinkEnabled As Boolean
     Private ReadOnly originalBlinkInterval As Integer
+    Private ReadOnly originalDynamicFrontLighting As Boolean
+    Private ReadOnly originalDynamicFrontShowLight As Boolean
     Private ReadOnly isDedicatedFlasher As Boolean
 
     ' Light and flasher slider profiles are now stored independently and persistently.
@@ -178,6 +183,8 @@ Public Class formLightDiffusionEditor
         originalArtworkAdjustmentPasses = bulb.ArtworkAdjustmentPasses
         originalBlinkEnabled = bulb.BlinkEnabled
         originalBlinkInterval = bulb.BlinkInterval
+        originalDynamicFrontLighting = bulb.DynamicFrontLighting
+        originalDynamicFrontShowLight = bulb.DynamicFrontShowLight
 
         ' Opening the new Light editor previews the same artwork-pixel pipeline
         ' as the Flasher editor. Cancel restores legacy lights unchanged; saving
@@ -278,6 +285,15 @@ Public Class formLightDiffusionEditor
             }
             Controls.Add(flasherPreviewModeGroup)
 
+            dynamicLightingGroup = New GroupBox With {
+                .Text = "  DYNAMIC LIGHTING",
+                .Left = 20, .Top = If(isDedicatedFlasher, 694, 710),
+                .Width = 555, .Height = 55,
+                .ForeColor = accent, .BackColor = panelColor,
+                .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
+            }
+            Controls.Add(dynamicLightingGroup)
+
             If isDedicatedFlasher Then
                 Dim flashedButton As New Button With {.Text = "☀  Live Flash", .Left = 18, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat}
                 testPulseButton = New Button With {.Text = "⚡  Test Pulse", .Left = 164, .Top = 27, .Width = 126, .Height = 36, .FlatStyle = FlatStyle.Flat, .ForeColor = accent}
@@ -330,6 +346,25 @@ Public Class formLightDiffusionEditor
                 flasherPreviewModeGroup.Controls.AddRange(New Control() {blinkerEnabled, intervalLabel, blinkerInterval,
                                                                          millisecondsLabel, flashedButton, blinkButton})
             End If
+
+            dynamicFrontLighting = New CheckBox With {
+                .Name = "chkDynamicFrontLighting", .Text = "Dynamic front lighting",
+                .Left = 18, .Top = 20,
+                .Width = 245, .Height = 24, .Checked = bulb.DynamicFrontLighting,
+                .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+            }
+            AddHandler dynamicFrontLighting.CheckedChanged, AddressOf DynamicFrontLightingChanged
+            dynamicLightingGroup.Controls.Add(dynamicFrontLighting)
+
+            dynamicFrontShowLight = New CheckBox With {
+                .Name = "chkDynamicFrontShowLight", .Text = "Show light through mask",
+                .Left = 280, .Top = 20,
+                .Width = 255, .Height = 24, .Checked = bulb.DynamicFrontShowLight,
+                .Enabled = bulb.DynamicFrontLighting,
+                .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+            }
+            AddHandler dynamicFrontShowLight.CheckedChanged, AddressOf DynamicFrontShowLightChanged
+            dynamicLightingGroup.Controls.Add(dynamicFrontShowLight)
 
             If isDedicatedFlasher Then
                 flasherResetButton = New Button With {.Text = "Reset", .Width = 82, .Height = 38, .FlatStyle = FlatStyle.Flat}
@@ -567,7 +602,7 @@ Public Class formLightDiffusionEditor
 
         For Each control As Control In New Control() {
             flasherTitleLabel, flasherDescriptionLabel, flasherSettingsGroup,
-            flasherPreviewModeGroup, saveTheseSettings
+            flasherPreviewModeGroup, dynamicLightingGroup, saveTheseSettings
         }
             If control IsNot Nothing Then flasherLeftPanel.Controls.Add(control)
         Next
@@ -1456,6 +1491,40 @@ Public Class formLightDiffusionEditor
         QueueCanvasPreview()
     End Sub
 
+    Private Sub DynamicFrontLightingChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If isInitializing OrElse dynamicFrontLighting Is Nothing Then Return
+        If dynamicFrontShowLight IsNot Nothing Then
+            dynamicFrontShowLight.Enabled = dynamicFrontLighting.Checked
+            If Not dynamicFrontLighting.Checked Then dynamicFrontShowLight.Checked = False
+        End If
+        For Each selected As Illumination.BulbInfo In selectedBulbs
+            If selected Is Nothing OrElse selected.IsImageSnippit Then Continue For
+            selected.DynamicFrontLighting = dynamicFrontLighting.Checked
+            If selected.DynamicFrontLighting Then
+                selected.ArtworkPixelLighting = True
+                selected.LightBehindCanvas = False
+            End If
+            selected.IsIlluminatedImageDirty = True
+        Next
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
+        QueueLivePreview()
+        QueueCanvasPreview()
+    End Sub
+
+    Private Sub DynamicFrontShowLightChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If isInitializing OrElse dynamicFrontShowLight Is Nothing Then Return
+        For Each selected As Illumination.BulbInfo In selectedBulbs
+            If selected Is Nothing OrElse selected.IsImageSnippit Then Continue For
+            selected.DynamicFrontShowLight = dynamicFrontLighting IsNot Nothing AndAlso
+                                             dynamicFrontLighting.Checked AndAlso
+                                             dynamicFrontShowLight.Checked
+            selected.IsIlluminatedImageDirty = True
+        Next
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
+        QueueLivePreview()
+        QueueCanvasPreview()
+    End Sub
+
     Protected Overrides Sub OnFormClosing(ByVal e As FormClosingEventArgs)
         Dim automaticFlasherCommit As Boolean = bulb.IlluMode = Illumination.eIlluMode.Flasher
         If Me.DialogResult = DialogResult.Cancel AndAlso Not automaticFlasherCommit Then
@@ -1494,6 +1563,8 @@ Public Class formLightDiffusionEditor
             bulb.ArtworkAdjustmentPasses = originalArtworkAdjustmentPasses
             bulb.BlinkEnabled = originalBlinkEnabled
             bulb.BlinkInterval = originalBlinkInterval
+            bulb.DynamicFrontLighting = originalDynamicFrontLighting
+            bulb.DynamicFrontShowLight = originalDynamicFrontShowLight
             If bulb.Image IsNot Nothing AndAlso Not Object.ReferenceEquals(bulb.Image, originalImage) Then bulb.Image.Dispose()
             bulb.Image = If(originalImage IsNot Nothing, New Bitmap(originalImage), Nothing)
             bulb.IsImageSnippit = originalIsImageSnippit
@@ -1540,13 +1611,13 @@ Public Class formLightDiffusionEditor
         ' Selection must not batch-copy unrelated slider values.
         Dim inFrontBeforeQuickSelection As Boolean = bulb.InFrontOfGlobalMask
 
-        ' Match the live preview's unlit artwork, including visible snippets.
+        ' Match the live preview with the selected light on so the illuminated
+        ' area remains visible while the user paints its Quick Selection mask.
         ' Keep full canvas coordinates for the saved selection mask.
-        Dim excludedLights As Generic.List(Of Illumination.BulbInfo) = PreviewLightsExceptSelected()
-        excludedLights.AddRange(selectedBulbs)
+        Dim otherLights As Generic.List(Of Illumination.BulbInfo) = PreviewLightsExceptSelected()
         Dim maskArtwork As Bitmap = Nothing
         Dim canvas As B2SPictureBox = Backglass.currentTabPage.CurrentPictureBox
-        If canvas IsNot Nothing Then maskArtwork = canvas.CreateLayeredPreviewImageForBulbs(excludedLights, Nothing)
+        If canvas IsNot Nothing Then maskArtwork = canvas.CreateLayeredPreviewImageForBulbs(otherLights, selectedBulbs)
         If maskArtwork Is Nothing Then maskArtwork = New Bitmap(bg)
         Using maskArtwork
         Using editor As New formQuickSelection(bulb, maskArtwork)
@@ -1758,6 +1829,11 @@ Public Class formLightDiffusionEditor
                                                                If(bulb.FlasherPulseDuration > 0, bulb.FlasherPulseDuration, 250)))
                 UpdateFlasherPulseAvailability()
             End If
+            If dynamicFrontLighting IsNot Nothing Then dynamicFrontLighting.Checked = bulb.DynamicFrontLighting
+            If dynamicFrontShowLight IsNot Nothing Then
+                dynamicFrontShowLight.Checked = bulb.DynamicFrontShowLight
+                dynamicFrontShowLight.Enabled = bulb.DynamicFrontLighting
+            End If
         Finally
             isInitializing = False
         End Try
@@ -1807,6 +1883,16 @@ Public Class formLightDiffusionEditor
         If transmissionContrast IsNot Nothing Then target.ArtworkContrast = transmissionContrast.Value
         If blinkerEnabled IsNot Nothing Then target.BlinkEnabled = blinkerEnabled.Checked
         If blinkerInterval IsNot Nothing Then target.BlinkInterval = Math.Max(1, Math.Min(60000, CInt(blinkerInterval.Value)))
+        If dynamicFrontLighting IsNot Nothing Then
+            target.DynamicFrontLighting = dynamicFrontLighting.Checked
+            target.DynamicFrontShowLight = target.DynamicFrontLighting AndAlso
+                                           dynamicFrontShowLight IsNot Nothing AndAlso
+                                           dynamicFrontShowLight.Checked
+            If target.DynamicFrontLighting Then
+                target.ArtworkPixelLighting = True
+                target.LightBehindCanvas = False
+            End If
+        End If
         If flasherPulseEnabled IsNot Nothing AndAlso flasherPulseDuration IsNot Nothing Then
             target.FlasherPulseDuration = If(flasherPulseEnabled.Checked,
                                              Math.Max(50, Math.Min(5000, CInt(flasherPulseDuration.Value))),
@@ -1824,13 +1910,15 @@ Public Class formLightDiffusionEditor
     Private NotInheritable Class LightSettingsSnapshot
         Private ReadOnly spread, softness, falloff, glowIntensity, diffusion, temperature, artworkBrightness, artworkContrast, adjustmentPasses, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes, blinkInterval, flasherPulseDuration As Integer
         Private ReadOnly purpose As Illumination.eLightPurpose
-        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting As Boolean
+        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting, dynamicFrontLighting, dynamicFrontShowLight As Boolean
         Private ReadOnly lightColor As Color
 
         Public Sub New(ByVal source As Illumination.BulbInfo)
             spread = source.GlowSpread : softness = source.GlowSoftness : falloff = source.GlowFalloff : glowIntensity = source.GlowIntensity
             diffusion = source.LightDiffusion : temperature = source.LightTemperature : purpose = source.LightPurpose
             artworkPixelLighting = source.ArtworkPixelLighting
+            dynamicFrontLighting = source.DynamicFrontLighting
+            dynamicFrontShowLight = source.DynamicFrontShowLight
             artworkBrightness = source.ArtworkBrightness : artworkContrast = source.ArtworkContrast : adjustmentPasses = source.ArtworkAdjustmentPasses
             maskRadius = source.MaskRadius : smartRadius = source.MaskSmartRadius : maskSmooth = source.MaskSmooth : maskFeather = source.MaskFeather
             maskContrast = source.MaskContrast : maskShiftEdge = source.MaskShiftEdge : inFront = source.InFrontOfGlobalMask : globalMaskLayerExplicit = source.GlobalMaskLayerExplicit
@@ -1843,6 +1931,8 @@ Public Class formLightDiffusionEditor
             target.GlowSpread = spread : target.GlowSoftness = softness : target.GlowFalloff = falloff : target.GlowIntensity = glowIntensity
             target.LightDiffusion = diffusion : target.LightTemperature = temperature : target.LightPurpose = purpose
             target.ArtworkPixelLighting = artworkPixelLighting
+            target.DynamicFrontLighting = dynamicFrontLighting
+            target.DynamicFrontShowLight = dynamicFrontShowLight
             target.ArtworkBrightness = artworkBrightness : target.ArtworkContrast = artworkContrast : target.ArtworkAdjustmentPasses = adjustmentPasses
             target.MaskRadius = maskRadius : target.MaskSmartRadius = smartRadius : target.MaskSmooth = maskSmooth : target.MaskFeather = maskFeather
             target.MaskContrast = maskContrast : target.MaskShiftEdge = maskShiftEdge : target.InFrontOfGlobalMask = inFront : target.GlobalMaskLayerExplicit = globalMaskLayerExplicit

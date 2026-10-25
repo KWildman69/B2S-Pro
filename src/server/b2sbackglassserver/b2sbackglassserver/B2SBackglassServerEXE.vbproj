@@ -110,6 +110,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Classes\B2SAnimation.vb" />
+    <Compile Include="Classes\DynamicArtworkLighting.vb" />
     <Compile Include="Classes\B2SBackglassServerEXE.vb" />
     <Compile Include="Classes\B2SCollectData.vb" />
     <Compile Include="Classes\B2SData.vb" />

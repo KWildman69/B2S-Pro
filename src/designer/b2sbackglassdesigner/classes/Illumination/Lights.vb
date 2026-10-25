@@ -7,6 +7,20 @@ Namespace Illumination
 
     Public Class Lights
 
+        ' Every frame in one Infinity group shares the same authored selection
+        ' mask and refinement values. Keep the last refined local mask so export,
+        ' canvas redraw and reopen do not repeat the identical full-resolution
+        ' blur work for every animation frame.
+        Private Shared ReadOnly refinedInfinityMaskSync As New Object()
+        Private Shared refinedInfinityMask As Bitmap = Nothing
+        Private Shared refinedInfinityMaskData As String = Nothing
+        Private Shared refinedInfinityMaskRectangle As Rectangle
+        Private Shared refinedInfinityMaskSize As Size
+        Private Shared refinedInfinityMaskRadius As Integer
+        Private Shared refinedInfinityMaskSmooth As Integer
+        Private Shared refinedInfinityMaskFeather As Integer
+        Private Shared refinedInfinityMaskShiftEdge As Integer
+
         Public Event ReportProgress(ByVal sender As Object, ByVal e As LightsProgressEventArgs)
         Public Class LightsProgressEventArgs
             Inherits System.EventArgs
@@ -324,7 +338,11 @@ Namespace Illumination
         Public Shared Function CreateSelectionMaskedSnippet(ByVal source As Image,
                                                              ByVal selectionMaskData As String,
                                                              ByVal absoluteRectangle As Rectangle,
-                                                             Optional ByVal preserveSourceResolution As Boolean = False) As Bitmap
+                                                             Optional ByVal preserveSourceResolution As Boolean = False,
+                                                             Optional ByVal maskRadius As Integer = 0,
+                                                             Optional ByVal maskSmooth As Integer = 0,
+                                                             Optional ByVal maskFeather As Integer = 0,
+                                                             Optional ByVal maskShiftEdge As Integer = 0) As Bitmap
             If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) OrElse
                absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
 
@@ -332,16 +350,42 @@ Namespace Illumination
             Dim rendered As New Bitmap(renderedSize.Width, renderedSize.Height, PixelFormat.Format32bppArgb)
             Dim maskBitmap As Bitmap = Nothing
             Try
-                Using maskStream As New IO.MemoryStream(Convert.FromBase64String(selectionMaskData))
-                    Using decodedMask As New Bitmap(maskStream)
-                        maskBitmap = New Bitmap(decodedMask.Width, decodedMask.Height, PixelFormat.Format32bppArgb)
-                        Using maskGraphics As Graphics = Graphics.FromImage(maskBitmap)
-                            maskGraphics.Clear(Color.Transparent)
-                            maskGraphics.CompositingMode = CompositingMode.SourceCopy
-                            maskGraphics.DrawImageUnscaled(decodedMask, 0, 0)
+                Dim useLocalRefinedMask As Boolean = maskRadius <> 0 OrElse maskSmooth <> 0 OrElse maskFeather <> 0 OrElse maskShiftEdge <> 0
+                If useLocalRefinedMask Then
+                    maskBitmap = GetCachedRefinedInfinityMask(selectionMaskData, absoluteRectangle, renderedSize,
+                                                              maskRadius, maskSmooth, maskFeather, maskShiftEdge)
+                End If
+
+                If maskBitmap Is Nothing Then
+                    Using maskStream As New IO.MemoryStream(Convert.FromBase64String(selectionMaskData))
+                        Using decodedMask As New Bitmap(maskStream)
+                            maskBitmap = New Bitmap(decodedMask.Width, decodedMask.Height, PixelFormat.Format32bppArgb)
+                            Using maskGraphics As Graphics = Graphics.FromImage(maskBitmap)
+                                maskGraphics.Clear(Color.Transparent)
+                                maskGraphics.CompositingMode = CompositingMode.SourceCopy
+                                maskGraphics.DrawImageUnscaled(decodedMask, 0, 0)
+                            End Using
                         End Using
                     End Using
-                End Using
+
+                    If useLocalRefinedMask Then
+                        Dim localMask As New Bitmap(rendered.Width, rendered.Height, PixelFormat.Format32bppArgb)
+                        Using maskGraphics As Graphics = Graphics.FromImage(localMask)
+                            maskGraphics.Clear(Color.Transparent)
+                            maskGraphics.CompositingMode = CompositingMode.SourceCopy
+                            maskGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+                            maskGraphics.DrawImage(maskBitmap,
+                                                   New Rectangle(0, 0, localMask.Width, localMask.Height),
+                                                   absoluteRectangle,
+                                                   GraphicsUnit.Pixel)
+                        End Using
+                        maskBitmap.Dispose()
+                        maskBitmap = localMask
+                        ArtworkFlasherRenderer.RefineMaskBitmap(maskBitmap, maskRadius, maskSmooth, maskFeather, maskShiftEdge)
+                        StoreRefinedInfinityMask(selectionMaskData, absoluteRectangle, renderedSize,
+                                                 maskRadius, maskSmooth, maskFeather, maskShiftEdge, maskBitmap)
+                    End If
+                End If
 
                 Using graphics As Graphics = Graphics.FromImage(rendered)
                     graphics.Clear(Color.Transparent)
@@ -364,10 +408,14 @@ Namespace Illumination
                     Marshal.Copy(maskData.Scan0, maskRaw, 0, maskRaw.Length)
                     For y As Integer = 0 To rendered.Height - 1
                         Dim renderedRow As Integer = If(renderedData.Stride >= 0, y, rendered.Height - 1 - y) * renderedStride
-                        Dim maskY As Integer = absoluteRectangle.Y + CInt(Math.Floor(CDbl(y) * absoluteRectangle.Height / rendered.Height))
+                            Dim maskY As Integer = If(useLocalRefinedMask,
+                                                      y,
+                                                      absoluteRectangle.Y + CInt(Math.Floor(CDbl(y) * absoluteRectangle.Height / rendered.Height)))
                         For x As Integer = 0 To rendered.Width - 1
                             Dim renderedPixel As Integer = renderedRow + x * 4
-                            Dim maskX As Integer = absoluteRectangle.X + CInt(Math.Floor(CDbl(x) * absoluteRectangle.Width / rendered.Width))
+                                Dim maskX As Integer = If(useLocalRefinedMask,
+                                                          x,
+                                                          absoluteRectangle.X + CInt(Math.Floor(CDbl(x) * absoluteRectangle.Width / rendered.Width)))
                             Dim maskAlpha As Integer = 0
                             If maskX >= 0 AndAlso maskY >= 0 AndAlso maskX < maskBitmap.Width AndAlso maskY < maskBitmap.Height Then
                                 Dim maskRow As Integer = If(maskData.Stride >= 0, maskY, maskBitmap.Height - 1 - maskY) * maskStride
@@ -389,6 +437,51 @@ Namespace Illumination
                 If maskBitmap IsNot Nothing Then maskBitmap.Dispose()
             End Try
         End Function
+
+        Private Shared Function GetCachedRefinedInfinityMask(ByVal selectionMaskData As String,
+                                                             ByVal absoluteRectangle As Rectangle,
+                                                             ByVal renderedSize As Size,
+                                                             ByVal maskRadius As Integer,
+                                                             ByVal maskSmooth As Integer,
+                                                             ByVal maskFeather As Integer,
+                                                             ByVal maskShiftEdge As Integer) As Bitmap
+            SyncLock refinedInfinityMaskSync
+                If refinedInfinityMask Is Nothing OrElse
+                   Not refinedInfinityMaskRectangle.Equals(absoluteRectangle) OrElse
+                   Not refinedInfinityMaskSize.Equals(renderedSize) OrElse
+                   refinedInfinityMaskRadius <> maskRadius OrElse
+                   refinedInfinityMaskSmooth <> maskSmooth OrElse
+                   refinedInfinityMaskFeather <> maskFeather OrElse
+                   refinedInfinityMaskShiftEdge <> maskShiftEdge Then Return Nothing
+
+                If Not Object.ReferenceEquals(refinedInfinityMaskData, selectionMaskData) AndAlso
+                   Not String.Equals(refinedInfinityMaskData, selectionMaskData, StringComparison.Ordinal) Then Return Nothing
+
+                Return New Bitmap(refinedInfinityMask)
+            End SyncLock
+        End Function
+
+        Private Shared Sub StoreRefinedInfinityMask(ByVal selectionMaskData As String,
+                                                    ByVal absoluteRectangle As Rectangle,
+                                                    ByVal renderedSize As Size,
+                                                    ByVal maskRadius As Integer,
+                                                    ByVal maskSmooth As Integer,
+                                                    ByVal maskFeather As Integer,
+                                                    ByVal maskShiftEdge As Integer,
+                                                    ByVal mask As Bitmap)
+            If mask Is Nothing Then Return
+            SyncLock refinedInfinityMaskSync
+                If refinedInfinityMask IsNot Nothing Then refinedInfinityMask.Dispose()
+                refinedInfinityMask = New Bitmap(mask)
+                refinedInfinityMaskData = selectionMaskData
+                refinedInfinityMaskRectangle = absoluteRectangle
+                refinedInfinityMaskSize = renderedSize
+                refinedInfinityMaskRadius = maskRadius
+                refinedInfinityMaskSmooth = maskSmooth
+                refinedInfinityMaskFeather = maskFeather
+                refinedInfinityMaskShiftEdge = maskShiftEdge
+            End SyncLock
+        End Sub
 
         Public Sub DrawImages(ByVal currentimage As Image,
                               Optional ByVal currentoffimage As Image = Nothing,
@@ -503,10 +596,23 @@ Namespace Illumination
                                     Dim rect As Rectangle = New Rectangle(.Location, .Size)
                                     Dim adjustedSnippet As Image = CreateBrightnessAdjustedSnippet(.Image, .SnippitInfo.Brightness)
                                     If Not String.IsNullOrEmpty(.SelectionMaskData) Then
-                                        Dim maskedSnippet As Image = CreateSelectionMaskedSnippet(adjustedSnippet, .SelectionMaskData, rect)
+                                        Dim isInfinity As Boolean = Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup)
+                                        Dim maskedSnippet As Image = CreateSelectionMaskedSnippet(adjustedSnippet, .SelectionMaskData, rect, False,
+                                                                                                  If(isInfinity, .MaskRadius, 0),
+                                                                                                  If(isInfinity, .MaskSmooth, 0),
+                                                                                                  If(isInfinity, .MaskFeather, 0),
+                                                                                                  If(isInfinity, .MaskShiftEdge, 0))
                                         If maskedSnippet IsNot Nothing Then
                                             If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
                                             adjustedSnippet = maskedSnippet
+                                        End If
+                                    End If
+                                    If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup) AndAlso
+                                       .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask Then
+                                        Dim globallyMaskedSnippet As Image = lightcreation.CreateGlobalMaskedSnippet(adjustedSnippet, rect)
+                                        If globallyMaskedSnippet IsNot Nothing Then
+                                            If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
+                                            adjustedSnippet = globallyMaskedSnippet
                                         End If
                                     End If
                                     If .SnippitInfo.BehindCanvas Then

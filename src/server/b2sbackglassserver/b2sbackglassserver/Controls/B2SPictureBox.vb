@@ -82,6 +82,21 @@ Public Class B2SPictureBox
     Public Property ZOrder() As Integer = 0
 
     Public Property IsImageSnippit() As Boolean = False
+    Public Property ArtworkPixelLighting() As Boolean = False
+    ' Retained only so older DirectB2S files can still be read. New exports and
+    ' rendering do not use the removed behind-light path.
+    Public Property LightBehindCanvas() As Boolean = False
+    Public Property DynamicFrontLighting() As Boolean = False
+    Public Property DynamicFrontShowLight() As Boolean = False
+    Public Property DynamicFrontLightField() As Image = Nothing
+    Public Property DynamicLightExposure() As Integer = 100
+    Public Property DynamicLightColor() As Color = Color.White
+    Public Property DynamicFlasherStyle() As Integer = 1
+    Public Property DynamicSaturation() As Integer = 100
+    Public Property DynamicHighlightProtection() As Integer = 0
+    Public Property DynamicDarkAreaLift() As Integer = 0
+    Public Property DynamicTransmissionContrast() As Integer = 140
+    Public Property DynamicLightTemperature() As Integer = 4000
     Public Property PreservePhysicsArtworkAspect() As Boolean = False
     Public Property PreservePhysicsArtworkArea() As Boolean = False
     Public Property HasFullResolutionSnippet() As Boolean = False
@@ -492,7 +507,10 @@ Public Class B2SPictureBox
             Me.Parent.BeginInvoke(New Action(Of Boolean)(AddressOf SetNativeRotationState), enabled)
             Return
         End If
-        If nativeRotationCommandedOn = enabled Then Return
+        If nativeRotationCommandedOn = enabled Then
+            If enabled AndAlso Not nativeRotationTimer.Enabled Then StartNativeRotation()
+            Return
+        End If
         nativeRotationCommandedOn = enabled
         If enabled Then
             StartNativeRotation()
@@ -535,13 +553,16 @@ Public Class B2SPictureBox
         End If
 
         nativeRotationCommandedOn = True
+        ' A renewed ON command cancels any stop that was requested while the
+        ' timer was still running. The trigger state, not the pending stop,
+        ' owns playback while the ROM output remains energized.
+        nativeSlowDownSteps = 0
+        nativeRunTillEnd = False
+        nativeRunToFirstStep = False
         If nativeRotationTimer.Enabled Then Return
 
         NativeRotationSteps = Math.Max(2, Math.Min(360, NativeRotationSteps))
         NativeRotationInterval = Math.Max(10, Math.Min(500, NativeRotationInterval))
-        nativeSlowDownSteps = 0
-        nativeRunTillEnd = False
-        nativeRunToFirstStep = False
         nativeRotationTimer.Stop()
         nativeRotationTimer.Interval = NativeRotationInterval
         nativeRotationClock.Restart()
@@ -1347,6 +1368,10 @@ Public Class B2SPictureBox
             RemoveHandler nativeRotationTimer.Tick, AddressOf NativeRotationTimer_Tick
             nativeRotationTimer.Dispose()
             nativeRotationTimer = Nothing
+        End If
+        If disposing AndAlso DynamicFrontLightField IsNot Nothing Then
+            DynamicFrontLightField.Dispose()
+            DynamicFrontLightField = Nothing
         End If
         MyBase.Dispose(disposing)
     End Sub

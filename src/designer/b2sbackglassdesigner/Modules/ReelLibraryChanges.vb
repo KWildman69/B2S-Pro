@@ -105,7 +105,10 @@ Public Module ReelLibraryChanges
     End Function
 
     Public Function ResizeScoreReel(image As Image, size As Size, score As ReelAndLED.ScoreInfo) As Image
-        If KeepDigitAspect(score) Then Return ReelImageSizing.Fit(image, size)
+        If KeepDigitAspect(score) Then
+            If score.ReelDigitWidth > 0 Then Return ReelImageSizing.StretchToWidth(image, size, score.ReelDigitWidth)
+            Return ReelImageSizing.Fit(image, size)
+        End If
         Return image.Resized(size)
     End Function
 

@@ -215,9 +215,6 @@ Public Class formToolLayers
         canvasMenu.DropDownItems.Add("Snippet Behind Canvas", Nothing, AddressOf SetSnippetBehindCanvas)
         canvasMenu.DropDownItems.Add("Snippet In Front of Canvas", Nothing, AddressOf SetSnippetInFrontOfCanvas)
         canvasMenu.DropDownItems.Add(New ToolStripSeparator())
-        canvasMenu.DropDownItems.Add("Light Behind Canvas", Nothing, AddressOf SetLightBehindCanvas)
-        canvasMenu.DropDownItems.Add("Light In Front of Canvas", Nothing, AddressOf SetLightInFrontOfCanvas)
-        canvasMenu.DropDownItems.Add(New ToolStripSeparator())
         canvasMenu.DropDownItems.Add("Reel / LED Behind Canvas", Nothing, AddressOf SetScoreBehindCanvas)
         canvasMenu.DropDownItems.Add("Reel / LED In Front of Canvas", Nothing, AddressOf SetScoreInFrontOfCanvas)
         layerMenu.Items.AddRange(New ToolStripItem() {editMenu, orderMenu, stateMenu, maskMenu, canvasMenu, New ToolStripSeparator(),
@@ -668,7 +665,7 @@ Public Class formToolLayers
                 End If
                 Dim layerState As String = If(bulb.IsImageSnippit,
                                               If(bulb.SnippitInfo.BehindCanvas, "Behind Canvas", "Front"),
-                                              If(bulb.LightBehindCanvas, "Behind Canvas", If(Not bulb.GlobalMaskLayerExplicit, "", If(bulb.InFrontOfGlobalMask, "Front", "Behind Mask"))))
+                                              If(Not bulb.GlobalMaskLayerExplicit, "", If(bulb.InFrontOfGlobalMask, "Front", "Behind Mask")))
                 If MatchesFilter(name, typeName, bulb) Then AddLayerRow(bulb, stackPosition.ToString(), bulb.ZOrder.ToString(), name, typeName, layerState)
             ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
                 Dim score As ReelAndLED.ScoreInfo = DirectCast(item, ReelAndLED.ScoreInfo)
@@ -1687,32 +1684,6 @@ Public Class formToolLayers
                 Dim bulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
                 If bulb.IsImageSnippit AndAlso bulb.SnippitInfo.BehindCanvas <> behindCanvas Then
                     bulb.SnippitInfo.BehindCanvas = behindCanvas
-                    bulb.IsIlluminatedImageDirty = True
-                    changed = True
-                End If
-            End If
-        Next
-        If changed Then
-            MarkDirty()
-            RefreshAll()
-        End If
-    End Sub
-
-    Private Sub SetLightBehindCanvas(sender As Object, e As EventArgs)
-        SetLightCanvasLayer(True)
-    End Sub
-
-    Private Sub SetLightInFrontOfCanvas(sender As Object, e As EventArgs)
-        SetLightCanvasLayer(False)
-    End Sub
-
-    Private Sub SetLightCanvasLayer(behindCanvas As Boolean)
-        Dim changed As Boolean = False
-        For Each item As Object In SelectedObjects()
-            If TypeOf item Is Illumination.BulbInfo Then
-                Dim bulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
-                If Not bulb.IsImageSnippit AndAlso bulb.LightBehindCanvas <> behindCanvas Then
-                    bulb.LightBehindCanvas = behindCanvas
                     bulb.IsIlluminatedImageDirty = True
                     changed = True
                 End If

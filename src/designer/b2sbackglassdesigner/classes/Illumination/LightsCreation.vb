@@ -1046,6 +1046,24 @@ Namespace Illumination
             End Try
         End Sub
 
+        ' Infinity lights are stored as ordinary image snippets so the legacy
+        ' animation scheduler can play them unchanged. Apply the same authored
+        ' global illumination mask used by regular lights before those generated
+        ' snippets are cached or exported.
+        Public Function CreateGlobalMaskedSnippet(ByVal source As Image,
+                                                   ByVal absoluteRectangle As Rectangle) As Bitmap
+            If source Is Nothing OrElse absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
+            Dim masked As New Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb)
+            Using graphics As Graphics = Graphics.FromImage(masked)
+                graphics.Clear(Color.Transparent)
+                graphics.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+                graphics.DrawImage(source, New Rectangle(Point.Empty, masked.Size),
+                                   0, 0, source.Width, source.Height, GraphicsUnit.Pixel)
+            End Using
+            ApplyGlobalIlluminationMask(masked, absoluteRectangle)
+            Return masked
+        End Function
+
         Private Sub ApplySelectionMask(ByVal illuminated As Bitmap, ByVal original As Bitmap, ByVal rectX As Rectangle, ByVal maskData As String, ByVal feather As Integer)
             Try
                 Dim width As Integer = Math.Min(illuminated.Width, original.Width)

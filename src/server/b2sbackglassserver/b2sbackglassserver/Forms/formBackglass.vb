@@ -337,6 +337,11 @@ Public Class formBackglass
 
         InitB2SScreen()
 
+        ' Dynamic front lights must be active before untriggered motion paths start
+        ' during ResizeSomeImages; otherwise an initially-on light misses the first
+        ' two seconds of a moving snippet while normal startup lights are delayed.
+        ShowStartupDynamicFrontLights()
+
         ' resize images
         ResizeSomeImages()
 
@@ -714,13 +719,14 @@ Public Class formBackglass
         ' while the canvas alpha still masks artwork that is behind the glass.
         Dim cacheIsCurrent As Boolean = (behindCanvasCacheImage IsNot Nothing AndAlso
                                          behindCanvasCachePictureBox Is picbox AndAlso
+                                         behindCanvasCacheBackground Is picbox.BackgroundImage AndAlso
                                          behindCanvasCacheBounds = bounds AndAlso
                                          behindCanvasCacheAngle = picbox.VisualRotationAngle)
         If Not cacheIsCurrent Then
             If behindCanvasCacheImage IsNot Nothing Then behindCanvasCacheImage.Dispose()
             behindCanvasCacheImage = New Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb)
             behindCanvasCachePictureBox = picbox
-            behindCanvasCacheBackground = Nothing
+            behindCanvasCacheBackground = picbox.BackgroundImage
             behindCanvasCacheBounds = bounds
             behindCanvasCacheAngle = picbox.VisualRotationAngle
 
@@ -745,6 +751,7 @@ Public Class formBackglass
         End If
         e.Graphics.DrawImageUnscaled(behindCanvasCacheImage, bounds.Location)
     End Sub
+
     Protected Overrides Sub OnPaintBackground(e As System.Windows.Forms.PaintEventArgs)
 
         ' maybe no background painting here
@@ -783,6 +790,22 @@ Public Class formBackglass
             End If
 
             If drawme Then
+                If picbox.DynamicFrontLighting AndAlso picbox.DynamicFrontLightField IsNot Nothing AndAlso Not picbox.IsImageSnippit Then
+                    If picbox.DynamicFrontShowLight AndAlso picbox.BackgroundImage IsNot Nothing Then
+                        Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(picbox.BackgroundImage)
+                        If tiles Is Nothing Then
+                            e.Graphics.DrawImage(picbox.BackgroundImage, picbox.RectangleF.Location)
+                        Else
+                            For Each tile As SparseImageTile In tiles
+                                e.Graphics.DrawImageUnscaled(tile.Image,
+                                    CInt(picbox.RectangleF.Left) + tile.Offset.X,
+                                    CInt(picbox.RectangleF.Top) + tile.Offset.Y)
+                            Next
+                        End If
+                    End If
+                    DrawDynamicFrontLight(e.Graphics, picbox)
+                    Return
+                End If
                 Dim drawImage As Image = picbox.BackgroundImage
                 If B2SData.OnAndOffImage Then
                     If B2SData.IsOffImageVisible AndAlso picbox.OffImage IsNot Nothing Then
@@ -853,6 +876,87 @@ Public Class formBackglass
         End If
 
     End Sub
+
+    Private Sub DrawDynamicFrontLight(ByVal targetGraphics As Graphics, ByVal light As B2SPictureBox)
+        If targetGraphics Is Nothing OrElse light Is Nothing OrElse light.DynamicFrontLightField Is Nothing Then Return
+        Dim lightBounds As Rectangle = Rectangle.Round(light.RectangleF)
+        If lightBounds.Width <= 0 OrElse lightBounds.Height <= 0 Then Return
+
+        For Each pair As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+            Dim snippet As B2SPictureBox = pair.Value
+            If snippet Is Nothing OrElse snippet.IsDisposed OrElse Not snippet.IsImageSnippit OrElse
+               Not snippet.Visible OrElse snippet.BackgroundImage Is Nothing OrElse
+               snippet.ZOrder >= light.ZOrder Then Continue For
+            If B2SData.DualBackglass AndAlso snippet.DualMode <> B2SData.eDualMode.Both AndAlso
+               snippet.DualMode <> B2SSettings.CurrentDualMode Then Continue For
+
+            Dim snippetBounds As Rectangle = Rectangle.Round(snippet.RectangleF)
+            Dim overlap As Rectangle = Rectangle.Intersect(lightBounds, snippetBounds)
+            If overlap.Width <= 0 OrElse overlap.Height <= 0 Then Continue For
+
+            Using snippetFrame As Bitmap = CreateCurrentSnippetFrame(snippet, snippetBounds.Size)
+                If snippetFrame Is Nothing Then Continue For
+                Using sourceCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+                    Using sourceGraphics As Graphics = Graphics.FromImage(sourceCrop)
+                        sourceGraphics.Clear(Color.Transparent)
+                        sourceGraphics.DrawImage(snippetFrame,
+                                                 New Rectangle(Point.Empty, sourceCrop.Size),
+                                                 New Rectangle(overlap.X - snippetBounds.X, overlap.Y - snippetBounds.Y,
+                                                               overlap.Width, overlap.Height),
+                                                 GraphicsUnit.Pixel)
+                    End Using
+                    Using fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+                        Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
+                            fieldGraphics.Clear(Color.Transparent)
+                            fieldGraphics.DrawImage(light.DynamicFrontLightField,
+                                                    New Rectangle(Point.Empty, fieldCrop.Size),
+                                                    New RectangleF((overlap.X - lightBounds.X) * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                                   (overlap.Y - lightBounds.Y) * light.DynamicFrontLightField.Height / CSng(lightBounds.Height),
+                                                                   overlap.Width * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                                   overlap.Height * light.DynamicFrontLightField.Height / CSng(lightBounds.Height)),
+                                                    GraphicsUnit.Pixel)
+                        End Using
+                        Using illuminated As Bitmap = DynamicArtworkLighting.Render(
+                            sourceCrop, fieldCrop, light.DynamicLightExposure, light.DynamicLightColor,
+                            light.DynamicFlasherStyle, light.DynamicSaturation,
+                            light.DynamicHighlightProtection, light.DynamicDarkAreaLift,
+                            light.DynamicTransmissionContrast, light.DynamicLightTemperature)
+                            If illuminated IsNot Nothing Then targetGraphics.DrawImageUnscaled(illuminated, overlap.Location)
+                        End Using
+                    End Using
+                End Using
+            End Using
+        Next
+    End Sub
+
+    Private Function CreateCurrentSnippetFrame(ByVal snippet As B2SPictureBox, ByVal targetSize As Size) As Bitmap
+        If snippet Is Nothing OrElse snippet.BackgroundImage Is Nothing OrElse targetSize.Width <= 0 OrElse targetSize.Height <= 0 Then Return Nothing
+        Dim frame As New Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb)
+        Try
+            Using graphics As Graphics = Graphics.FromImage(frame)
+                graphics.Clear(Color.Transparent)
+                graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
+                graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+                graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+                If snippet.NativeRotation OrElse snippet.MotionPathRollEnabled Then
+                    Dim localBounds As New RectangleF(0, 0, targetSize.Width, targetSize.Height)
+                    Dim destination As PointF() = If(snippet.MotionPathRollEnabled AndAlso Not snippet.NativeRotation,
+                                                     BallRollDestinationPoints(localBounds, snippet.VisualRotationAngle),
+                                                     RotationDestinationPoints(localBounds, snippet.VisualRotationAngle,
+                                                                               snippet.RotationPivotX, snippet.RotationPivotY))
+                    graphics.DrawImage(snippet.BackgroundImage, destination,
+                                       New RectangleF(0, 0, snippet.BackgroundImage.Width, snippet.BackgroundImage.Height),
+                                       GraphicsUnit.Pixel)
+                Else
+                    graphics.DrawImage(snippet.BackgroundImage, New Rectangle(Point.Empty, targetSize))
+                End If
+            End Using
+            Return frame
+        Catch
+            frame.Dispose()
+            Throw
+        End Try
+    End Function
 
     Private Function CreatePhysicsMaskedFrame(ByVal picbox As B2SPictureBox, ByVal source As Image,
                                                ByRef frameBounds As Rectangle) As Bitmap
@@ -1140,9 +1244,9 @@ Public Class formBackglass
 
         startupTimer.Stop()
 
-        ' Cache generation is asynchronous. After normal startup has completed,
-        ' use this timer only as a lightweight barrier so every continuous native
-        ' rotation begins together after all of its prepared frames are installed.
+        ' Cache generation is asynchronous. Start continuous native rotations
+        ' immediately from their source image; playback switches to the prepared
+        ' unique-frame cache as soon as it is installed.
         If startupCoreCompleted Then
             If Not TryStartContinuousNativeRotations() Then startupTimer.Start()
             Return
@@ -1175,15 +1279,6 @@ Public Class formBackglass
     End Sub
 
     Private Function TryStartContinuousNativeRotations() As Boolean
-        For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-            If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation AndAlso
-               Not illumination.Value.NativeRotationFramePlayback Then Return False
-        Next
-        For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
-            If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation AndAlso
-               Not illumination.Value.NativeRotationFramePlayback Then Return False
-        Next
-
         For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
             If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation Then
                 illumination.Value.StartNativeRotation()
@@ -2833,6 +2928,14 @@ Public Class formBackglass
                         If innerNode.Attributes("IsImageSnippit") IsNot Nothing Then
                             isimagesnippit = (innerNode.Attributes("IsImageSnippit").InnerText = "1")
                         End If
+                        Dim artworkPixelLighting As Boolean = (innerNode.Attributes("ArtworkPixelLighting") IsNot Nothing AndAlso
+                                                               innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
+                        Dim lightBehindCanvas As Boolean = (innerNode.Attributes("LightBehindCanvas") IsNot Nothing AndAlso
+                                                            innerNode.Attributes("LightBehindCanvas").InnerText = "1")
+                        Dim dynamicFrontLighting As Boolean = (innerNode.Attributes("DynamicFrontLighting") IsNot Nothing AndAlso
+                                                               innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
+                        Dim dynamicFrontShowLight As Boolean = (innerNode.Attributes("DynamicFrontShowLight") IsNot Nothing AndAlso
+                                                               innerNode.Attributes("DynamicFrontShowLight").InnerText = "1")
                         Dim zorder As Integer = 0
                         If innerNode.Attributes("ZOrder") IsNot Nothing Then
                             zorder = CInt(innerNode.Attributes("ZOrder").InnerText)
@@ -3105,6 +3208,10 @@ Public Class formBackglass
                         Dim fullResolutionSnippet As Boolean = isimagesnippit AndAlso Not nativerotation AndAlso
                             picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso fullResolutionAttribute IsNot Nothing
                         Dim image As Image = Base64ToImage(If(fullResolutionSnippet, fullResolutionAttribute.InnerText, innerNode.Attributes("Image").InnerText))
+                        Dim dynamicFrontLightField As Image = Nothing
+                        If dynamicFrontLighting AndAlso innerNode.Attributes("DynamicFrontLightField") IsNot Nothing Then
+                            dynamicFrontLightField = Base64ToImage(innerNode.Attributes("DynamicFrontLightField").InnerText)
+                        End If
                         Dim offimage As Image = Nothing
                         If innerNode.Attributes("OffImage") IsNot Nothing Then
                             offimage = Base64ToImage(innerNode.Attributes("OffImage").InnerText)
@@ -3140,6 +3247,21 @@ Public Class formBackglass
                         picbox.BackgroundImage = image
                         picbox.OffImage = offimage
                         picbox.IsImageSnippit = isimagesnippit
+                        picbox.ArtworkPixelLighting = artworkPixelLighting
+                        picbox.LightBehindCanvas = lightBehindCanvas
+                        picbox.DynamicFrontLighting = dynamicFrontLighting AndAlso dynamicFrontLightField IsNot Nothing
+                        picbox.DynamicFrontShowLight = picbox.DynamicFrontLighting AndAlso dynamicFrontShowLight
+                        picbox.DynamicFrontLightField = dynamicFrontLightField
+                        If picbox.DynamicFrontLighting Then
+                            If innerNode.Attributes("DynamicLightExposure") IsNot Nothing Then picbox.DynamicLightExposure = Math.Max(0, Math.Min(1600, CInt(innerNode.Attributes("DynamicLightExposure").InnerText)))
+                            If innerNode.Attributes("DynamicLightColor") IsNot Nothing Then picbox.DynamicLightColor = String2Color(innerNode.Attributes("DynamicLightColor").InnerText)
+                            If innerNode.Attributes("DynamicFlasherStyle") IsNot Nothing Then picbox.DynamicFlasherStyle = CInt(innerNode.Attributes("DynamicFlasherStyle").InnerText)
+                            If innerNode.Attributes("DynamicSaturation") IsNot Nothing Then picbox.DynamicSaturation = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("DynamicSaturation").InnerText)))
+                            If innerNode.Attributes("DynamicHighlightProtection") IsNot Nothing Then picbox.DynamicHighlightProtection = Math.Max(0, Math.Min(100, CInt(innerNode.Attributes("DynamicHighlightProtection").InnerText)))
+                            If innerNode.Attributes("DynamicDarkAreaLift") IsNot Nothing Then picbox.DynamicDarkAreaLift = Math.Max(0, Math.Min(100, CInt(innerNode.Attributes("DynamicDarkAreaLift").InnerText)))
+                            If innerNode.Attributes("DynamicTransmissionContrast") IsNot Nothing Then picbox.DynamicTransmissionContrast = Math.Max(0, Math.Min(300, CInt(innerNode.Attributes("DynamicTransmissionContrast").InnerText)))
+                            If innerNode.Attributes("DynamicLightTemperature") IsNot Nothing Then picbox.DynamicLightTemperature = Math.Max(2000, Math.Min(6500, CInt(innerNode.Attributes("DynamicLightTemperature").InnerText)))
+                        End If
                         ' This image retains source pixels and the complete authored rectangle.
                         picbox.HasFullResolutionSnippet = fullResolutionSnippet
                         ' Pivot artwork must use the background's X/Y scaling so its saved
@@ -4516,6 +4638,17 @@ Public Class formBackglass
                 End If
             Next
         End If
+    End Sub
+    Private Sub ShowStartupDynamicFrontLights()
+
+        For Each picbox As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+            If picbox.Value.InitialState = 1 AndAlso
+               picbox.Value.DynamicFrontLighting AndAlso
+               Not picbox.Value.IsImageSnippit Then
+                picbox.Value.Visible = True
+            End If
+        Next
+
     End Sub
     Private Sub ShowStartupImages()
 

@@ -6,6 +6,10 @@
 
         Public ReelType As String = String.Empty
         Public KeepDigitAspect As Boolean = False
+        ' Zero preserves the original proportional-fit behavior. A positive
+        ' value is the rendered width of one digit; its height follows the
+        ' score box so top/bottom resizing stretches only vertically.
+        Public ReelDigitWidth As Integer = 0
         Public ReelColor As Color = Nothing
         Public Digits As Integer = 0
         Public Spacing As Integer = 0
@@ -56,6 +60,7 @@
             Size = source.Size
             ReelType = source.ReelType
             KeepDigitAspect = source.KeepDigitAspect
+            ReelDigitWidth = source.ReelDigitWidth
             ReelColor = source.ReelColor
             Digits = source.Digits
             Spacing = source.Spacing

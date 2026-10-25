@@ -33,7 +33,12 @@ Public Class Coding
         Try
             Dim rect As New Rectangle(bulb.Location, bulb.Size)
             If applySelectionMask AndAlso Not String.IsNullOrEmpty(bulb.SelectionMaskData) Then
-                Dim masked As Image = Illumination.Lights.CreateSelectionMaskedSnippet(result, bulb.SelectionMaskData, rect, True)
+                Dim isInfinity As Boolean = Not String.IsNullOrEmpty(bulb.SnippitInfo.InfinityLightsGroup)
+                Dim masked As Image = Illumination.Lights.CreateSelectionMaskedSnippet(result, bulb.SelectionMaskData, rect, True,
+                                                                                        If(isInfinity, bulb.MaskRadius, 0),
+                                                                                        If(isInfinity, bulb.MaskSmooth, 0),
+                                                                                        If(isInfinity, bulb.MaskFeather, 0),
+                                                                                        If(isInfinity, bulb.MaskShiftEdge, 0))
                 If masked Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet selection mask.")
                 result.Dispose()
                 result = masked
@@ -297,6 +302,7 @@ Public Class Coding
                     nodeScore.SetAttribute("Parent", If((.ParentForm = eParentForm.DMD), "DMD", "Backglass"))
                     nodeScore.SetAttribute("ID", .ID)
                     If ReelLibraryChanges.KeepDigitAspect(score.Value) Then nodeScore.SetAttribute("KeepDigitAspect", "1")
+                    If .ReelDigitWidth > 0 Then nodeScore.SetAttribute("ReelDigitWidth", .ReelDigitWidth.ToString())
                     If Backglass.currentData.CommType = eCommType.B2S Then
                         nodeScore.SetAttribute("B2SStartDigit", .B2SStartDigit.ToString())
                         nodeScore.SetAttribute("B2SScoreType", CInt(.B2SScoreType).ToString())
@@ -683,6 +689,22 @@ Public Class Coding
                             nodeBulb.SetAttribute("InFrontOfGlobalMask", If(Not .GlobalMaskLayerExplicit OrElse .InFrontOfGlobalMask, "1", "0"))
                             nodeBulb.SetAttribute("GlobalMaskLayerExplicit", If(.GlobalMaskLayerExplicit, "1", "0"))
                             nodeBulb.SetAttribute("LightBehindCanvas", If(.LightBehindCanvas, "1", "0"))
+                            If .DynamicFrontLighting AndAlso Not .IsImageSnippit AndAlso imageinfo.Image IsNot Nothing Then
+                                nodeBulb.SetAttribute("DynamicFrontLighting", "1")
+                                nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
+                                nodeBulb.SetAttribute("DynamicLightExposure", Math.Max(0, Math.Min(1600, .GlowIntensity)).ToString())
+                                nodeBulb.SetAttribute("DynamicLightColor", Color2String(.LightColor))
+                                nodeBulb.SetAttribute("DynamicFlasherStyle", .FlasherStyle.ToString())
+                                nodeBulb.SetAttribute("DynamicSaturation", .FlasherSaturation.ToString())
+                                nodeBulb.SetAttribute("DynamicHighlightProtection", .FlasherHighlightProtection.ToString())
+                                nodeBulb.SetAttribute("DynamicDarkAreaLift", .FlasherDarkAreaLift.ToString())
+                                nodeBulb.SetAttribute("DynamicTransmissionContrast", .ArtworkContrast.ToString())
+                                nodeBulb.SetAttribute("DynamicLightTemperature", .LightTemperature.ToString())
+                                Using field As Bitmap = CreateDynamicFrontLightField(bulb.Value, imageinfo, If(.ParentForm = eParentForm.DMD, dmdimage, image))
+                                    If field Is Nothing Then Throw New InvalidOperationException("The dynamic front light field could not be generated for " & .Name & ".")
+                                    nodeBulb.SetAttribute("DynamicFrontLightField", ImageToBase64(field))
+                                End Using
+                            End If
 
                             ' Timed blinkers are exported as the same ordinary bulb images
                             ' used by animations created in the Animation editor. The animation
@@ -1206,6 +1228,7 @@ Public Class Coding
                             score.ID = CInt(innerNode.Attributes("ID").InnerText)
                             score.ReelType = innerNode.Attributes("ReelType").InnerText.Replace("Dream7", "Rendered")
                             If innerNode.Attributes("KeepDigitAspect") IsNot Nothing Then score.KeepDigitAspect = (innerNode.Attributes("KeepDigitAspect").InnerText = "1")
+                            If innerNode.Attributes("ReelDigitWidth") IsNot Nothing Then score.ReelDigitWidth = Math.Max(0, CInt(innerNode.Attributes("ReelDigitWidth").InnerText))
                             score.ReelColor = _backglassData.ReelColor
                             score.Digits = CInt(innerNode.Attributes("Digits").InnerText)
                             score.Spacing = CInt(innerNode.Attributes("Spacing").InnerText)
@@ -1412,6 +1435,12 @@ Public Class Coding
                             bulb.Intensity = CInt(innerNode.Attributes("Intensity").InnerText)
                             If innerNode.Attributes("ArtworkPixelLighting") IsNot Nothing Then
                                 bulb.ArtworkPixelLighting = (innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
+                            End If
+                            If innerNode.Attributes("DynamicFrontLighting") IsNot Nothing Then
+                                bulb.DynamicFrontLighting = (innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
+                            End If
+                            If innerNode.Attributes("DynamicFrontShowLight") IsNot Nothing Then
+                                bulb.DynamicFrontShowLight = (innerNode.Attributes("DynamicFrontShowLight").InnerText = "1")
                             End If
                             If innerNode.Attributes("LightColor") IsNot Nothing Then bulb.LightColor = String2Color(innerNode.Attributes("LightColor").InnerText)
                             If innerNode.Attributes("DodgeColor") IsNot Nothing Then bulb.DodgeColor = String2Color(innerNode.Attributes("DodgeColor").InnerText)
@@ -3482,6 +3511,45 @@ Public Class Coding
                                source.Height)
         End Using
         Return canvas
+    End Function
+
+    Private Function CreateDynamicFrontLightField(ByVal bulb As Illumination.BulbInfo,
+                                                   ByVal imageInfo As Illumination.Lights.ImageInfo,
+                                                   ByVal canvasImage As Image) As Bitmap
+        If bulb Is Nothing OrElse imageInfo Is Nothing OrElse imageInfo.Image Is Nothing OrElse canvasImage Is Nothing Then Return Nothing
+        Dim bounds As Rectangle = imageInfo.Rectangle
+        bounds.Intersect(New Rectangle(Point.Empty, canvasImage.Size))
+        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return Nothing
+
+        ' Reuse the alpha coverage from the normal rendered light. That alpha is
+        ' the established mask/glow shape; the RGB pixels are deliberately removed
+        ' so the runtime can apply the mask to the snippet's current moving frame.
+        Dim field As New Bitmap(imageInfo.Image.Width, imageInfo.Image.Height, Imaging.PixelFormat.Format32bppArgb)
+        Using graphics As Graphics = Graphics.FromImage(field)
+            graphics.CompositingMode = CompositingMode.SourceCopy
+            graphics.DrawImageUnscaled(imageInfo.Image, Point.Empty)
+        End Using
+
+        Dim data As Imaging.BitmapData = field.LockBits(New Rectangle(Point.Empty, field.Size),
+                                                        Imaging.ImageLockMode.ReadWrite,
+                                                        Imaging.PixelFormat.Format32bppArgb)
+        Try
+            Dim byteCount As Integer = Math.Abs(data.Stride) * field.Height
+            Dim pixels(byteCount - 1) As Byte
+            Runtime.InteropServices.Marshal.Copy(data.Scan0, pixels, 0, pixels.Length)
+            For y As Integer = 0 To field.Height - 1
+                For x As Integer = 0 To field.Width - 1
+                    Dim offset As Integer = y * Math.Abs(data.Stride) + x * 4
+                    pixels(offset) = Byte.MaxValue
+                    pixels(offset + 1) = Byte.MaxValue
+                    pixels(offset + 2) = Byte.MaxValue
+                Next
+            Next
+            Runtime.InteropServices.Marshal.Copy(pixels, 0, data.Scan0, pixels.Length)
+        Finally
+            field.UnlockBits(data)
+        End Try
+        Return field
     End Function
 
 #End Region

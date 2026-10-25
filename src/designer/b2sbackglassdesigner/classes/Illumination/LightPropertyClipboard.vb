@@ -4,7 +4,7 @@
     Private Shared maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes As Integer
     Private Shared maskSmartRadius As Boolean
     Private Shared flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, flasherPulseDuration As Integer
-    Private Shared inFrontOfGlobalMask, lightBehindCanvas, artworkPixelLighting As Boolean
+    Private Shared inFrontOfGlobalMask, lightBehindCanvas, artworkPixelLighting, dynamicFrontLighting, dynamicFrontShowLight As Boolean
     Private Sub New()
     End Sub
     Public Shared ReadOnly Property CanPaste As Boolean
@@ -24,6 +24,8 @@
         inFrontOfGlobalMask=bulb.InFrontOfGlobalMask
         lightBehindCanvas=bulb.LightBehindCanvas
         artworkPixelLighting=bulb.ArtworkPixelLighting
+        dynamicFrontLighting=bulb.DynamicFrontLighting
+        dynamicFrontShowLight=bulb.DynamicFrontShowLight
         hasValue=True
     End Sub
     Public Shared Sub PasteTo(ByVal bulb As Illumination.BulbInfo)
@@ -43,6 +45,8 @@
         bulb.InFrontOfGlobalMask=inFrontOfGlobalMask
         bulb.LightBehindCanvas=lightBehindCanvas
         bulb.ArtworkPixelLighting=artworkPixelLighting
+        bulb.DynamicFrontLighting=dynamicFrontLighting
+        bulb.DynamicFrontShowLight=dynamicFrontShowLight
         bulb.IsIlluminatedImageDirty=True
     End Sub
 End Class

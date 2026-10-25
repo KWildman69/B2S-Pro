@@ -182,6 +182,7 @@ Public Module B2SProMainToolbar
         If key.Contains("addtext") Then Return "ADD" & vbLf & "TEXT"
         If key.Contains("makesnippet") Then Return "MAKE" & vbLf & "SNIPPET"
         If key.Contains("snippet") Then Return "ADD" & vbLf & "SNIPPET"
+        If key.Contains("infinity") Then Return "ADD" & vbLf & "INFINITY"
         If key.Contains("animation") Then Return "ANIMATION"
         If key.Contains("autosave") Then Return "AUTO" & vbLf & "SAVE"
         If key.Contains("createdirectb2s") Then Return "STEP 1" & vbLf & "CREATE" & vbLf & "B2SPRO FILE"
@@ -360,6 +361,18 @@ Public Module B2SProMainToolbar
                                               TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
                     End Using
                     DrawPlus(g, 26, 8, Color.White)
+                ElseIf key.Contains("infinity") Then
+                    Using bulbFill As New LinearGradientBrush(New Rectangle(10, 5, 12, 15), Color.White, Color.FromArgb(255, 198, 36), LinearGradientMode.Vertical)
+                        g.FillEllipse(bulbFill, 10, 5, 12, 12)
+                    End Using
+                    g.DrawEllipse(glow, 10, 5, 12, 12)
+                    g.DrawEllipse(line, 10, 5, 12, 12)
+                    g.DrawLine(line, 13, 17, 14, 22)
+                    g.DrawLine(line, 19, 17, 18, 22)
+                    Using basePen As New Pen(Color.White, 1.6F)
+                        g.DrawLine(basePen, 14, 22, 18, 22)
+                        g.DrawLine(basePen, 15, 25, 17, 25)
+                    End Using
                 ElseIf key.Contains("animation") Then
                     g.DrawEllipse(glow, 5, 5, 22, 22) : g.DrawEllipse(line, 5, 5, 22, 22)
                     Using playBrush As New SolidBrush(Color.White)
