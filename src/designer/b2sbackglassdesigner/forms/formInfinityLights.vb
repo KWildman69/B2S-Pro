@@ -9,6 +9,7 @@ Friend Enum InfinityAnimationEffect
     Outward
     Bounce
     Pulse
+    Strobe
 End Enum
 
 Friend Class InfinityEffectSetting
@@ -210,7 +211,7 @@ Public Class formInfinityLights
         playlist.DefaultCellStyle.SelectionBackColor = Color.FromArgb(32, 82, 122)
         playlist.Anchor = AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         Dim effectColumn As New DataGridViewComboBoxColumn() With {.Name = "Effect", .HeaderText = "Preprogrammed effect", .FlatStyle = FlatStyle.Flat}
-        effectColumn.Items.AddRange("Clockwise", "Counterclockwise", "Inward", "Outward", "Bounce", "Pulse")
+        effectColumn.Items.AddRange("Clockwise", "Counterclockwise", "Inward", "Outward", "Bounce", "Pulse", "Strobe")
         playlist.Columns.Add(effectColumn)
         playlist.Columns.Add(New DataGridViewTextBoxColumn() With {.Name = "Cycles", .HeaderText = "Cycles", .FillWeight = 35})
         playlist.Columns.Add(New DataGridViewTextBoxColumn() With {.Name = "Speed", .HeaderText = "Speed (ms)", .FillWeight = 45})
@@ -1125,6 +1126,8 @@ Friend NotInheritable Class InfinityLightGenerator
                 Return Math.Max(2, depth * 2 - 2)
             Case InfinityAnimationEffect.Pulse
                 Return 12
+            Case InfinityAnimationEffect.Strobe
+                Return 2
             Case Else
                 ' Clockwise and counterclockwise phases select a physical bulb
                 ' position. More phases than positions only duplicate identical
@@ -1201,6 +1204,14 @@ Friend NotInheritable Class InfinityLightGenerator
                     activeRing = If(bouncePhase < depth, bouncePhase, bounceLength - bouncePhase)
             End Select
             rowsLit = Math.Max(1, rowsLit)
+            Dim activeRingCount As Integer = rowsLit
+            If effect = InfinityAnimationEffect.Inward OrElse
+               effect = InfinityAnimationEffect.Outward OrElse
+               effect = InfinityAnimationEffect.Bounce Then
+                ' Ring-travel effects need at least one unlit ring or every
+                ' generated phase is visually identical when rowsLit >= depth.
+                activeRingCount = Math.Min(rowsLit, Math.Max(1, depth - 1))
+            End If
             For ring As Integer = 0 To depth - 1
                 Dim inset As Integer = ring * depthInset
                 Dim ringBounds As New Rectangle(inset, inset, canvasSize.Width - inset * 2, canvasSize.Height - inset * 2)
@@ -1224,9 +1235,11 @@ Friend NotInheritable Class InfinityLightGenerator
                         rowIsActive = True
                     ElseIf effect = InfinityAnimationEffect.Pulse Then
                         rowIsActive = ring < rowsLit
+                    ElseIf effect = InfinityAnimationEffect.Strobe Then
+                        rowIsActive = (phase Mod 2) = 0
                     Else
                         Dim relativeRing As Integer = (ring - activeRing + depth) Mod depth
-                        rowIsActive = relativeRing < Math.Min(depth, rowsLit)
+                        rowIsActive = relativeRing < activeRingCount
                     End If
                     If rowIsActive Then
                         If effect = InfinityAnimationEffect.Clockwise OrElse effect = InfinityAnimationEffect.Counterclockwise Then
