@@ -81,6 +81,15 @@ files together in one folder:
 Each package's checksum sidecar is required. Setup verifies every required
 package before changing any installed files.
 
+The Designer ZIP stores architecture-neutral OCR, help, ID Tester, and Infinity
+artwork once under `common`, with only architecture-specific executables under
+`x64` and `x86`. The current complete setup overlays `common` with the selected
+architecture in the Designer installation folder. It also continues to accept
+the earlier self-contained x64/x86 package layout. A previously downloaded
+standalone complete setup does not understand the compact package and must be
+replaced with the current fixed-name `B2SProSetup.exe`. Server-only setup and
+the Server package layout are unchanged.
+
 When the GitHub repository is public, each setup can query the latest release
 of `KWildman69/B2S-Pro`. Complete setup downloads the latest versioned Designer
 and Server packages; server-only setup downloads only the latest versioned

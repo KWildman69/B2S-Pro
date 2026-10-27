@@ -1156,8 +1156,9 @@ Friend NotInheritable Class InfinityLightGenerator
     End Sub
 
     Private Shared Function LoadBulbSource() As Bitmap
-        Using stream As IO.Stream = GetType(InfinityLightGenerator).Assembly.GetManifestResourceStream("B2SPro.InfinityBulb.png")
-            If stream Is Nothing Then Throw New InvalidOperationException("The embedded infinity bulb artwork is missing.")
+        Dim bulbPath As String = IO.Path.Combine(Application.StartupPath, "InfinityBulb.png")
+        If Not IO.File.Exists(bulbPath) Then Throw New IO.FileNotFoundException("The Infinity bulb artwork is missing.", bulbPath)
+        Using stream As IO.Stream = IO.File.OpenRead(bulbPath)
             Using embeddedImage As New Bitmap(stream)
                 Return New Bitmap(embeddedImage)
             End Using

@@ -755,19 +755,25 @@
     <EmbeddedResource Include="Resources\B2SAboutAvatar.gif">
       <LogicalName>B2SAboutAvatar.gif</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\IDTester.B2SPro">
-      <LogicalName>B2SBackglassDesigner.IDTester.B2SPro</LogicalName>
-    </EmbeddedResource>
+    <Content Include="Resources\IDTester.B2SPro">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>IDTester.B2SPro</TargetPath>
+    </Content>
     <EmbeddedResource Include="Resources\B2SProLogo.png">
       <LogicalName>B2SProLogo.png</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\InfinityBulb.png"><LogicalName>B2SPro.InfinityBulb.png</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="Resources\B2SProHelp.chm">
-      <LogicalName>B2SProHelp.chm</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\B2SProHelp.html">
-      <LogicalName>B2SProHelp.html</LogicalName>
-    </EmbeddedResource>
+    <Content Include="Resources\InfinityBulb.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>InfinityBulb.png</TargetPath>
+    </Content>
+    <Content Include="Resources\B2SProHelp.chm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>B2SProHelp.chm</TargetPath>
+    </Content>
+    <Content Include="Resources\B2SProHelp.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>B2SProHelp.html</TargetPath>
+    </Content>
     <Content Include="Resources\Codefiles\formDMD.vb.txt" />
     <Content Include="Resources\Codefiles\Application.Designer.vb.txt" />
     <None Include="Resources\undo.png" />

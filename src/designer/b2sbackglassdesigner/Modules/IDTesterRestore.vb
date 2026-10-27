@@ -2,7 +2,6 @@ Imports System.Diagnostics
 Imports System.Drawing
 Imports System.Drawing.Imaging
 Imports System.IO
-Imports System.Reflection
 Imports System.Security.Cryptography
 Imports System.Text
 Imports System.Threading
@@ -14,7 +13,7 @@ Imports System.Xml
 ''' The journal and backups live in per-user application data, never in a project.
 ''' </summary>
 Public Module IDTesterRestore
-    Private Const ResourceName As String = "B2SBackglassDesigner.IDTester.B2SPro"
+    Private Const TesterFileName As String = "IDTester.B2SPro"
     Private Const MonitorArgument As String = "--id-tester-monitor"
 
     Private Class Journal
@@ -255,8 +254,9 @@ Public Module IDTesterRestore
     End Function
 
     Private Function EmbeddedTesterBytes(ByVal backglassName As String) As Byte()
-        Using input As Stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
-            If input Is Nothing Then Throw New InvalidDataException("Embedded ID tester resource is missing.")
+        Dim testerPath As String = Path.Combine(Application.StartupPath, TesterFileName)
+        If Not File.Exists(testerPath) Then Throw New FileNotFoundException("The ID tester backglass is missing.", testerPath)
+        Using input As Stream = File.OpenRead(testerPath)
             Using buffer As New MemoryStream()
                 input.CopyTo(buffer)
                 Dim document As New XmlDocument()

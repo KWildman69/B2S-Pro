@@ -3704,35 +3704,8 @@ Public Class formDesigner
     End Sub
 
     Private Function EnsureB2SProHelpFile() As String
-        Const resourceName As String = "B2SProHelp.html"
-        Dim helpBytes As Byte()
-
-        Using resourceStream As Stream = Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
-            If resourceStream Is Nothing Then
-                Throw New InvalidOperationException("The embedded B2S Pro Help resource is missing.")
-            End If
-
-            Using buffer As New MemoryStream()
-                resourceStream.CopyTo(buffer)
-                helpBytes = buffer.ToArray()
-            End Using
-        End Using
-
-        Dim contentHash As String
-        Using sha256 = Security.Cryptography.SHA256.Create()
-            contentHash = BitConverter.ToString(sha256.ComputeHash(helpBytes)).Replace("-", String.Empty).Substring(0, 12)
-        End Using
-
-        Dim helpFolder As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                                "B2S Pro",
-                                                "Help")
-        Directory.CreateDirectory(helpFolder)
-
-        Dim helpFile As String = Path.Combine(helpFolder, "B2SProHelp-" & contentHash & ".html")
-        If Not File.Exists(helpFile) OrElse New FileInfo(helpFile).Length <> helpBytes.LongLength Then
-            File.WriteAllBytes(helpFile, helpBytes)
-        End If
-
+        Dim helpFile As String = Path.Combine(Application.StartupPath, "B2SProHelp.html")
+        If Not File.Exists(helpFile) Then Throw New FileNotFoundException("The B2S Pro Help file is missing.", helpFile)
         Return helpFile
     End Function
 
@@ -3745,35 +3718,8 @@ Public Class formDesigner
     End Sub
 
     Private Function EnsureOriginalB2SHelpFile() As String
-        Const resourceName As String = "B2SProHelp.chm"
-        Dim helpBytes As Byte()
-
-        Using resourceStream As Stream = Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
-            If resourceStream Is Nothing Then
-                Throw New InvalidOperationException("The embedded B2S Pro Help resource is missing.")
-            End If
-
-            Using buffer As New MemoryStream()
-                resourceStream.CopyTo(buffer)
-                helpBytes = buffer.ToArray()
-            End Using
-        End Using
-
-        Dim contentHash As String
-        Using sha256 = Security.Cryptography.SHA256.Create()
-            contentHash = BitConverter.ToString(sha256.ComputeHash(helpBytes)).Replace("-", String.Empty).Substring(0, 12)
-        End Using
-
-        Dim helpFolder As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                                "B2S Pro",
-                                                "Help")
-        Directory.CreateDirectory(helpFolder)
-
-        Dim helpFile As String = Path.Combine(helpFolder, "B2SProHelp-" & contentHash & ".chm")
-        If Not File.Exists(helpFile) OrElse New FileInfo(helpFile).Length <> helpBytes.LongLength Then
-            File.WriteAllBytes(helpFile, helpBytes)
-        End If
-
+        Dim helpFile As String = Path.Combine(Application.StartupPath, "B2SProHelp.chm")
+        If Not File.Exists(helpFile) Then Throw New FileNotFoundException("The original B2S Help file is missing.", helpFile)
         Return helpFile
     End Function
 

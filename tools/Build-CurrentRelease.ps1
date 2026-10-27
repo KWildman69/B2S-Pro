@@ -201,6 +201,12 @@ $ocrRuntimeStage = Join-Path $buildRoot 'ocr-runtime'
 & (Join-Path $OcrDependencyRoot 'python\python.exe') -B (Join-Path $sourceCopyRoot 'tools\Build-OcrRuntime.py') $OcrDependencyRoot (Join-Path $designerRoot 'ocr') $ocrRuntimeStage $OcrModelPath
 if ($LASTEXITCODE -ne 0) { throw 'Bundled OCR runtime preparation failed.' }
 $designerRuntimeStage = Join-Path $buildRoot 'designer-distribution'
+$designerCommonStage = Join-Path $designerRuntimeStage 'common'
+New-Item -ItemType Directory -Path $designerCommonStage -Force | Out-Null
+Copy-DirectoryContents $ocrRuntimeStage (Join-Path $designerCommonStage 'OcrTools')
+foreach ($name in @('B2SProHelp.html', 'B2SProHelp.chm', 'IDTester.B2SPro', 'InfinityBulb.png')) {
+    Copy-Item -LiteralPath (Join-Path $designerRoot "b2sbackglassdesigner\Resources\$name") -Destination $designerCommonStage -Force
+}
 foreach ($platform in @('x64', 'x86')) {
     $platformStage = Join-Path $designerRuntimeStage $platform
     New-Item -ItemType Directory -Path $platformStage -Force | Out-Null
@@ -211,7 +217,6 @@ foreach ($platform in @('x64', 'x86')) {
         Copy-Item -LiteralPath (Join-Path $designerRoot "B2SVPinMAMEStarter\bin\$platform\Release\$name") -Destination $platformStage -Force
     }
     Copy-Item -LiteralPath $updateChecker -Destination $platformStage -Force
-    Copy-DirectoryContents $ocrRuntimeStage (Join-Path $platformStage 'OcrTools')
 }
 foreach ($name in @('README.md', 'CHANGELOG.md', 'CREDITS.md', 'LICENSE.txt')) {
     Copy-Item -LiteralPath (Join-Path $sourceCopyRoot $name) -Destination $designerRuntimeStage -Force
@@ -309,7 +314,7 @@ foreach ($zipPath in Get-ChildItem -LiteralPath $publicReleaseRoot, $privateRele
         foreach ($entry in $archive.Entries) {
             if ($entry.FullName.Contains('\')) { throw "Archive uses a backslash entry path: $($zipPath.Name): $($entry.FullName)" }
             if ($entry.FullName -match $forbiddenPattern -and
-                $entry.FullName -notmatch '(^|/)Resources/IDTester\.B2SPro$') {
+                $entry.FullName -notmatch '(^|/)(Resources|common)/IDTester\.B2SPro$') {
                 throw "Forbidden local-only content in $($zipPath.Name): $($entry.FullName)"
             }
         }
@@ -329,6 +334,27 @@ try {
     foreach ($entryName in $designerRuntimeComparisons.Keys) {
         if ((Get-ZipEntryHash $designerArchive $entryName) -ne (Get-FileHash -LiteralPath $designerRuntimeComparisons[$entryName] -Algorithm SHA256).Hash) {
             throw "Designer package runtime mismatch: $entryName"
+        }
+    }
+    $designerSharedComparisons = @{
+        'common/B2SProHelp.html' = (Join-Path $designerRoot 'b2sbackglassdesigner\Resources\B2SProHelp.html')
+        'common/B2SProHelp.chm' = (Join-Path $designerRoot 'b2sbackglassdesigner\Resources\B2SProHelp.chm')
+        'common/IDTester.B2SPro' = (Join-Path $designerRoot 'b2sbackglassdesigner\Resources\IDTester.B2SPro')
+        'common/InfinityBulb.png' = (Join-Path $designerRoot 'b2sbackglassdesigner\Resources\InfinityBulb.png')
+        'common/OcrTools/python/python.exe' = (Join-Path $ocrRuntimeStage 'python\python.exe')
+        'common/OcrTools/node/node.exe' = (Join-Path $ocrRuntimeStage 'node\node.exe')
+        'common/OcrTools/eng.traineddata' = (Join-Path $ocrRuntimeStage 'eng.traineddata')
+    }
+    foreach ($entryName in $designerSharedComparisons.Keys) {
+        if ((Get-ZipEntryHash $designerArchive $entryName) -ne (Get-FileHash -LiteralPath $designerSharedComparisons[$entryName] -Algorithm SHA256).Hash) {
+            throw "Designer package shared-runtime mismatch: $entryName"
+        }
+    }
+    foreach ($platform in @('x64', 'x86')) {
+        foreach ($relative in @('B2SProHelp.html', 'B2SProHelp.chm', 'IDTester.B2SPro', 'InfinityBulb.png', 'OcrTools/python/python.exe', 'OcrTools/node/node.exe', 'OcrTools/eng.traineddata')) {
+            if ($null -ne $designerArchive.GetEntry("$platform/$relative")) {
+                throw "Designer package duplicates shared content: $platform/$relative"
+            }
         }
     }
     $designerSourceEntries = @($designerArchive.Entries | Where-Object {

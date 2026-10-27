@@ -1081,6 +1081,16 @@ namespace B2SPro.Setup
                 Require(_designerArchive, arch + "/B2SPro.exe.config");
                 Require(_designerArchive, arch + "/B2SVPinMAMEStarter.exe");
                 Require(_designerArchive, arch + "/B2SUpdateChecker.exe");
+                if (HasCommonDesignerPayload())
+                {
+                    Require(_designerArchive, "common/B2SProHelp.html");
+                    Require(_designerArchive, "common/B2SProHelp.chm");
+                    Require(_designerArchive, "common/IDTester.B2SPro");
+                    Require(_designerArchive, "common/InfinityBulb.png");
+                    Require(_designerArchive, "common/OcrTools/python/python.exe");
+                    Require(_designerArchive, "common/OcrTools/node/node.exe");
+                    Require(_designerArchive, "common/OcrTools/eng.traineddata");
+                }
             }
             string serverPrefix = GetServerPrefix();
             string[] requiredServerFiles =
@@ -1132,6 +1142,11 @@ namespace B2SPro.Setup
         private string GetServerPrefix()
         {
             return _serverArchive.GetEntry("Runtime/B2SServer/B2SBackglassServer.dll") != null ? "Runtime/B2SServer/" : String.Empty;
+        }
+
+        private bool HasCommonDesignerPayload()
+        {
+            return _designerArchive != null && _designerArchive.GetEntry("common/OcrTools/python/python.exe") != null;
         }
 
         private static void Require(ZipArchive archive, string name)
@@ -1546,6 +1561,13 @@ namespace B2SPro.Setup
         {
             if (_installDesigner)
             {
+                const string commonPrefix = "common/";
+                foreach (ZipArchiveEntry entry in _designerArchive.Entries)
+                {
+                    if (String.IsNullOrEmpty(entry.Name) || !entry.FullName.StartsWith(commonPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    string relative = entry.FullName.Substring(commonPrefix.Length).Replace('/', Path.DirectorySeparatorChar);
+                    Add(entry, Path.Combine(_designer, relative), false, true);
+                }
                 string designerPrefix = _arch + "/";
                 foreach (ZipArchiveEntry entry in _designerArchive.Entries)
                 {
@@ -2206,6 +2228,8 @@ namespace B2SPro.Setup
                         if (File.ReadAllText(Path.Combine(server, "ScreenRes.txt")) != "SELF-TEST-SCREENRES") throw new Exception(arch + " ScreenRes.txt was overwritten.");
                         if (File.ReadAllText(Path.Combine(server, "Plugins", "Plugins.txt")) != "SELF-TEST-PLUGIN") throw new Exception(arch + " plugin settings were overwritten.");
                         if (new FileInfo(Path.Combine(designer, "B2SPro.exe")).Length < 1000000) throw new Exception(arch + " Designer payload was not installed.");
+                        foreach (string sharedFile in new[] { "B2SProHelp.html", "B2SProHelp.chm", "IDTester.B2SPro", "InfinityBulb.png", Path.Combine("OcrTools", "python", "python.exe"), Path.Combine("OcrTools", "node", "node.exe"), Path.Combine("OcrTools", "eng.traineddata") })
+                            if (!File.Exists(Path.Combine(designer, sharedFile))) throw new Exception(arch + " shared Designer payload was not installed: " + sharedFile);
                         if (new FileInfo(Path.Combine(server, "B2SBackglassServer.dll")).Length < 100000) throw new Exception(arch + " Server payload was not installed.");
                         if (new FileInfo(Path.Combine(designer, "B2SUpdateChecker.exe")).Length < 10000) throw new Exception(arch + " Designer update checker was not installed.");
                         if (new FileInfo(Path.Combine(server, "B2SUpdateChecker.exe")).Length < 10000) throw new Exception(arch + " Server update checker was not installed.");

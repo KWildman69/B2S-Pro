@@ -6,6 +6,12 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 **Feature Update — Dynamic Lighting and Infinity Controls**
 
+### October 27 package correction — versions unchanged
+
+- Store identical OCR, help, ID Tester, and Infinity artwork once in the Designer runtime ZIP instead of duplicating them in both x64 and x86 folders.
+- Update the complete setup to install the shared payload plus the selected Designer architecture. The current setup continues to accept the earlier self-contained package layout.
+- Keep Server runtime code, package layout, and server-only installation behavior unchanged.
+
 ### Designer
 
 - Add Dynamic Front Lighting for moving snippets, including optional masked light visibility and accurate Designer preview/export support.

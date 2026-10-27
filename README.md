@@ -6,8 +6,8 @@ B2S Pro is a modernized backglass designer and animation workspace for creating 
 
 ## Current release
 
-- B2S Pro Backglass Designer: **1.0.7**
-- B2S Pro Server: **3.0.8**
+- B2S Pro Backglass Designer: **1.0.8**
+- B2S Pro Server: **3.0.9**
 - Platform: Windows
 
 The tested Designer and Server runtime packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases/latest) page. GitHub provides the source code directly, and compiled release files are not stored in the source tree.
@@ -36,13 +36,13 @@ Designer and Server ZIPs, and their two SHA-256 checksum files.
 - SW trigger choices that use the existing controller switch input for lighting, snippets, animations, motion paths, trough drains, pivots, and physics launchers on either canvas
 - Pixel-level lamp lighting that preserves dark-image contrast
 - Dedicated high-intensity flasher editor with live full-backglass preview, mask refinement, temperature, diffusion, and radial-spike controls
-- Embedded illustrated B2S Pro help while retaining the original help material
+- Installed illustrated B2S Pro help while retaining the original help material
 - One complete editable and runtime-ready `.B2SPro` file for every saved backglass
 - Backward-compatible import and Server fallback for established `.directB2S` files
 
 ## Documentation
 
-The illustrated [B2S Pro online guide](https://kwildman69.github.io/B2S-Pro/) is published from the documentation source in this repository. The same help content is embedded in the application so it cannot be separated from the installed program.
+The illustrated [B2S Pro online guide](https://kwildman69.github.io/B2S-Pro/) is published from the documentation source in this repository. The same help content is installed alongside the application by the complete setup.
 
 The original Backglass Designer help remains intact alongside the new B2S Pro feature guide.
 
@@ -50,8 +50,8 @@ See [Speaker grill panels](docs/speaker-grill-panels.md) for the panel and saved
 
 ## Source layout
 
-- `src/designer` — B2S Pro Backglass Designer 1.0.7 source
-- `src/server` — B2S Pro Server 3.0.8 source
+- `src/designer` — B2S Pro Backglass Designer 1.0.8 source
+- `src/server` — B2S Pro Server 3.0.9 source
 - `docs/help-source` — complete help project and illustrated documentation
 - `CHANGELOG.md` — B2S Pro release history
 - `CREDITS.md` — acknowledgements and project lineage
@@ -73,4 +73,4 @@ Copyright © 2026 Ken Wildman. B2S-derived code remains subject to the original 
 
 ## Help
 
-The Help menu offers **B2S Pro Illustrated Guide** for the expanded workflows and **B2S Help** for the original editor reference. Both are embedded in the Designer; no separate help files need to be downloaded.
+The Help menu offers **B2S Pro Illustrated Guide** for the expanded workflows and **B2S Help** for the original editor reference. Both are installed by the complete setup; no separate help download is required.
