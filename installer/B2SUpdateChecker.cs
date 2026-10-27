@@ -138,9 +138,12 @@ namespace B2SPro.Updates
                     }
 
                     string message = target.ProductName + " update available.\r\n\r\n" +
+                        available.UpdateType.ToUpperInvariant() + "\r\n" +
+                        available.ReleaseTitle + "\r\n\r\n" +
                         "Installed version: " + VersionText(installedVersion) + "\r\n" +
                         "Available version: " + VersionText(available.Version) + "\r\n\r\n" +
                         (available.Version == installedVersion ? "The current release package differs from the recorded installation, or this older installation has no package record.\r\n\r\n" : "") +
+                        "WHAT CHANGED\r\n" + available.ReleaseNotes + "\r\n\r\n" +
                         "Download the verified update and open setup now?\r\n\r\n" +
                         target.CloseBeforeInstallMessage;
                     DialogResult answer = MessageBox.Show(
@@ -197,10 +200,21 @@ namespace B2SPro.Updates
             }
 
             Version available = new Version(installed.Major, installed.Minor, Math.Max(0, installed.Build) + 1, 0);
+            var testUpdate = new AvailableUpdate(
+                available,
+                String.Empty,
+                new string('a', 64),
+                new string('b', 64),
+                "Feature Update",
+                "Infinity lighting and update transparency preview",
+                "Designer:\r\n- Added Infinity-light trigger controls.\r\n- Improved lighting workflow.\r\n\r\nServer:\r\n- Includes the latest confirmed compatibility fixes.");
             string message = "TEST NOTIFICATION — no files will be downloaded or changed.\r\n\r\n" +
                 target.ProductName + " update available.\r\n\r\n" +
+                testUpdate.UpdateType.ToUpperInvariant() + "\r\n" +
+                testUpdate.ReleaseTitle + "\r\n\r\n" +
                 "Installed version: " + VersionText(installed) + "\r\n" +
                 "Available version: " + VersionText(available) + "\r\n\r\n" +
+                "WHAT CHANGED\r\n" + testUpdate.ReleaseNotes + "\r\n\r\n" +
                 "Download the verified update and open setup now?\r\n\r\n" +
                 target.CloseBeforeInstallMessage;
             DialogResult answer = MessageBox.Show(
@@ -378,13 +392,64 @@ namespace B2SPro.Updates
         public readonly string SetupUrl;
         public readonly string SetupDigest;
         public readonly string PackageDigest;
+        public readonly string UpdateType;
+        public readonly string ReleaseTitle;
+        public readonly string ReleaseNotes;
 
-        public AvailableUpdate(Version version, string setupUrl, string setupDigest, string packageDigest)
+        public AvailableUpdate(Version version, string setupUrl, string setupDigest, string packageDigest,
+            string updateType, string releaseTitle, string releaseNotes)
         {
             Version = version;
             SetupUrl = setupUrl;
             SetupDigest = setupDigest;
             PackageDigest = packageDigest;
+            UpdateType = updateType;
+            ReleaseTitle = releaseTitle;
+            ReleaseNotes = releaseNotes;
+        }
+    }
+
+    internal static class ReleaseDetails
+    {
+        private static readonly string[] Types = { "Major Update", "Feature Update", "Minor Fix", "Maintenance Update", "Critical Fix" };
+
+        public static void Parse(string releaseName, string releaseBody, out string updateType, out string title, out string notes)
+        {
+            string name = Clean(releaseName, 160);
+            string body = Clean(releaseBody, 3500);
+            updateType = "Release Update";
+            title = String.IsNullOrWhiteSpace(name) ? "B2S Pro update" : name;
+            notes = String.IsNullOrWhiteSpace(body) ? "Update details were not provided for this legacy release." : body;
+
+            foreach (string candidate in Types)
+            {
+                if (title.StartsWith(candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    updateType = candidate;
+                    title = title.Substring(candidate.Length).TrimStart(' ', '-', ':', '\u2014');
+                    if (String.IsNullOrWhiteSpace(title)) title = candidate;
+                    return;
+                }
+            }
+
+            string firstLine = notes.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)[0].Trim();
+            foreach (string candidate in Types)
+            {
+                if (String.Equals(firstLine, candidate, StringComparison.OrdinalIgnoreCase) ||
+                    String.Equals(firstLine, "Update type: " + candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    updateType = candidate;
+                    int newline = notes.IndexOf('\n');
+                    notes = newline >= 0 ? notes.Substring(newline + 1).Trim() : "See the release notes for details.";
+                    return;
+                }
+            }
+        }
+
+        private static string Clean(string value, int maximumLength)
+        {
+            string result = (value ?? String.Empty).Replace("\0", String.Empty).Trim();
+            return result.Length <= maximumLength ? result : result.Substring(0, maximumLength).TrimEnd() + "...";
         }
     }
 
@@ -408,6 +473,11 @@ namespace B2SPro.Updates
                 var assets = rawAssets as object[];
                 if (assets == null) throw new InvalidDataException("GitHub returned an unreadable asset list.");
 
+                string updateType;
+                string releaseTitle;
+                string releaseNotes;
+                ReleaseDetails.Parse(ReadString(release, "name"), ReadString(release, "body"), out updateType, out releaseTitle, out releaseNotes);
+
                 Version packageVersion = null;
                 string setupUrl = null;
                 string setupDigest = null;
@@ -428,7 +498,7 @@ namespace B2SPro.Updates
 
                 if (packageVersion == null) throw new InvalidDataException("The latest release does not contain the expected " + target.ProductName + " package.");
                 if (String.IsNullOrWhiteSpace(setupUrl)) throw new InvalidDataException("The latest release does not contain " + target.SetupAssetName + ".");
-                return new AvailableUpdate(packageVersion, setupUrl, setupDigest, packageDigest);
+                return new AvailableUpdate(packageVersion, setupUrl, setupDigest, packageDigest, updateType, releaseTitle, releaseNotes);
             }
         }
 
@@ -592,6 +662,14 @@ namespace B2SPro.Updates
                 Assert(GitHubReleaseClient.NormalizeDigest("sha256:not-a-hash") == null, "Invalid GitHub digest was accepted.");
                 Assert(designer.SetupFolderArgument == "--installed-designer", "Designer setup handoff is incorrect.");
                 Assert(server.SetupFolderArgument == "--installed-server", "Server setup handoff is incorrect.");
+                string updateType;
+                string updateTitle;
+                string updateNotes;
+                ReleaseDetails.Parse("Feature Update - Lighting tools", "Designer:\n- Added lighting controls.\n\nServer:\n- Improved compatibility.", out updateType, out updateTitle, out updateNotes);
+                Assert(updateType == "Feature Update", "Release classification parsing failed.");
+                Assert(updateTitle == "Lighting tools", "Release title parsing failed.");
+                Assert(updateNotes.IndexOf("Designer:", StringComparison.Ordinal) >= 0 && updateNotes.IndexOf("Server:", StringComparison.Ordinal) >= 0,
+                    "Component release notes were not preserved.");
                 string preferenceFolder = Path.Combine(Path.GetTempPath(), "B2SUpdatePreferenceSelfTest-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(preferenceFolder);
                 try
@@ -606,7 +684,7 @@ namespace B2SPro.Updates
                 {
                     try { Directory.Delete(preferenceFolder, true); } catch { }
                 }
-                Console.WriteLine("SELF-TEST PASSED: component selection, package parsing, version comparison, digest validation, setup handoff, and automatic-notification preference");
+                Console.WriteLine("SELF-TEST PASSED: component selection, package parsing, version comparison, digest validation, classified release notes, setup handoff, and automatic-notification preference");
                 return 0;
             }
             catch (Exception ex)
