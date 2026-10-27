@@ -3182,7 +3182,8 @@ Public Class formDesigner
                 .DualMode = boundary.DualMode,
                 .Interval = baseInterval,
                 .Loops = 0,
-                .StartAnimationAtBackglassStartup = True,
+                .IDJoin = editor.AnimationIDJoin,
+                .StartAnimationAtBackglassStartup = editor.StartAnimationAtBackglassStartup,
                 .LightsStateAtAnimationStart = Animation.AnimationHeader.eLightsStateAtAnimationStart.InvolvedLightsOff,
                 .LightsStateAtAnimationEnd = Animation.AnimationHeader.eLightsStateAtAnimationEnd.InvolvedLightsOff,
                 .AnimationStopBehaviour = Animation.AnimationHeader.eAnimationStopBehaviour.StopImmediatelly,
@@ -4177,11 +4178,16 @@ Public Class formDesigner
             Function(item) item.IsImageSnippit AndAlso item.SnippitInfo.InfinityLightsGroup.Equals(groupName, StringComparison.OrdinalIgnoreCase)).ToList()
         If oldFrames.Count = 0 Then Return
 
+        Dim infinityAnimation As Animation.AnimationHeader = Backglass.currentData.Animations.FirstOrDefault(
+            Function(item) item.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase))
+
         Dim boundaryRectangle As New Rectangle(selected.Location, selected.Size)
         Dim background As Image = If(selected.ParentForm = eParentForm.DMD, Backglass.currentData.DMDImage, Backglass.currentData.Image)
         Dim selectionArtwork As Bitmap = Backglass.currentTabPage.CurrentPictureBox.CreateLayeredPreviewImageForBulbs(oldFrames, Nothing)
         Using selectionArtwork
-        Using editor As New formInfinityLights(boundaryRectangle, background, selected.SnippitInfo.InfinityLightsSettings, selected, selectionArtwork)
+        Using editor As New formInfinityLights(boundaryRectangle, background, selected.SnippitInfo.InfinityLightsSettings, selected, selectionArtwork,
+                                               If(infinityAnimation Is Nothing, String.Empty, infinityAnimation.IDJoin),
+                                               If(infinityAnimation Is Nothing, True, infinityAnimation.StartAnimationAtBackglassStartup))
             If editor.ShowDialog(Me) <> DialogResult.OK Then Return
 
             Dim effectSettings As List(Of InfinityEffectSetting) = editor.Effects
@@ -4277,18 +4283,17 @@ Public Class formDesigner
                 targetBulbs.Add(frame)
             Next
 
-            Dim infinityAnimation As Animation.AnimationHeader = Backglass.currentData.Animations.FirstOrDefault(
-                Function(item) item.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase))
             If infinityAnimation Is Nothing Then
                 infinityAnimation = New Animation.AnimationHeader() With {
                     .Name = groupName, .DualMode = selected.DualMode, .Loops = 0,
-                    .StartAnimationAtBackglassStartup = True,
                     .LightsStateAtAnimationStart = Animation.AnimationHeader.eLightsStateAtAnimationStart.InvolvedLightsOff,
                     .LightsStateAtAnimationEnd = Animation.AnimationHeader.eLightsStateAtAnimationEnd.InvolvedLightsOff,
                     .AnimationStopBehaviour = Animation.AnimationHeader.eAnimationStopBehaviour.StopImmediatelly
                 }
                 Backglass.currentData.Animations.Add(infinityAnimation)
             End If
+            infinityAnimation.IDJoin = editor.AnimationIDJoin
+            infinityAnimation.StartAnimationAtBackglassStartup = editor.StartAnimationAtBackglassStartup
             infinityAnimation.Interval = baseInterval
             BuildInfinityAnimationSteps(infinityAnimation, effectSettings, effectFrames, baseInterval)
 

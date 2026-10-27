@@ -40,6 +40,9 @@ Public Class formInfinityLights
     Private ReadOnly btnQuickSelection As New Button()
     Private ReadOnly cmbLinePattern As New ComboBox()
     Private ReadOnly chkShowAllBulbs As New CheckBox()
+    Private ReadOnly cmbAnimationTrigger As New ComboBox()
+    Private ReadOnly txtAnimationTriggerIDs As New TextBox()
+    Private ReadOnly chkAnimationTriggerInverted As New CheckBox()
     Private ReadOnly btnTestAnimation As New Button()
     Private ReadOnly animationTimer As New Timer()
     Private ReadOnly playlist As New DataGridView()
@@ -69,7 +72,9 @@ Public Class formInfinityLights
                    Optional ByVal background As Image = Nothing,
                    Optional ByVal savedSettings As String = "",
                    Optional ByVal sourceSettings As Illumination.BulbInfo = Nothing,
-                   Optional ByVal selectionArtwork As Image = Nothing)
+                   Optional ByVal selectionArtwork As Image = Nothing,
+                   Optional ByVal animationIDJoin As String = "",
+                   Optional ByVal startAnimationAtBackglassStartup As Boolean = True)
         outerBounds = bounds
         infinitySettings = New Illumination.BulbInfo() With {
             .Location = bounds.Location,
@@ -103,7 +108,7 @@ Public Class formInfinityLights
 
         Dim settings As New TableLayoutPanel() With {
             .Location = New Point(0, 0), .Size = New Size(382, 780),
-            .ColumnCount = 2, .RowCount = 20, .BackColor = Color.FromArgb(14, 18, 27),
+            .ColumnCount = 2, .RowCount = 22, .BackColor = Color.FromArgb(14, 18, 27),
             .AutoSize = True, .AutoSizeMode = AutoSizeMode.GrowAndShrink,
             .Dock = DockStyle.Top
         }
@@ -170,12 +175,30 @@ Public Class formInfinityLights
         settings.SetColumnSpan(btnQuickSelection, 2)
         AddHandler btnQuickSelection.Click, AddressOf QuickSelection_Click
 
+        cmbAnimationTrigger.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbAnimationTrigger.Items.AddRange(New Object() {"Always running", "B2S command", "ROM lamp", "ROM solenoid", "ROM switch", "Advanced / mixed"})
+        cmbAnimationTrigger.SelectedIndex = 0
+        AddSetting(settings, 19, "Animation trigger", cmbAnimationTrigger, String.Empty)
+        cmbAnimationTrigger.Width = 180
+
+        Dim triggerHost As New FlowLayoutPanel() With {.Dock = DockStyle.Fill, .FlowDirection = FlowDirection.LeftToRight, .WrapContents = False}
+        txtAnimationTriggerIDs.Width = 120
+        chkAnimationTriggerInverted.Text = "Invert"
+        chkAnimationTriggerInverted.AutoSize = True
+        chkAnimationTriggerInverted.Margin = New Padding(8, 5, 0, 0)
+        triggerHost.Controls.Add(txtAnimationTriggerIDs)
+        triggerHost.Controls.Add(chkAnimationTriggerInverted)
+        settings.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
+        settings.Controls.Add(New Label() With {.Text = "Trigger ID(s)", .Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}, 0, 20)
+        settings.Controls.Add(triggerHost, 1, 20)
+        AddHandler cmbAnimationTrigger.SelectedIndexChanged, AddressOf AnimationTriggerChanged
+
         Dim note As New Label() With {
             .Text = "The selected light box is the outer boundary. It will be replaced by generated bulb images and one normal looping B2S animation.",
             .Dock = DockStyle.Fill, .ForeColor = Color.Gainsboro, .AutoSize = False
         }
         settings.RowStyles.Add(New RowStyle(SizeType.Absolute, 64))
-        settings.Controls.Add(note, 0, 19)
+        settings.Controls.Add(note, 0, 21)
         settings.SetColumnSpan(note, 2)
 
         preview.Location = New Point(428, 14)
@@ -379,6 +402,7 @@ Public Class formInfinityLights
             AddHandler control.KeyDown, AddressOf NumericKeyDown
         Next
         ApplySavedSettings(savedSettings)
+        ApplyAnimationTrigger(animationIDJoin, startAnimationAtBackglassStartup)
         RenderPreview()
     End Sub
 
@@ -513,6 +537,90 @@ Public Class formInfinityLights
             Return cmbLinePattern.SelectedIndex <> 1
         End Get
     End Property
+
+    Friend ReadOnly Property AnimationIDJoin As String
+        Get
+            Dim value As String = String.Empty
+            TryBuildAnimationIDJoin(value)
+            Return value
+        End Get
+    End Property
+
+    Friend ReadOnly Property StartAnimationAtBackglassStartup As Boolean
+        Get
+            Return cmbAnimationTrigger.SelectedIndex = 0
+        End Get
+    End Property
+
+    Private Sub AnimationTriggerChanged(ByVal sender As Object, ByVal e As EventArgs)
+        Dim usesTrigger As Boolean = cmbAnimationTrigger.SelectedIndex > 0
+        txtAnimationTriggerIDs.Enabled = usesTrigger
+        chkAnimationTriggerInverted.Enabled = usesTrigger AndAlso cmbAnimationTrigger.SelectedIndex <> 5
+        If Not usesTrigger Then chkAnimationTriggerInverted.Checked = False
+    End Sub
+
+    Private Sub ApplyAnimationTrigger(ByVal idJoin As String, ByVal startAtStartup As Boolean)
+        Dim rawValue As String = If(idJoin, String.Empty).Trim()
+        If startAtStartup AndAlso rawValue.Length = 0 Then
+            cmbAnimationTrigger.SelectedIndex = 0
+            txtAnimationTriggerIDs.Text = String.Empty
+            chkAnimationTriggerInverted.Checked = False
+            AnimationTriggerChanged(Nothing, EventArgs.Empty)
+            Return
+        End If
+
+        Dim ids As New List(Of String)()
+        Dim selectedType As Integer = -1
+        Dim inverted As Boolean = False
+        For Each token As String In rawValue.Split(","c)
+            Dim match = System.Text.RegularExpressions.Regex.Match(token.Trim(), "^(I?)(L|S|W)?([0-9]+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            If Not match.Success Then
+                selectedType = 5
+                Exit For
+            End If
+            Dim tokenType As Integer = If(match.Groups(2).Value.Equals("L", StringComparison.OrdinalIgnoreCase), 2,
+                                          If(match.Groups(2).Value.Equals("S", StringComparison.OrdinalIgnoreCase), 3,
+                                             If(match.Groups(2).Value.Equals("W", StringComparison.OrdinalIgnoreCase), 4, 1)))
+            Dim tokenInverted As Boolean = match.Groups(1).Length > 0
+            If selectedType >= 0 AndAlso (selectedType <> tokenType OrElse inverted <> tokenInverted) Then
+                selectedType = 5
+                Exit For
+            End If
+            selectedType = tokenType
+            inverted = tokenInverted
+            ids.Add(match.Groups(3).Value)
+        Next
+
+        If selectedType <= 0 Then selectedType = 5
+        cmbAnimationTrigger.SelectedIndex = selectedType
+        txtAnimationTriggerIDs.Text = If(selectedType = 5, rawValue, String.Join(",", ids))
+        chkAnimationTriggerInverted.Checked = (selectedType <> 5 AndAlso inverted)
+        AnimationTriggerChanged(Nothing, EventArgs.Empty)
+    End Sub
+
+    Private Function TryBuildAnimationIDJoin(ByRef value As String) As Boolean
+        value = String.Empty
+        Dim selectedType As Integer = cmbAnimationTrigger.SelectedIndex
+        If selectedType <= 0 Then Return True
+
+        Dim rawValue As String = txtAnimationTriggerIDs.Text.Trim()
+        If selectedType = 5 Then
+            If rawValue.Length = 0 Then Return False
+            value = rawValue
+            Return True
+        End If
+
+        Dim prefix As String = If(selectedType = 2, "L", If(selectedType = 3, "S", If(selectedType = 4, "W", String.Empty)))
+        Dim joins As New List(Of String)()
+        For Each token As String In rawValue.Split(","c)
+            Dim id As Integer
+            If Not Integer.TryParse(token.Trim(), id) OrElse id <= 0 Then Return False
+            joins.Add(If(chkAnimationTriggerInverted.Checked, "I", String.Empty) & prefix & id.ToString())
+        Next
+        If joins.Count = 0 Then Return False
+        value = String.Join(",", joins)
+        Return True
+    End Function
 
     Private Shared Sub CopyEditableSettings(ByVal source As Illumination.BulbInfo,
                                             ByVal target As Illumination.BulbInfo)
@@ -671,9 +779,18 @@ Public Class formInfinityLights
     End Sub
 
     Private Sub ValidatePlaylist(ByVal sender As Object, ByVal e As EventArgs)
-        If Effects.Count > 0 Then Return
-        DialogResult = DialogResult.None
-        MessageBox.Show(Me, "Add at least one animation effect.", "Generate Infinity Lights", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        If Effects.Count = 0 Then
+            DialogResult = DialogResult.None
+            MessageBox.Show(Me, "Add at least one animation effect.", "Generate Infinity Lights", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        Dim idJoin As String = String.Empty
+        If Not TryBuildAnimationIDJoin(idJoin) Then
+            DialogResult = DialogResult.None
+            MessageBox.Show(Me, "Enter one or more positive trigger IDs separated by commas.", "Generate Infinity Lights", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            txtAnimationTriggerIDs.Focus()
+        End If
     End Sub
 
     Private Shared Sub ConfigureNumber(ByVal control As NumericUpDown, ByVal minimum As Integer, ByVal maximum As Integer, ByVal value As Integer, ByVal increment As Integer)
