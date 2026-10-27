@@ -2,6 +2,26 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 1.0.8 / Server 3.0.9 — 2026-10-27
+
+**Feature Update — Dynamic Lighting and Infinity Controls**
+
+### Designer
+
+- Add Dynamic Front Lighting for moving snippets, including optional masked light visibility and accurate Designer preview/export support.
+- Add the Infinity Lights generator with photorealistic bulbs, masks, adjustable lighting controls, reusable animation frames, effect playlists, clockwise, counterclockwise, pulse, inward, outward, bounce, and strobe effects.
+- Add normal B2S command, ROM lamp, ROM solenoid, ROM switch, inverted, mixed, and always-running triggers to generated Infinity animations. Preserve trigger settings when reopening and editing an Infinity group.
+
+### Server
+
+- Render Dynamic Front Lighting against moving snippets while preserving normal legacy backglass lighting and animation paths.
+- Read and run the generated Infinity frames as ordinary B2S animations, using the existing trigger and stop systems.
+
+### Updater
+
+- Show the update classification, release title, installed and available versions, and component-specific release notes before downloading an update.
+- Preserve the fixed-name setup download path used by existing supported update checkers.
+
 ## Designer 1.0.7 / Server 3.0.8 — 2026-10-22
 
 - Add a setup option to disable automatic update notifications for both Designer and Server. Manual **Check for Updates** remains available, and rerunning setup with the option cleared re-enables automatic notifications.
