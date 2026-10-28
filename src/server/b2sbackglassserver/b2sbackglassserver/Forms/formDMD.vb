@@ -112,12 +112,6 @@ Public Class formDMD
             End Using
             Return
         End If
-        If picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled AndAlso Not picbox.PivotRotation AndAlso
-           picbox.NativeRotationFramePlayback AndAlso image.Width = CInt(picbox.RectangleF.Width) AndAlso
-           image.Height = CInt(picbox.RectangleF.Height) Then
-            graphics.DrawImageUnscaled(image, CInt(picbox.RectangleF.Left), CInt(picbox.RectangleF.Top))
-            Return
-        End If
         DrawDMDArtwork(graphics, picbox, image, picbox.VisualArtworkBounds, picbox.VisualRotationAngle, False)
     End Sub
 
@@ -147,8 +141,8 @@ Public Class formDMD
             Dim destination As PointF()
             If persistentSource Then
                 destination = BallRollDestinationPoints(bounds, angle)
-            ElseIf picbox.PivotRotation AndAlso picbox.PivotAutomaticOscillation Then
-                destination = AutomaticPivotDestinationPoints(picbox, bounds)
+            ElseIf picbox.NativeRotation Then
+                destination = NativeRotationDestinationPoints(picbox, bounds)
             ElseIf picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation Then
                 destination = BallRollDestinationPoints(bounds, angle)
             Else
@@ -260,7 +254,7 @@ Public Class formDMD
                           CSng(centerY + pixelX * sine + pixelY * cosine))
     End Function
 
-    Private Function AutomaticPivotDestinationPoints(ByVal picbox As B2SPictureBox,
+    Private Function NativeRotationDestinationPoints(ByVal picbox As B2SPictureBox,
                                                      ByVal rect As RectangleF) As PointF()
         If picbox.Width <= 0 OrElse picbox.Height <= 0 Then
             Return RotationDestinationPoints(rect, picbox.VisualRotationAngle,

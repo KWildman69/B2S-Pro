@@ -110,6 +110,7 @@ Public Class formLightDiffusionEditor
     Private blinkerInterval As NumericUpDown
     Private dynamicFrontLighting As CheckBox
     Private dynamicFrontShowLight As CheckBox
+    Private dynamicFrontTarget As ComboBox
     Private isUpdatingLivePreview As Boolean = False
     Private isInitializing As Boolean = True
     Private flashColorButton As Button
@@ -127,6 +128,7 @@ Public Class formLightDiffusionEditor
     Private ReadOnly originalBlinkInterval As Integer
     Private ReadOnly originalDynamicFrontLighting As Boolean
     Private ReadOnly originalDynamicFrontShowLight As Boolean
+    Private ReadOnly originalDynamicFrontTargetSnippetID As Integer
     Private ReadOnly isDedicatedFlasher As Boolean
 
     ' Light and flasher slider profiles are now stored independently and persistently.
@@ -185,6 +187,7 @@ Public Class formLightDiffusionEditor
         originalBlinkInterval = bulb.BlinkInterval
         originalDynamicFrontLighting = bulb.DynamicFrontLighting
         originalDynamicFrontShowLight = bulb.DynamicFrontShowLight
+        originalDynamicFrontTargetSnippetID = bulb.DynamicFrontTargetSnippetID
 
         ' Opening the new Light editor previews the same artwork-pixel pipeline
         ' as the Flasher editor. Cancel restores legacy lights unchanged; saving
@@ -350,7 +353,7 @@ Public Class formLightDiffusionEditor
             dynamicFrontLighting = New CheckBox With {
                 .Name = "chkDynamicFrontLighting", .Text = "Dynamic front lighting",
                 .Left = 18, .Top = 20,
-                .Width = 245, .Height = 24, .Checked = bulb.DynamicFrontLighting,
+                .Width = 170, .Height = 24, .Checked = bulb.DynamicFrontLighting,
                 .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
             }
             AddHandler dynamicFrontLighting.CheckedChanged, AddressOf DynamicFrontLightingChanged
@@ -358,13 +361,29 @@ Public Class formLightDiffusionEditor
 
             dynamicFrontShowLight = New CheckBox With {
                 .Name = "chkDynamicFrontShowLight", .Text = "Show light through mask",
-                .Left = 280, .Top = 20,
-                .Width = 255, .Height = 24, .Checked = bulb.DynamicFrontShowLight,
+                .Left = 190, .Top = 20,
+                .Width = 170, .Height = 24, .Checked = bulb.DynamicFrontShowLight,
                 .Enabled = bulb.DynamicFrontLighting,
                 .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
             }
             AddHandler dynamicFrontShowLight.CheckedChanged, AddressOf DynamicFrontShowLightChanged
             dynamicLightingGroup.Controls.Add(dynamicFrontShowLight)
+
+            Dim dynamicTargetLabel As New Label With {
+                .Text = "Target:", .Left = 365, .Top = 23, .Width = 46, .Height = 22,
+                .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+            }
+            dynamicFrontTarget = New ComboBox With {
+                .Name = "comboDynamicFrontTarget", .Left = 410, .Top = 19,
+                .Width = 127, .Height = 24, .DropDownWidth = 320,
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .Enabled = bulb.DynamicFrontLighting,
+                .BackColor = Color.FromArgb(38, 40, 43), .ForeColor = Color.WhiteSmoke,
+                .Font = New Font("Tahoma", 9.0F)
+            }
+            dynamicLightingGroup.Controls.AddRange(New Control() {dynamicTargetLabel, dynamicFrontTarget})
+            PopulateDynamicFrontTargetList()
+            AddHandler dynamicFrontTarget.SelectedIndexChanged, AddressOf DynamicFrontTargetChanged
 
             If isDedicatedFlasher Then
                 flasherResetButton = New Button With {.Text = "Reset", .Width = 82, .Height = 38, .FlatStyle = FlatStyle.Flat}
@@ -1497,6 +1516,7 @@ Public Class formLightDiffusionEditor
             dynamicFrontShowLight.Enabled = dynamicFrontLighting.Checked
             If Not dynamicFrontLighting.Checked Then dynamicFrontShowLight.Checked = False
         End If
+        If dynamicFrontTarget IsNot Nothing Then dynamicFrontTarget.Enabled = dynamicFrontLighting.Checked
         For Each selected As Illumination.BulbInfo In selectedBulbs
             If selected Is Nothing OrElse selected.IsImageSnippit Then Continue For
             selected.DynamicFrontLighting = dynamicFrontLighting.Checked
@@ -1504,6 +1524,61 @@ Public Class formLightDiffusionEditor
                 selected.ArtworkPixelLighting = True
                 selected.LightBehindCanvas = False
             End If
+            selected.IsIlluminatedImageDirty = True
+        Next
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
+        QueueLivePreview()
+        QueueCanvasPreview()
+    End Sub
+
+    Private Sub PopulateDynamicFrontTargetList()
+        If dynamicFrontTarget Is Nothing Then Return
+        dynamicFrontTarget.Items.Clear()
+        dynamicFrontTarget.Items.Add(New SnippetTargetItem(0, "All eligible snippets (legacy)"))
+
+        If Backglass.currentData IsNot Nothing Then
+            Dim candidates As Illumination.BulbCollection = If(bulb.ParentForm = eParentForm.DMD,
+                                                                Backglass.currentData.DMDBulbs,
+                                                                Backglass.currentData.Bulbs)
+            If candidates IsNot Nothing Then
+                For Each candidate As Illumination.BulbInfo In candidates
+                    If candidate Is Nothing OrElse Not candidate.IsImageSnippit Then Continue For
+                    Dim targetName As String = If(String.IsNullOrWhiteSpace(candidate.Name),
+                                                  "Snippet " & candidate.ID.ToString(),
+                                                  candidate.Name)
+                    dynamicFrontTarget.Items.Add(New SnippetTargetItem(candidate.ID, targetName))
+                Next
+            End If
+        End If
+
+        SelectDynamicFrontTarget(bulb.DynamicFrontTargetSnippetID)
+    End Sub
+
+    Private Sub SelectDynamicFrontTarget(ByVal targetID As Integer)
+        If dynamicFrontTarget Is Nothing Then Return
+        For index As Integer = 0 To dynamicFrontTarget.Items.Count - 1
+            Dim item As SnippetTargetItem = TryCast(dynamicFrontTarget.Items(index), SnippetTargetItem)
+            If item IsNot Nothing AndAlso item.ID = Math.Max(0, targetID) Then
+                dynamicFrontTarget.SelectedIndex = index
+                Return
+            End If
+        Next
+        If dynamicFrontTarget.Items.Count > 0 Then dynamicFrontTarget.SelectedIndex = 0
+    End Sub
+
+    Private Function SelectedDynamicFrontTargetID() As Integer
+        Dim item As SnippetTargetItem = If(dynamicFrontTarget Is Nothing,
+                                           Nothing,
+                                           TryCast(dynamicFrontTarget.SelectedItem, SnippetTargetItem))
+        Return If(item Is Nothing, 0, item.ID)
+    End Function
+
+    Private Sub DynamicFrontTargetChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If isInitializing OrElse dynamicFrontTarget Is Nothing Then Return
+        Dim targetID As Integer = SelectedDynamicFrontTargetID()
+        For Each selected As Illumination.BulbInfo In selectedBulbs
+            If selected Is Nothing OrElse selected.IsImageSnippit Then Continue For
+            selected.DynamicFrontTargetSnippetID = targetID
             selected.IsIlluminatedImageDirty = True
         Next
         If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
@@ -1565,6 +1640,7 @@ Public Class formLightDiffusionEditor
             bulb.BlinkInterval = originalBlinkInterval
             bulb.DynamicFrontLighting = originalDynamicFrontLighting
             bulb.DynamicFrontShowLight = originalDynamicFrontShowLight
+            bulb.DynamicFrontTargetSnippetID = originalDynamicFrontTargetSnippetID
             If bulb.Image IsNot Nothing AndAlso Not Object.ReferenceEquals(bulb.Image, originalImage) Then bulb.Image.Dispose()
             bulb.Image = If(originalImage IsNot Nothing, New Bitmap(originalImage), Nothing)
             bulb.IsImageSnippit = originalIsImageSnippit
@@ -1834,6 +1910,10 @@ Public Class formLightDiffusionEditor
                 dynamicFrontShowLight.Checked = bulb.DynamicFrontShowLight
                 dynamicFrontShowLight.Enabled = bulb.DynamicFrontLighting
             End If
+            If dynamicFrontTarget IsNot Nothing Then
+                SelectDynamicFrontTarget(bulb.DynamicFrontTargetSnippetID)
+                dynamicFrontTarget.Enabled = bulb.DynamicFrontLighting
+            End If
         Finally
             isInitializing = False
         End Try
@@ -1888,6 +1968,7 @@ Public Class formLightDiffusionEditor
             target.DynamicFrontShowLight = target.DynamicFrontLighting AndAlso
                                            dynamicFrontShowLight IsNot Nothing AndAlso
                                            dynamicFrontShowLight.Checked
+            target.DynamicFrontTargetSnippetID = SelectedDynamicFrontTargetID()
             If target.DynamicFrontLighting Then
                 target.ArtworkPixelLighting = True
                 target.LightBehindCanvas = False
@@ -1908,7 +1989,7 @@ Public Class formLightDiffusionEditor
     End Sub
 
     Private NotInheritable Class LightSettingsSnapshot
-        Private ReadOnly spread, softness, falloff, glowIntensity, diffusion, temperature, artworkBrightness, artworkContrast, adjustmentPasses, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes, blinkInterval, flasherPulseDuration As Integer
+        Private ReadOnly spread, softness, falloff, glowIntensity, diffusion, temperature, artworkBrightness, artworkContrast, adjustmentPasses, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes, blinkInterval, flasherPulseDuration, dynamicFrontTargetSnippetID As Integer
         Private ReadOnly purpose As Illumination.eLightPurpose
         Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting, dynamicFrontLighting, dynamicFrontShowLight As Boolean
         Private ReadOnly lightColor As Color
@@ -1919,6 +2000,7 @@ Public Class formLightDiffusionEditor
             artworkPixelLighting = source.ArtworkPixelLighting
             dynamicFrontLighting = source.DynamicFrontLighting
             dynamicFrontShowLight = source.DynamicFrontShowLight
+            dynamicFrontTargetSnippetID = source.DynamicFrontTargetSnippetID
             artworkBrightness = source.ArtworkBrightness : artworkContrast = source.ArtworkContrast : adjustmentPasses = source.ArtworkAdjustmentPasses
             maskRadius = source.MaskRadius : smartRadius = source.MaskSmartRadius : maskSmooth = source.MaskSmooth : maskFeather = source.MaskFeather
             maskContrast = source.MaskContrast : maskShiftEdge = source.MaskShiftEdge : inFront = source.InFrontOfGlobalMask : globalMaskLayerExplicit = source.GlobalMaskLayerExplicit
@@ -1933,6 +2015,7 @@ Public Class formLightDiffusionEditor
             target.ArtworkPixelLighting = artworkPixelLighting
             target.DynamicFrontLighting = dynamicFrontLighting
             target.DynamicFrontShowLight = dynamicFrontShowLight
+            target.DynamicFrontTargetSnippetID = dynamicFrontTargetSnippetID
             target.ArtworkBrightness = artworkBrightness : target.ArtworkContrast = artworkContrast : target.ArtworkAdjustmentPasses = adjustmentPasses
             target.MaskRadius = maskRadius : target.MaskSmartRadius = smartRadius : target.MaskSmooth = maskSmooth : target.MaskFeather = maskFeather
             target.MaskContrast = maskContrast : target.MaskShiftEdge = maskShiftEdge : target.InFrontOfGlobalMask = inFront : target.GlobalMaskLayerExplicit = globalMaskLayerExplicit
@@ -1941,6 +2024,20 @@ Public Class formLightDiffusionEditor
             target.FlasherPulseDuration = flasherPulseDuration
             target.IsIlluminatedImageDirty = True
         End Sub
+    End Class
+
+    Private NotInheritable Class SnippetTargetItem
+        Public ReadOnly Property ID As Integer
+        Private ReadOnly displayName As String
+
+        Public Sub New(ByVal targetID As Integer, ByVal targetName As String)
+            ID = Math.Max(0, targetID)
+            displayName = If(targetName, String.Empty)
+        End Sub
+
+        Public Overrides Function ToString() As String
+            Return If(ID > 0, displayName & "  [" & ID.ToString() & "]", displayName)
+        End Function
     End Class
 
 End Class

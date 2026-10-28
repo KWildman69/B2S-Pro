@@ -3,9 +3,7 @@ Imports System.Collections.Generic
 Imports System.Diagnostics
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
-Imports System.Drawing.Imaging
 Imports System.IO
-Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Public Class B2SPictureBox
@@ -88,6 +86,7 @@ Public Class B2SPictureBox
     Public Property LightBehindCanvas() As Boolean = False
     Public Property DynamicFrontLighting() As Boolean = False
     Public Property DynamicFrontShowLight() As Boolean = False
+    Public Property DynamicFrontTargetSnippetID() As Integer = 0
     Public Property DynamicFrontLightField() As Image = Nothing
     Public Property DynamicLightExposure() As Integer = 100
     Public Property DynamicLightColor() As Color = Color.White
@@ -283,13 +282,10 @@ Public Class B2SPictureBox
     Private nativeRotationCommandedOn As Boolean = False
     Private nativeRotationProgress As Single = 0.0F
     Private nativeRotationClock As New Stopwatch()
-    Private nativeSlowDownSteps As Integer = 0
+    Private nativeSlowDownSteps As Double = 0.0
     Private nativeRunTillEnd As Boolean = False
     Private nativeRunToFirstStep As Boolean = False
-    Private nativeRotationSource As Image = Nothing
-    Private nativeRotationFrames As List(Of Image) = Nothing
-    Private nativeFrameGeneration As Integer = 0
-    Private nativeFrameIndex As Integer = -1
+    Private Const NativeRotationRefreshInterval As Integer = 16
     Private motionPathTimer As Timer
     Private troughCollisionTimer As Timer
     Private troughCollisionClock As New Stopwatch()
@@ -341,167 +337,6 @@ Public Class B2SPictureBox
     Private motionPathExternalEndVelocity As PointF = PointF.Empty
     Private motionPathExternalLastVelocity As PointF = PointF.Empty
     Private _motionPathArrivalSpeed As Single = 0.0F
-    Private nativePreparingWidth As Integer = 0
-    Private nativePreparingHeight As Integer = 0
-    Private nativePreparationDispatch As TaskCompletionSource(Of Boolean)
-    Public ReadOnly Property NativeRotationFramePlayback As Boolean
-        Get
-            Return nativeRotationFrames IsNot Nothing AndAlso nativeRotationFrames.Count > 0
-        End Get
-    End Property
-
-    Public Sub PrepareNativeRotationFrames()
-        ' Automatic pivots rotate the original image continuously around a saved
-        ' hinge; the discrete native frame cache would replace it with a
-        ' pre-scaled frame and reset its live rotation angle.
-        If Not NativeRotation OrElse PivotAutomaticOscillation OrElse
-           PictureBoxType = ePictureBoxType.MechRotatingImage OrElse nativeRotationSource Is Nothing Then Return
-        Dim targetWidth As Integer = Math.Max(1, CInt(Math.Round(Me.RectangleF.Width)))
-        Dim targetHeight As Integer = Math.Max(1, CInt(Math.Round(Me.RectangleF.Height)))
-        If targetWidth <= 1 AndAlso Me.Width > 1 Then targetWidth = Me.Width
-        If targetHeight <= 1 AndAlso Me.Height > 1 Then targetHeight = Me.Height
-        If nativeRotationFrames IsNot Nothing AndAlso nativeRotationFrames.Count > 0 AndAlso
-           nativeRotationFrames(0).Width = targetWidth AndAlso nativeRotationFrames(0).Height = targetHeight Then Return
-        ' A worker cannot clear UI-owned dimensions when dispatch fails. Its
-        ' per-attempt result lets the next UI request release only that attempt.
-        If nativePreparationDispatch IsNot Nothing AndAlso nativePreparationDispatch.Task.IsCompleted AndAlso
-           Not nativePreparationDispatch.Task.Result Then
-            nativePreparingWidth = 0
-            nativePreparingHeight = 0
-            nativePreparationDispatch = Nothing
-        End If
-        If nativePreparingWidth = targetWidth AndAlso nativePreparingHeight = targetHeight Then Return
-
-        If nativeRotationFrames IsNot Nothing Then
-            _BackgroundImage = nativeRotationSource
-            DisposeNativeRotationFrames(nativeRotationFrames)
-            nativeRotationFrames = Nothing
-            nativeFrameIndex = -1
-        End If
-
-        nativeFrameGeneration += 1
-        Dim generation As Integer = nativeFrameGeneration
-        ' Bound the cache by both frame count and total decoded pixels. This
-        ' keeps a mistakenly selected full-screen layer from allocating an
-        ' unbounded collection of large bitmaps.
-        Dim requestedFrames As Integer = Math.Max(4, Math.Min(60, NativeRotationSteps))
-        Dim targetPixels As Long = Math.Max(1L, CLng(targetWidth) * targetHeight)
-        Dim memoryBoundFrames As Integer = CInt(Math.Max(4L, 50000000L \ targetPixels))
-        Dim frameCount As Integer = Math.Min(requestedFrames, memoryBoundFrames)
-        Dim direction As eSnippitRotationDirection = RotationDirection
-        Dim source As Image = New Bitmap(nativeRotationSource)
-        nativePreparingWidth = targetWidth
-        nativePreparingHeight = targetHeight
-        Dim dispatch As New TaskCompletionSource(Of Boolean)()
-        nativePreparationDispatch = dispatch
-
-        Task.Run(
-            Function() As List(Of Image)
-                Dim prepared As New List(Of Image)(frameCount)
-                Try
-                    For frameIndex As Integer = 0 To frameCount - 1
-                        Dim angle As Single = 360.0F * frameIndex / frameCount
-                        If direction = eSnippitRotationDirection.AntiClockwise Then angle = -angle
-                        prepared.Add(CreateNativeRotationFrame(source, angle, targetWidth, targetHeight))
-                    Next
-                    Return prepared
-                Catch
-                    DisposeNativeRotationFrames(prepared)
-                    Throw
-                Finally
-                    source.Dispose()
-                End Try
-            End Function).ContinueWith(
-                Sub(task As Task(Of List(Of Image)))
-                    Dim prepared As List(Of Image) = Nothing
-                    If task.IsFaulted Then
-                        Diagnostics.Trace.TraceError("B2S rotation frame preparation failed: " & task.Exception.GetBaseException().Message)
-                    ElseIf Not task.IsCanceled Then
-                        prepared = task.Result
-                    End If
-                    If Me.IsDisposed OrElse Me.Parent Is Nothing OrElse Not Me.Parent.IsHandleCreated Then
-                        DisposeNativeRotationFrames(prepared)
-                        dispatch.TrySetResult(False)
-                        Return
-                    End If
-                    Try
-                        Me.Parent.BeginInvoke(New Action(Of List(Of Image), Integer)(AddressOf InstallNativeRotationFrames), prepared, generation)
-                        dispatch.TrySetResult(True)
-                    Catch
-                        DisposeNativeRotationFrames(prepared)
-                        dispatch.TrySetResult(False)
-                    End Try
-                End Sub)
-    End Sub
-
-    Private Shared Function CreateNativeRotationFrame(ByVal source As Image, ByVal angle As Single,
-                                                       ByVal targetWidth As Integer, ByVal targetHeight As Integer) As Image
-        ' Match the proven legacy render order. Rotate on the source's square
-        ' canvas first, then apply the backglass' non-uniform display scaling.
-        ' Rotating after scaling turns a circular disc into an ellipse whose
-        ' long axis tumbles around the screen instead of remaining fixed.
-        Dim rotatedSource As New Bitmap(source.Width, source.Height, PixelFormat.Format32bppPArgb)
-        Using graphics As Graphics = Graphics.FromImage(rotatedSource)
-            graphics.Clear(Color.Transparent)
-            graphics.CompositingMode = CompositingMode.SourceCopy
-            graphics.CompositingQuality = CompositingQuality.HighSpeed
-            graphics.InterpolationMode = InterpolationMode.Bilinear
-            graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed
-            graphics.SmoothingMode = SmoothingMode.HighSpeed
-            graphics.TranslateTransform(source.Width / 2.0F, source.Height / 2.0F)
-            graphics.RotateTransform(angle)
-            graphics.TranslateTransform(-source.Width / 2.0F, -source.Height / 2.0F)
-            graphics.DrawImageUnscaled(source, 0, 0)
-        End Using
-
-        Dim frame As New Bitmap(targetWidth, targetHeight, PixelFormat.Format32bppPArgb)
-        Using graphics As Graphics = Graphics.FromImage(frame)
-            graphics.Clear(Color.Transparent)
-            graphics.CompositingMode = CompositingMode.SourceCopy
-            graphics.CompositingQuality = CompositingQuality.HighSpeed
-            graphics.InterpolationMode = InterpolationMode.Bilinear
-            graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed
-            graphics.SmoothingMode = SmoothingMode.HighSpeed
-            graphics.DrawImage(rotatedSource, New Rectangle(0, 0, targetWidth, targetHeight),
-                               New Rectangle(0, 0, rotatedSource.Width, rotatedSource.Height), GraphicsUnit.Pixel)
-        End Using
-        rotatedSource.Dispose()
-        Return frame
-    End Function
-
-    Private Sub InstallNativeRotationFrames(ByVal prepared As List(Of Image), ByVal generation As Integer)
-        If Me.IsDisposed OrElse generation <> nativeFrameGeneration Then
-            DisposeNativeRotationFrames(prepared)
-            Return
-        End If
-        nativePreparingWidth = 0
-        nativePreparingHeight = 0
-        If prepared Is Nothing Then Return
-        Dim replaced As List(Of Image) = nativeRotationFrames
-        nativeRotationFrames = prepared
-        nativeFrameIndex = -1
-        DisposeNativeRotationFrames(replaced)
-        ShowNativeRotationFrame()
-    End Sub
-
-    Private Shared Sub DisposeNativeRotationFrames(ByVal frames As List(Of Image))
-        If frames Is Nothing Then Return
-        For Each frame As Image In frames
-            If frame IsNot Nothing Then frame.Dispose()
-        Next
-        frames.Clear()
-    End Sub
-
-    Private Sub ShowNativeRotationFrame()
-        If nativeRotationFrames Is Nothing OrElse nativeRotationFrames.Count = 0 Then Return
-        Dim normalized As Single = nativeRotationProgress Mod 360.0F
-        If normalized < 0 Then normalized += 360.0F
-        Dim index As Integer = Math.Min(nativeRotationFrames.Count - 1, CInt(Math.Floor(normalized * nativeRotationFrames.Count / 360.0F)))
-        If index = nativeFrameIndex Then Return
-        nativeFrameIndex = index
-        _BackgroundImage = nativeRotationFrames(index)
-        RotationAngle = 0.0F
-    End Sub
     Public Sub SetNativeRotationState(ByVal enabled As Boolean)
         If Me.Parent IsNot Nothing AndAlso Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
             Me.Parent.BeginInvoke(New Action(Of Boolean)(AddressOf SetNativeRotationState), enabled)
@@ -556,7 +391,7 @@ Public Class B2SPictureBox
         ' A renewed ON command cancels any stop that was requested while the
         ' timer was still running. The trigger state, not the pending stop,
         ' owns playback while the ROM output remains energized.
-        nativeSlowDownSteps = 0
+        nativeSlowDownSteps = 0.0
         nativeRunTillEnd = False
         nativeRunToFirstStep = False
         If nativeRotationTimer.Enabled Then Return
@@ -564,9 +399,11 @@ Public Class B2SPictureBox
         NativeRotationSteps = Math.Max(2, Math.Min(360, NativeRotationSteps))
         NativeRotationInterval = Math.Max(10, Math.Min(500, NativeRotationInterval))
         nativeRotationTimer.Stop()
-        nativeRotationTimer.Interval = NativeRotationInterval
+        ' The authored interval controls angular speed. Repaint independently at
+        ' display cadence so one source image rotates smoothly without building
+        ' or swapping a cache of duplicate bitmaps.
+        nativeRotationTimer.Interval = NativeRotationRefreshInterval
         nativeRotationClock.Restart()
-        PrepareNativeRotationFrames()
         Me.Visible = True
         InvalidateNativeRotation()
         nativeRotationTimer.Start()
@@ -583,7 +420,7 @@ Public Class B2SPictureBox
 
         Select Case SnippitRotationStopBehaviour
             Case eSnippitRotationStopBehaviour.SpinOff
-                nativeSlowDownSteps = 1
+                nativeSlowDownSteps = 1.0
             Case eSnippitRotationStopBehaviour.RunAnimationTillEnd
                 nativeRunTillEnd = True
             Case eSnippitRotationStopBehaviour.RunAnimationToFirstStep
@@ -600,10 +437,9 @@ Public Class B2SPictureBox
         nativeRotationClock.Restart()
         Dim speedFactor As Double = 1.0
         Dim slowDownTickCount As Integer = 0
-        If nativeSlowDownSteps > 0 Then
-            ' Keep repainting at the configured frame interval while reducing
-            ' angular velocity. Increasing the timer interval made the final
-            ' part of Spin Off visibly jump between increasingly stale frames.
+        If nativeSlowDownSteps > 0.0 Then
+            ' Express slowdown progress in authored intervals so changing only
+            ' the repaint cadence preserves the existing Spin Off duration.
             slowDownTickCount = 25 + CInt(Math.Ceiling(900.0 / Math.Max(1, NativeRotationInterval)))
             speedFactor = Math.Max(0.0, 1.0 - CDbl(nativeSlowDownSteps - 1) / Math.Max(1, slowDownTickCount))
         End If
@@ -611,22 +447,16 @@ Public Class B2SPictureBox
         Dim completedRotation As Boolean = (nextProgress >= 360.0F)
         nativeRotationProgress = nextProgress Mod 360.0F
 
-        If NativeRotationFramePlayback Then
-            ShowNativeRotationFrame()
-        Else
-            RotationAngle = If(RotationDirection = eSnippitRotationDirection.AntiClockwise, -nativeRotationProgress, nativeRotationProgress)
-        End If
+        RotationAngle = If(RotationDirection = eSnippitRotationDirection.AntiClockwise, -nativeRotationProgress, nativeRotationProgress)
         Me.Visible = True
         InvalidateNativeRotation()
 
-        If nativeSlowDownSteps > 0 Then
-            If nativeSlowDownSteps >= slowDownTickCount Then
+        If nativeSlowDownSteps > 0.0 Then
+            nativeSlowDownSteps += elapsedMilliseconds / Math.Max(1, NativeRotationInterval)
+            If nativeSlowDownSteps >= slowDownTickCount + 1.0 Then
                 nativeRotationTimer.Stop()
                 nativeRotationClock.Reset()
-                nativeSlowDownSteps = 0
-                nativeRotationTimer.Interval = NativeRotationInterval
-            Else
-                nativeSlowDownSteps += 1
+                nativeSlowDownSteps = 0.0
             End If
         ElseIf nativeRunTillEnd AndAlso completedRotation Then
             nativeRunTillEnd = False
@@ -1360,11 +1190,6 @@ Public Class B2SPictureBox
         If disposing AndAlso nativeRotationTimer IsNot Nothing Then
             nativeRotationTimer.Stop()
             nativeRotationClock.Reset()
-            nativeFrameGeneration += 1
-            DisposeNativeRotationFrames(nativeRotationFrames)
-            nativeRotationFrames = Nothing
-            If nativeRotationSource IsNot Nothing Then nativeRotationSource.Dispose()
-            nativeRotationSource = Nothing
             RemoveHandler nativeRotationTimer.Tick, AddressOf NativeRotationTimer_Tick
             nativeRotationTimer.Dispose()
             nativeRotationTimer = Nothing
@@ -1440,17 +1265,6 @@ Public Class B2SPictureBox
         Set(ByVal value As Image)
             If _BackgroundImage Is Nothing OrElse Not _BackgroundImage.Equals(value) Then
                 _BackgroundImage = value
-                If Not Object.ReferenceEquals(value, nativeRotationSource) Then
-                    nativeFrameGeneration += 1
-                    nativePreparingWidth = 0
-                    nativePreparingHeight = 0
-                    nativePreparationDispatch = Nothing
-                    DisposeNativeRotationFrames(nativeRotationFrames)
-                    nativeRotationFrames = Nothing
-                    nativeFrameIndex = -1
-                    If nativeRotationSource IsNot Nothing Then nativeRotationSource.Dispose()
-                    nativeRotationSource = If(value Is Nothing, Nothing, New Bitmap(value))
-                End If
                 ' do a invalidate at the parent form
                 If Me.Parent IsNot Nothing Then
                     Dim dirty As Rectangle = Rectangle.Round(Me.RectangleF)

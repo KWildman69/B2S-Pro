@@ -255,6 +255,71 @@ Namespace Illumination
                                 transmitTransparentCanvas)
         End Function
 
+        ' Builds the authored light field without sampling the stationary artwork.
+        ' Dynamic front lighting applies this field to a moving snippet at runtime,
+        ' so canvas alpha, black protection, and printed artwork detail must not be
+        ' baked into the field. Keep the same box refinement and radial-spike math
+        ' used by RenderFromAlphaField so the saved field still matches its light.
+        Public Shared Function CreateRefinedAlphaField(ByVal lightTemplate As Bitmap,
+                                                       Optional ByVal maskRadius As Integer = 0,
+                                                       Optional ByVal maskSmooth As Integer = 0,
+                                                       Optional ByVal maskFeather As Integer = 0,
+                                                       Optional ByVal maskContrast As Integer = 0,
+                                                       Optional ByVal maskShiftEdge As Integer = 0,
+                                                       Optional ByVal radialSpikes As Integer = 0) As Bitmap
+            If lightTemplate Is Nothing OrElse lightTemplate.Width <= 0 OrElse lightTemplate.Height <= 0 Then Return Nothing
+
+            Dim width As Integer = lightTemplate.Width
+            Dim height As Integer = lightTemplate.Height
+            Dim lightField(width * height - 1) As Byte
+            Dim templateData As BitmapData = lightTemplate.LockBits(New Rectangle(0, 0, width, height),
+                                                                    ImageLockMode.ReadOnly,
+                                                                    PixelFormat.Format32bppArgb)
+            Try
+                Dim stride As Integer = Math.Abs(templateData.Stride)
+                Dim pixels(stride * height - 1) As Byte
+                Marshal.Copy(templateData.Scan0, pixels, 0, pixels.Length)
+                For y As Integer = 0 To height - 1
+                    Dim row As Integer = y * stride
+                    Dim outputRow As Integer = y * width
+                    For x As Integer = 0 To width - 1
+                        lightField(outputRow + x) = pixels(row + x * 4 + 3)
+                    Next
+                Next
+            Finally
+                lightTemplate.UnlockBits(templateData)
+            End Try
+
+            ApplyBoxMaskRefinement(lightField, width, height,
+                                   maskRadius, maskSmooth, maskFeather,
+                                   maskContrast, maskShiftEdge)
+            ApplyRadialSpikes(lightField, width, height, radialSpikes)
+
+            Dim result As New Bitmap(width, height, PixelFormat.Format32bppArgb)
+            Dim resultData As BitmapData = result.LockBits(New Rectangle(0, 0, width, height),
+                                                           ImageLockMode.WriteOnly,
+                                                           PixelFormat.Format32bppArgb)
+            Try
+                Dim stride As Integer = Math.Abs(resultData.Stride)
+                Dim pixels(stride * height - 1) As Byte
+                For y As Integer = 0 To height - 1
+                    Dim row As Integer = y * stride
+                    Dim inputRow As Integer = y * width
+                    For x As Integer = 0 To width - 1
+                        Dim pixel As Integer = row + x * 4
+                        pixels(pixel) = Byte.MaxValue
+                        pixels(pixel + 1) = Byte.MaxValue
+                        pixels(pixel + 2) = Byte.MaxValue
+                        pixels(pixel + 3) = lightField(inputRow + x)
+                    Next
+                Next
+                Marshal.Copy(pixels, 0, resultData.Scan0, pixels.Length)
+            Finally
+                result.UnlockBits(resultData)
+            End Try
+            Return result
+        End Function
+
         ' Box-mode flashers use the glow template as their mask. Scale the
         ' Photoshop-style controls to the current box so a small flasher cannot
         ' be blurred completely away by a large numeric Feather value.

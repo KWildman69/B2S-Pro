@@ -213,6 +213,7 @@ Public Class formBackglass
     Private behindCanvasCacheBackground As Image = Nothing
     Private behindCanvasCacheBounds As Rectangle = Rectangle.Empty
     Private behindCanvasCacheAngle As Single = Single.NaN
+    Private ReadOnly nativeRotationDynamicLightingWorkspace As New DynamicArtworkLighting.Workspace()
     Private b2sProTransparentCanvasBacking As Nullable(Of Color) = Nothing
 
     Private Sub ApplyB2SProTransparentCanvasBacking(ByVal imagesNode As Xml.XmlElement)
@@ -714,6 +715,26 @@ Public Class formBackglass
         Dim bounds As Rectangle = Rectangle.Round(picbox.RectangleF)
         If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
 
+        If picbox.NativeRotation Then
+            ' Native one-image rotation already has a persistent source bitmap.
+            ' Draw it directly behind the canvas instead of allocating another
+            ' full-size bitmap for every angle change.
+            Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+            Try
+                e.Graphics.SetClip(bounds, Drawing2D.CombineMode.Intersect)
+                e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
+                e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+                e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+                Dim destination As PointF() = NativeRotationDestinationPoints(picbox, picbox.VisualArtworkBounds)
+                e.Graphics.DrawImage(picbox.BackgroundImage, destination,
+                                     New RectangleF(0, 0, picbox.BackgroundImage.Width, picbox.BackgroundImage.Height),
+                                     GraphicsUnit.Pixel)
+            Finally
+                e.Graphics.Restore(state)
+            End Try
+            Return
+        End If
+
         ' Compose the rotating artwork with the canvas patch first. Drawing the
         ' result at its real Z-order keeps lower animation layers underneath it,
         ' while the canvas alpha still masks artwork that is behind the glass.
@@ -818,33 +839,17 @@ Public Class formBackglass
                         e.Graphics.DrawImageUnscaled(frame, frameBounds.Location)
                     End Using
                 ElseIf drawImage IsNot Nothing AndAlso (picbox.NativeRotation OrElse picbox.MotionPathRollEnabled) Then
-                    Dim directFrameDraw As Boolean = (picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled AndAlso picbox.NativeRotationFramePlayback AndAlso
-                        drawImage.Width = CInt(picbox.RectangleF.Width) AndAlso
-                        drawImage.Height = CInt(picbox.RectangleF.Height))
                     If drawingBehindCanvas Then
                         DrawCachedBehindCanvasImage(e, picbox)
-                    ElseIf picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled AndAlso Not picbox.PivotRotation AndAlso picbox.NativeRotationFramePlayback AndAlso
-                           drawImage.Width = CInt(picbox.RectangleF.Width) AndAlso
-                           drawImage.Height = CInt(picbox.RectangleF.Height) Then
-                        ' Cached frames are already rotated and sized. Avoid the
-                        ' general three-point GDI+ transform path, which is very
-                        ' expensive for large alpha images even at zero degrees.
-                        e.Graphics.DrawImageUnscaled(drawImage,
-                            CInt(picbox.RectangleF.Left),
-                            CInt(picbox.RectangleF.Top))
                     Else
                         Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
                         e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
                         e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
                         e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
-                        Dim pivotX As Single = If(picbox.NativeRotation, picbox.RotationPivotX, 0.5F)
-                        Dim pivotY As Single = If(picbox.NativeRotation, picbox.RotationPivotY, 0.5F)
                         Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
-                        Dim destination As PointF() = If(picbox.PivotRotation AndAlso picbox.PivotAutomaticOscillation,
-                                                         AutomaticPivotDestinationPoints(picbox, visualBounds),
-                                                         If(picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation,
-                                                            BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle),
-                                                            RotationDestinationPoints(visualBounds, picbox.VisualRotationAngle, pivotX, pivotY)))
+                        Dim destination As PointF() = If(picbox.NativeRotation,
+                                                         NativeRotationDestinationPoints(picbox, visualBounds),
+                                                         BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle))
                         e.Graphics.DrawImage(drawImage, destination,
                                              New RectangleF(0, 0, drawImage.Width, drawImage.Height),
                                              GraphicsUnit.Pixel)
@@ -887,6 +892,8 @@ Public Class formBackglass
             If snippet Is Nothing OrElse snippet.IsDisposed OrElse Not snippet.IsImageSnippit OrElse
                Not snippet.Visible OrElse snippet.BackgroundImage Is Nothing OrElse
                snippet.ZOrder >= light.ZOrder Then Continue For
+            If light.DynamicFrontTargetSnippetID > 0 AndAlso
+               Not String.Equals(snippet.Name, "PictureBox" & light.DynamicFrontTargetSnippetID.ToString(), StringComparison.Ordinal) Then Continue For
             If B2SData.DualBackglass AndAlso snippet.DualMode <> B2SData.eDualMode.Both AndAlso
                snippet.DualMode <> B2SSettings.CurrentDualMode Then Continue For
 
@@ -894,40 +901,86 @@ Public Class formBackglass
             Dim overlap As Rectangle = Rectangle.Intersect(lightBounds, snippetBounds)
             If overlap.Width <= 0 OrElse overlap.Height <= 0 Then Continue For
 
-            Using snippetFrame As Bitmap = CreateCurrentSnippetFrame(snippet, snippetBounds.Size)
-                If snippetFrame Is Nothing Then Continue For
-                Using sourceCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
-                    Using sourceGraphics As Graphics = Graphics.FromImage(sourceCrop)
-                        sourceGraphics.Clear(Color.Transparent)
-                        sourceGraphics.DrawImage(snippetFrame,
-                                                 New Rectangle(Point.Empty, sourceCrop.Size),
-                                                 New Rectangle(overlap.X - snippetBounds.X, overlap.Y - snippetBounds.Y,
-                                                               overlap.Width, overlap.Height),
-                                                 GraphicsUnit.Pixel)
+            Using sourceCrop As Bitmap = CreateCurrentSnippetCrop(snippet, snippetBounds, overlap)
+                If sourceCrop Is Nothing Then Continue For
+                Using fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+                    Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
+                        fieldGraphics.Clear(Color.Transparent)
+                        fieldGraphics.DrawImage(light.DynamicFrontLightField,
+                                                New Rectangle(Point.Empty, fieldCrop.Size),
+                                                New RectangleF((overlap.X - lightBounds.X) * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                               (overlap.Y - lightBounds.Y) * light.DynamicFrontLightField.Height / CSng(lightBounds.Height),
+                                                               overlap.Width * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                               overlap.Height * light.DynamicFrontLightField.Height / CSng(lightBounds.Height)),
+                                                GraphicsUnit.Pixel)
                     End Using
-                    Using fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
-                        Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
-                            fieldGraphics.Clear(Color.Transparent)
-                            fieldGraphics.DrawImage(light.DynamicFrontLightField,
-                                                    New Rectangle(Point.Empty, fieldCrop.Size),
-                                                    New RectangleF((overlap.X - lightBounds.X) * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
-                                                                   (overlap.Y - lightBounds.Y) * light.DynamicFrontLightField.Height / CSng(lightBounds.Height),
-                                                                   overlap.Width * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
-                                                                   overlap.Height * light.DynamicFrontLightField.Height / CSng(lightBounds.Height)),
-                                                    GraphicsUnit.Pixel)
-                        End Using
-                        Using illuminated As Bitmap = DynamicArtworkLighting.Render(
+                    Dim illuminatedImage As Bitmap
+                    If snippet.NativeRotation Then
+                        illuminatedImage = DynamicArtworkLighting.RenderWithWorkspace(
+                            sourceCrop, fieldCrop, light.DynamicLightExposure, light.DynamicLightColor,
+                            light.DynamicFlasherStyle, light.DynamicSaturation,
+                            light.DynamicHighlightProtection, light.DynamicDarkAreaLift,
+                            light.DynamicTransmissionContrast, light.DynamicLightTemperature,
+                            nativeRotationDynamicLightingWorkspace)
+                    Else
+                        illuminatedImage = DynamicArtworkLighting.Render(
                             sourceCrop, fieldCrop, light.DynamicLightExposure, light.DynamicLightColor,
                             light.DynamicFlasherStyle, light.DynamicSaturation,
                             light.DynamicHighlightProtection, light.DynamicDarkAreaLift,
                             light.DynamicTransmissionContrast, light.DynamicLightTemperature)
-                            If illuminated IsNot Nothing Then targetGraphics.DrawImageUnscaled(illuminated, overlap.Location)
-                        End Using
+                    End If
+                    Using illuminated As Bitmap = illuminatedImage
+                        If illuminated IsNot Nothing Then targetGraphics.DrawImageUnscaled(illuminated, overlap.Location)
                     End Using
                 End Using
             End Using
         Next
     End Sub
+
+    Private Function CreateCurrentSnippetCrop(ByVal snippet As B2SPictureBox,
+                                              ByVal snippetBounds As Rectangle,
+                                              ByVal overlap As Rectangle) As Bitmap
+        If snippet Is Nothing OrElse snippet.BackgroundImage Is Nothing OrElse
+           overlap.Width <= 0 OrElse overlap.Height <= 0 Then Return Nothing
+
+        If Not snippet.NativeRotation Then
+            ' Preserve the established moving/static snippet path. Only native
+            ' one-image rotation bypasses the full-size intermediate frame.
+            Using snippetFrame As Bitmap = CreateCurrentSnippetFrame(snippet, snippetBounds.Size)
+                If snippetFrame Is Nothing Then Return Nothing
+                Dim crop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+                Using graphics As Graphics = Graphics.FromImage(crop)
+                    graphics.Clear(Color.Transparent)
+                    graphics.DrawImage(snippetFrame,
+                                       New Rectangle(Point.Empty, crop.Size),
+                                       New Rectangle(overlap.X - snippetBounds.X, overlap.Y - snippetBounds.Y,
+                                                     overlap.Width, overlap.Height),
+                                       GraphicsUnit.Pixel)
+                End Using
+                Return crop
+            End Using
+        End If
+
+        Dim nativeCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+        Using graphics As Graphics = Graphics.FromImage(nativeCrop)
+            graphics.Clear(Color.Transparent)
+            graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
+            graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+            Dim localBounds As New RectangleF(0, 0, snippetBounds.Width, snippetBounds.Height)
+            Dim destination As PointF() = NativeRotationDestinationPoints(snippet, localBounds)
+            Dim cropX As Integer = overlap.X - snippetBounds.X
+            Dim cropY As Integer = overlap.Y - snippetBounds.Y
+            For index As Integer = 0 To destination.Length - 1
+                destination(index).X -= cropX
+                destination(index).Y -= cropY
+            Next
+            graphics.DrawImage(snippet.BackgroundImage, destination,
+                               New RectangleF(0, 0, snippet.BackgroundImage.Width, snippet.BackgroundImage.Height),
+                               GraphicsUnit.Pixel)
+        End Using
+        Return nativeCrop
+    End Function
 
     Private Function CreateCurrentSnippetFrame(ByVal snippet As B2SPictureBox, ByVal targetSize As Size) As Bitmap
         If snippet Is Nothing OrElse snippet.BackgroundImage Is Nothing OrElse targetSize.Width <= 0 OrElse targetSize.Height <= 0 Then Return Nothing
@@ -938,12 +991,9 @@ Public Class formBackglass
                 graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
                 graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
                 graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
-                If snippet.NativeRotation OrElse snippet.MotionPathRollEnabled Then
+                If snippet.MotionPathRollEnabled Then
                     Dim localBounds As New RectangleF(0, 0, targetSize.Width, targetSize.Height)
-                    Dim destination As PointF() = If(snippet.MotionPathRollEnabled AndAlso Not snippet.NativeRotation,
-                                                     BallRollDestinationPoints(localBounds, snippet.VisualRotationAngle),
-                                                     RotationDestinationPoints(localBounds, snippet.VisualRotationAngle,
-                                                                               snippet.RotationPivotX, snippet.RotationPivotY))
+                    Dim destination As PointF() = BallRollDestinationPoints(localBounds, snippet.VisualRotationAngle)
                     graphics.DrawImage(snippet.BackgroundImage, destination,
                                        New RectangleF(0, 0, snippet.BackgroundImage.Width, snippet.BackgroundImage.Height),
                                        GraphicsUnit.Pixel)
@@ -1075,11 +1125,9 @@ Public Class formBackglass
         End If
         If (Not picbox.NativeRotation AndAlso Not picbox.MotionPathRollEnabled) OrElse Math.Abs(picbox.VisualRotationAngle) < 0.001F Then Return Rectangle.Round(visualBounds)
 
-        Dim pivotX As Single = If(picbox.NativeRotation, picbox.RotationPivotX, 0.5F)
-        Dim pivotY As Single = If(picbox.NativeRotation, picbox.RotationPivotY, 0.5F)
-        Dim points As PointF() = If(picbox.PivotRotation AndAlso picbox.PivotAutomaticOscillation,
-                                    AutomaticPivotDestinationPoints(picbox, visualBounds),
-                                    RotationDestinationPoints(visualBounds, picbox.VisualRotationAngle, pivotX, pivotY))
+        Dim points As PointF() = If(picbox.NativeRotation,
+                                    NativeRotationDestinationPoints(picbox, visualBounds),
+                                    RotationDestinationPoints(visualBounds, picbox.VisualRotationAngle))
         If points Is Nothing OrElse points.Length < 3 Then Return Rectangle.Round(visualBounds)
         Dim fourth As New PointF(points(1).X + points(2).X - points(0).X,
                                  points(1).Y + points(2).Y - points(0).Y)
@@ -1244,9 +1292,7 @@ Public Class formBackglass
 
         startupTimer.Stop()
 
-        ' Cache generation is asynchronous. Start continuous native rotations
-        ' immediately from their source image; playback switches to the prepared
-        ' unique-frame cache as soon as it is installed.
+        ' Start continuous native rotations directly from their one source image.
         If startupCoreCompleted Then
             If Not TryStartContinuousNativeRotations() Then startupTimer.Start()
             Return
@@ -2936,6 +2982,11 @@ Public Class formBackglass
                                                                innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
                         Dim dynamicFrontShowLight As Boolean = (innerNode.Attributes("DynamicFrontShowLight") IsNot Nothing AndAlso
                                                                innerNode.Attributes("DynamicFrontShowLight").InnerText = "1")
+                        Dim dynamicFrontTargetSnippetID As Integer = 0
+                        If innerNode.Attributes("DynamicFrontTargetSnippetID") IsNot Nothing Then
+                            Integer.TryParse(innerNode.Attributes("DynamicFrontTargetSnippetID").InnerText, dynamicFrontTargetSnippetID)
+                            dynamicFrontTargetSnippetID = Math.Max(0, dynamicFrontTargetSnippetID)
+                        End If
                         Dim zorder As Integer = 0
                         If innerNode.Attributes("ZOrder") IsNot Nothing Then
                             zorder = CInt(innerNode.Attributes("ZOrder").InnerText)
@@ -3251,6 +3302,7 @@ Public Class formBackglass
                         picbox.LightBehindCanvas = lightBehindCanvas
                         picbox.DynamicFrontLighting = dynamicFrontLighting AndAlso dynamicFrontLightField IsNot Nothing
                         picbox.DynamicFrontShowLight = picbox.DynamicFrontLighting AndAlso dynamicFrontShowLight
+                        picbox.DynamicFrontTargetSnippetID = dynamicFrontTargetSnippetID
                         picbox.DynamicFrontLightField = dynamicFrontLightField
                         If picbox.DynamicFrontLighting Then
                             If innerNode.Attributes("DynamicLightExposure") IsNot Nothing Then picbox.DynamicLightExposure = Math.Max(0, Math.Min(1600, CInt(innerNode.Attributes("DynamicLightExposure").InnerText)))
@@ -4310,7 +4362,7 @@ Public Class formBackglass
         Return String.Empty
     End Function
 
-    Private Function AutomaticPivotDestinationPoints(ByVal picbox As B2SPictureBox,
+    Private Function NativeRotationDestinationPoints(ByVal picbox As B2SPictureBox,
                                                      ByVal rect As RectangleF) As PointF()
         If picbox.Width <= 0 OrElse picbox.Height <= 0 Then
             Return RotationDestinationPoints(rect, picbox.VisualRotationAngle,
@@ -4449,19 +4501,13 @@ Public Class formBackglass
             End If
         Next
 
-        ' Screen scaling is complete here. Build native caches at their actual
-        ' runtime rectangle so playback can use a direct, unscaled bitmap blit.
         For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-            illumination.Value.PrepareNativeRotationFrames()
             If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation Then
-                ' Display the stationary source immediately while the synchronized
-                ' continuous-rotation caches finish preparing in the background.
                 illumination.Value.Visible = True
             End If
             If illumination.Value.MotionPathPoints.Count >= 2 AndAlso illumination.Value.MotionPathSolenoidID = 0 AndAlso illumination.Value.MotionPathLampID = 0 AndAlso illumination.Value.MotionPathB2SID = 0 AndAlso illumination.Value.MotionPathSwitchID = 0 Then illumination.Value.StartMotionPath()
         Next
         For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
-            illumination.Value.PrepareNativeRotationFrames()
             If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation Then
                 illumination.Value.Visible = True
             End If

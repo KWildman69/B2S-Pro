@@ -2209,6 +2209,7 @@ Public Class formDesigner
         target.ArtworkPixelLighting = source.ArtworkPixelLighting
         target.DynamicFrontLighting = source.DynamicFrontLighting
         target.DynamicFrontShowLight = source.DynamicFrontShowLight
+        target.DynamicFrontTargetSnippetID = source.DynamicFrontTargetSnippetID
         target.GlowSpread = source.GlowSpread
         target.GlowSoftness = source.GlowSoftness
         target.GlowIntensity = source.GlowIntensity

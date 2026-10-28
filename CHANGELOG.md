@@ -6,6 +6,14 @@ All notable B2S Pro changes are documented here. Release packages and checksums 
 
 **Feature Update — Dynamic Lighting and Infinity Controls**
 
+### October 28 maintenance refresh — versions unchanged
+
+- Designer: export Dynamic Front Lighting as a clean alpha-only field so stationary canvas details are not stamped into moving artwork, and save the optional linked snippet target through project and DirectB2S/B2SPro export paths.
+- Server: apply Dynamic Front Lighting only to its linked snippet when a target is saved, preserve the moving artwork's opaque surface and colors, and retain the established all-eligible-snippets behavior when no target is saved.
+- Server: rotate new one-image wheels continuously from their single persistent image instead of generating duplicate rotated frames or full-size temporary images.
+- Server: render native-wheel Dynamic Front Lighting from only the affected overlap and reuse its pixel work buffers, removing the measured full-memory cleanup stalls while keeping the rendered lighting pixel-for-pixel unchanged.
+- Preserve untouched legacy rotation and non-native moving/static Dynamic Front Lighting paths.
+
 ### October 27 package correction — versions unchanged
 
 - Store identical OCR, help, ID Tester, and Infinity artwork once in the Designer runtime ZIP instead of duplicating them in both x64 and x86 folders.

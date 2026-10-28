@@ -852,6 +852,63 @@ Namespace Illumination
 
         End Function
 
+        ' Creates the alpha-only light field used to illuminate a moving snippet.
+        ' This intentionally stops before artwork rendering so stationary canvas
+        ' detail cannot become transparency inside the moving runtime object.
+        Public Function CreateDynamicFrontLightField(ByVal rect As Rectangle,
+                                                     ByVal rectX As Rectangle,
+                                                     ByVal glowSoftness As Integer,
+                                                     ByVal glowFalloff As Integer,
+                                                     ByVal glowIntensity As Integer,
+                                                     ByVal selectionMaskData As String,
+                                                     ByVal selectionFeather As Integer,
+                                                     ByVal applyGlobalMask As Boolean,
+                                                     ByVal lightDiffusion As Integer,
+                                                     ByVal maskRadius As Integer,
+                                                     ByVal maskSmooth As Integer,
+                                                     ByVal maskFeather As Integer,
+                                                     ByVal maskContrast As Integer,
+                                                     ByVal maskShiftEdge As Integer,
+                                                     ByVal radialSpikes As Integer,
+                                                     ByVal lightRotationAngle As Single) As Bitmap
+            If rect.Width <= 0 OrElse rect.Height <= 0 OrElse rectX.Width <= 0 OrElse rectX.Height <= 0 Then Return Nothing
+
+            Dim template As Bitmap =
+                GetGlowTemplate(rect.Width, rect.Height, "", Nothing,
+                                Illumination.eTextAlignment.Center,
+                                Illumination.eIlluMode.Flasher,
+                                glowSoftness, glowFalloff,
+                                glowIntensity, lightDiffusion)
+            If template Is Nothing Then Return Nothing
+
+            If Math.Abs(lightRotationAngle) >= 0.001F Then
+                Dim rotatedTemplate As Bitmap = PositionRotatedLightTemplate(template, rect, rectX, lightRotationAngle)
+                template.Dispose()
+                template = rotatedTemplate
+            ElseIf Not rect.Equals(rectX) Then
+                Dim clippedTemplate As New Bitmap(rectX.Width, rectX.Height, PixelFormat.Format32bppArgb)
+                Using clippedGraphics As Graphics = Graphics.FromImage(clippedTemplate)
+                    clippedGraphics.Clear(Color.Transparent)
+                    clippedGraphics.DrawImageUnscaled(template, rect.X - rectX.X, rect.Y - rectX.Y)
+                End Using
+                template.Dispose()
+                template = clippedTemplate
+            End If
+            If template Is Nothing Then Return Nothing
+
+            Dim field As Bitmap = ArtworkFlasherRenderer.CreateRefinedAlphaField(
+                template, maskRadius, maskSmooth, maskFeather,
+                maskContrast, maskShiftEdge, radialSpikes)
+            template.Dispose()
+            If field Is Nothing Then Return Nothing
+
+            If Not String.IsNullOrEmpty(selectionMaskData) Then
+                ApplySelectionMask(field, field, rectX, selectionMaskData, selectionFeather)
+            End If
+            If applyGlobalMask Then ApplyGlobalIlluminationMask(field, rectX)
+            Return field
+        End Function
+
         Private Sub ApplyTextBrightness(ByVal image As Bitmap, ByVal glowIntensity As Integer)
             ' Dodge can saturate glyph RGB even at zero brightness. Adjust only
             ' text opacity; 100% preserves the established glyph pixels exactly.

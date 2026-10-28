@@ -50,6 +50,9 @@
         ' Optionally keep the authored light visible through its normal Quick
         ' Selection mask while dynamic lighting redraws moving snippets above it.
         Public DynamicFrontShowLight As Boolean = False
+        ' Optional explicit snippet target for dynamic front lighting. Zero keeps
+        ' the legacy behavior of lighting every eligible snippet below the light.
+        Public DynamicFrontTargetSnippetID As Integer = 0
 
         Public ReadOnly Property UsesArtworkPixelRenderer As Boolean
             Get

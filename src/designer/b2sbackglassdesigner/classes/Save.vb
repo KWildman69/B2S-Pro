@@ -319,6 +319,7 @@ Public Class Save
                                                                      0, 1) = 1)
                         bulb.DynamicFrontLighting = (ReadIntAttribute(innerNode, "DynamicFrontLighting", 0, 0, 1) = 1)
                         bulb.DynamicFrontShowLight = (ReadIntAttribute(innerNode, "DynamicFrontShowLight", 0, 0, 1) = 1)
+                        bulb.DynamicFrontTargetSnippetID = ReadIntAttribute(innerNode, "DynamicFrontTargetSnippetID", 0, 0, Integer.MaxValue)
                         bulb.BlinkEnabled = (ReadIntAttribute(innerNode, "BlinkEnabled", 0, 0, 1) = 1)
                         bulb.BlinkInterval = ReadIntAttribute(innerNode, "BlinkInterval", 500, 1, 60000)
                         ' Read enhanced/flasher values defensively.  Older projects and interrupted
@@ -828,6 +829,7 @@ Public Class Save
                             nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontLighting", If(.DynamicFrontLighting, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
+                            nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", Math.Max(0, .DynamicFrontTargetSnippetID).ToString())
                             nodeBulb.SetAttribute("BlinkEnabled", If(.BlinkEnabled, "1", "0"))
                             nodeBulb.SetAttribute("BlinkInterval", Math.Max(1, Math.Min(60000, .BlinkInterval)).ToString())
                             nodeBulb.SetAttribute("GlowSpread", .GlowSpread.ToString())
