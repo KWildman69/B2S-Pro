@@ -317,6 +317,7 @@ Public Class Save
                                                                      "ArtworkPixelLighting",
                                                                      If(defaultArtworkPixelLighting, 1, 0),
                                                                      0, 1) = 1)
+                        bulb.SeparateLightLayer = (ReadIntAttribute(innerNode, "SeparateLightLayer", 0, 0, 1) = 1)
                         bulb.DynamicFrontLighting = (ReadIntAttribute(innerNode, "DynamicFrontLighting", 0, 0, 1) = 1)
                         bulb.DynamicFrontShowLight = (ReadIntAttribute(innerNode, "DynamicFrontShowLight", 0, 0, 1) = 1)
                         bulb.DynamicFrontTargetSnippetID = ReadIntAttribute(innerNode, "DynamicFrontTargetSnippetID", 0, 0, Integer.MaxValue)
@@ -827,6 +828,7 @@ Public Class Save
                             nodeBulb.SetAttribute("Intensity", .Intensity.ToString())
                             nodeBulb.SetAttribute("LightPurpose", CInt(.LightPurpose).ToString())
                             nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
+                            nodeBulb.SetAttribute("SeparateLightLayer", If(.SeparateLightLayer, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontLighting", If(.DynamicFrontLighting, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", Math.Max(0, .DynamicFrontTargetSnippetID).ToString())

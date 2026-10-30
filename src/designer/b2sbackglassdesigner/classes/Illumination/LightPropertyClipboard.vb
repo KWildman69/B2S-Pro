@@ -5,7 +5,7 @@
     Private Shared maskSmartRadius As Boolean
     Private Shared flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, flasherPulseDuration As Integer
     Private Shared dynamicFrontTargetSnippetID As Integer
-    Private Shared inFrontOfGlobalMask, lightBehindCanvas, artworkPixelLighting, dynamicFrontLighting, dynamicFrontShowLight As Boolean
+    Private Shared inFrontOfGlobalMask, lightBehindCanvas, artworkPixelLighting, separateLightLayer, dynamicFrontLighting, dynamicFrontShowLight As Boolean
     Private Sub New()
     End Sub
     Public Shared ReadOnly Property CanPaste As Boolean
@@ -25,6 +25,7 @@
         inFrontOfGlobalMask=bulb.InFrontOfGlobalMask
         lightBehindCanvas=bulb.LightBehindCanvas
         artworkPixelLighting=bulb.ArtworkPixelLighting
+        separateLightLayer=bulb.SeparateLightLayer
         dynamicFrontLighting=bulb.DynamicFrontLighting
         dynamicFrontShowLight=bulb.DynamicFrontShowLight
         dynamicFrontTargetSnippetID=bulb.DynamicFrontTargetSnippetID
@@ -47,6 +48,7 @@
         bulb.InFrontOfGlobalMask=inFrontOfGlobalMask
         bulb.LightBehindCanvas=lightBehindCanvas
         bulb.ArtworkPixelLighting=artworkPixelLighting
+        bulb.SeparateLightLayer=separateLightLayer
         bulb.DynamicFrontLighting=dynamicFrontLighting
         bulb.DynamicFrontShowLight=dynamicFrontShowLight
         bulb.DynamicFrontTargetSnippetID=dynamicFrontTargetSnippetID

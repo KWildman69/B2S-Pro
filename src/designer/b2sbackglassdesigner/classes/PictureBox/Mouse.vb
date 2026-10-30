@@ -1235,10 +1235,12 @@ Public Class Mouse
 
         If clickedBulb Is Nothing OrElse LayerManager.IsLocked(clickedBulb) Then Return
 
-        ' Preserve a selected text group when opening its shared settings.
-        ' Other object shortcuts retain their existing single-object behavior.
+        ' Preserve a selected text or blinker group when opening shared settings.
+        ' The Light editor already applies every control to its selected-bulb
+        ' collection; do not collapse a highlighted blinker group before that
+        ' collection is handed to the editor.
         If IsSelected(clickedBulb) AndAlso Not clickedBulb.IsImageSnippit AndAlso
-           Not String.IsNullOrEmpty(clickedBulb.Text) Then
+           (Not String.IsNullOrEmpty(clickedBulb.Text) OrElse clickedBulb.BlinkEnabled) Then
             SetSelection(New Generic.List(Of InfoBase)(_selectedItems), clickedBulb, True)
         Else
             SelectSingle(clickedBulb)

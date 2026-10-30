@@ -43,6 +43,9 @@
         ' flashers without changing their lamp identity or trigger behavior.
         ' False preserves imported legacy directB2S illumination exactly.
         Public ArtworkPixelLighting As Boolean = False
+        ' Draw only the authored light shape as a transparent layer at the
+        ' light's normal Z-order. No stationary artwork pixels are baked into it.
+        Public SeparateLightLayer As Boolean = False
         ' Opt-in runtime lighting for moving artwork. The saved light field is
         ' applied to the snippet's current frame instead of exporting one frozen
         ' illuminated snapshot. False preserves every existing backglass path.

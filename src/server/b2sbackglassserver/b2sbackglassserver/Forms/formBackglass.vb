@@ -652,6 +652,38 @@ Public Class formBackglass
             ' draw background image
             e.Graphics.DrawImage(Me.BackgroundImage, 0, 0)
 
+            ' A visible Dynamic Front light belongs on the stationary backglass,
+            ' below the moving snippet that it illuminates. Draw only that masked
+            ' light base here; the later Z-order pass applies the dynamic lighting
+            ' to the current snippet pixels without repainting the mask over them.
+            If B2SData.Illuminations.Count > 0 Then
+                If Not B2SData.UseZOrder Then
+                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+                        If illu.Value.DynamicFrontLighting AndAlso illu.Value.DynamicFrontShowLight AndAlso
+                           Not illu.Value.SeparateLightLayer AndAlso Not illu.Value.IsImageSnippit Then
+                            DrawImage(e, illu.Value, False, True)
+                        End If
+                    Next
+                Else
+                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+                        If illu.Value.ZOrder = 0 AndAlso illu.Value.DynamicFrontLighting AndAlso
+                           illu.Value.DynamicFrontShowLight AndAlso Not illu.Value.SeparateLightLayer AndAlso
+                           Not illu.Value.IsImageSnippit Then
+                            DrawImage(e, illu.Value, False, True)
+                        End If
+                    Next
+                    For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderImages
+                        For i As Integer = 0 To illus.Value.Length - 1
+                            Dim visibleLight As B2SPictureBox = illus.Value(i)
+                            If visibleLight.DynamicFrontLighting AndAlso visibleLight.DynamicFrontShowLight AndAlso
+                               Not visibleLight.SeparateLightLayer AndAlso Not visibleLight.IsImageSnippit Then
+                                DrawImage(e, visibleLight, False, True)
+                            End If
+                        Next
+                    Next
+                End If
+            End If
+
             ' draw all visible and necessary images
             If B2SData.Illuminations.Count > 0 Then
 
@@ -782,7 +814,9 @@ Public Class formBackglass
 
     End Sub
 
-    Private Sub DrawImage(e As System.Windows.Forms.PaintEventArgs, picbox As B2SPictureBox, Optional ByVal drawingBehindCanvas As Boolean = False)
+    Private Sub DrawImage(e As System.Windows.Forms.PaintEventArgs, picbox As B2SPictureBox,
+                          Optional ByVal drawingBehindCanvas As Boolean = False,
+                          Optional ByVal drawingDynamicFrontBase As Boolean = False)
 
         If picbox IsNot Nothing Then
 
@@ -811,8 +845,23 @@ Public Class formBackglass
             End If
 
             If drawme Then
+                If drawingDynamicFrontBase Then
+                    If picbox.BackgroundImage IsNot Nothing Then
+                        Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(picbox.BackgroundImage)
+                        If tiles Is Nothing Then
+                            e.Graphics.DrawImage(picbox.BackgroundImage, picbox.RectangleF.Location)
+                        Else
+                            For Each tile As SparseImageTile In tiles
+                                e.Graphics.DrawImageUnscaled(tile.Image,
+                                    CInt(picbox.RectangleF.Left) + tile.Offset.X,
+                                    CInt(picbox.RectangleF.Top) + tile.Offset.Y)
+                            Next
+                        End If
+                    End If
+                    Return
+                End If
                 If picbox.DynamicFrontLighting AndAlso picbox.DynamicFrontLightField IsNot Nothing AndAlso Not picbox.IsImageSnippit Then
-                    If picbox.DynamicFrontShowLight AndAlso picbox.BackgroundImage IsNot Nothing Then
+                    If picbox.SeparateLightLayer AndAlso picbox.BackgroundImage IsNot Nothing Then
                         Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(picbox.BackgroundImage)
                         If tiles Is Nothing Then
                             e.Graphics.DrawImage(picbox.BackgroundImage, picbox.RectangleF.Location)
@@ -2976,6 +3025,8 @@ Public Class formBackglass
                         End If
                         Dim artworkPixelLighting As Boolean = (innerNode.Attributes("ArtworkPixelLighting") IsNot Nothing AndAlso
                                                                innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
+                        Dim separateLightLayer As Boolean = (innerNode.Attributes("SeparateLightLayer") IsNot Nothing AndAlso
+                                                            innerNode.Attributes("SeparateLightLayer").InnerText = "1")
                         Dim lightBehindCanvas As Boolean = (innerNode.Attributes("LightBehindCanvas") IsNot Nothing AndAlso
                                                             innerNode.Attributes("LightBehindCanvas").InnerText = "1")
                         Dim dynamicFrontLighting As Boolean = (innerNode.Attributes("DynamicFrontLighting") IsNot Nothing AndAlso
@@ -3299,6 +3350,7 @@ Public Class formBackglass
                         picbox.OffImage = offimage
                         picbox.IsImageSnippit = isimagesnippit
                         picbox.ArtworkPixelLighting = artworkPixelLighting
+                        picbox.SeparateLightLayer = separateLightLayer
                         picbox.LightBehindCanvas = lightBehindCanvas
                         picbox.DynamicFrontLighting = dynamicFrontLighting AndAlso dynamicFrontLightField IsNot Nothing
                         picbox.DynamicFrontShowLight = picbox.DynamicFrontLighting AndAlso dynamicFrontShowLight

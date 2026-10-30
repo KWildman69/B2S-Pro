@@ -81,6 +81,7 @@ Public Class B2SPictureBox
 
     Public Property IsImageSnippit() As Boolean = False
     Public Property ArtworkPixelLighting() As Boolean = False
+    Public Property SeparateLightLayer() As Boolean = False
     ' Retained only so older DirectB2S files can still be read. New exports and
     ' rendering do not use the removed behind-light path.
     Public Property LightBehindCanvas() As Boolean = False

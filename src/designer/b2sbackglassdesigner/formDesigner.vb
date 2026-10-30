@@ -2207,6 +2207,7 @@ Public Class formDesigner
 
         target.LightPurpose = source.LightPurpose
         target.ArtworkPixelLighting = source.ArtworkPixelLighting
+        target.SeparateLightLayer = source.SeparateLightLayer
         target.DynamicFrontLighting = source.DynamicFrontLighting
         target.DynamicFrontShowLight = source.DynamicFrontShowLight
         target.DynamicFrontTargetSnippetID = source.DynamicFrontTargetSnippetID

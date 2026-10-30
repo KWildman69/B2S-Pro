@@ -141,8 +141,8 @@ Write-Output "Test runner: $testOutput"
 
 if ($IncludeLocalPackage) {
     $packages = @(
-        (Join-Path $AssetRoot 'B2S-Pro-Backglass-1.0.8.zip'),
-        (Join-Path $AssetRoot 'B2S-Pro-Server-3.0.9.zip')
+        (Join-Path $AssetRoot 'B2S-Pro-Backglass-1.0.9.zip'),
+        (Join-Path $AssetRoot 'B2S-Pro-Server-3.0.10.zip')
     )
     foreach ($package in $packages) {
         $sidecar = "$package.sha256"

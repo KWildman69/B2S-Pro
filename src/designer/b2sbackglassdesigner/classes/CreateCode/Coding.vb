@@ -672,6 +672,7 @@ Public Class Coding
                             nodeBulb.SetAttribute("DodgeColor", Color2String(.DodgeColor))
                             nodeBulb.SetAttribute("IlluMode", CInt(.IlluMode).ToString())
                             nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
+                            nodeBulb.SetAttribute("SeparateLightLayer", If(.SeparateLightLayer, "1", "0"))
                             If (.IlluMode = Illumination.eIlluMode.Flasher OrElse .LightPurpose = Illumination.eLightPurpose.Flasher) AndAlso .FlasherPulseDuration > 0 Then
                                 nodeBulb.SetAttribute("FlasherPulseDuration", Math.Max(50, Math.Min(5000, .FlasherPulseDuration)).ToString())
                             End If
@@ -1438,6 +1439,9 @@ Public Class Coding
                             bulb.Intensity = CInt(innerNode.Attributes("Intensity").InnerText)
                             If innerNode.Attributes("ArtworkPixelLighting") IsNot Nothing Then
                                 bulb.ArtworkPixelLighting = (innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
+                            End If
+                            If innerNode.Attributes("SeparateLightLayer") IsNot Nothing Then
+                                bulb.SeparateLightLayer = (innerNode.Attributes("SeparateLightLayer").InnerText = "1")
                             End If
                             If innerNode.Attributes("DynamicFrontLighting") IsNot Nothing Then
                                 bulb.DynamicFrontLighting = (innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
@@ -2708,7 +2712,7 @@ Public Class Coding
                         ' the generated backglass ran. Also preserve all glow and mask options
                         ' so runtime output matches the designer preview.
                         Dim runtimeRect As New Rectangle(.LocationX, .SizeX)
-                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes)))
+                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer)))
                         If font IsNot Nothing Then font.Dispose()
                     End If
                 End If

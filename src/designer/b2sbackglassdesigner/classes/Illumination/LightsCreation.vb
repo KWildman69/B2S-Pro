@@ -755,7 +755,21 @@ Namespace Illumination
                                            Optional ByVal maskShiftEdge As Integer = 0,
                                            Optional ByVal flasherRadialSpikes As Integer = 0,
                                            Optional ByVal lightRotationAngle As Single = 0.0F,
-                                           Optional ByVal transmitTransparentCanvas As Boolean = False) As Image
+                                           Optional ByVal transmitTransparentCanvas As Boolean = False,
+                                           Optional ByVal separateLightLayer As Boolean = False) As Image
+
+            If separateLightLayer AndAlso String.IsNullOrEmpty(text) Then
+                Dim lightLayer As Bitmap = CreateDynamicFrontLightField(
+                    rect, rectX, glowSoftness, glowFalloff, glowIntensity,
+                    selectionMaskData, selectionFeather, applyGlobalMask,
+                    lightDiffusion, maskRadius, maskSmooth, maskFeather,
+                    maskContrast, maskShiftEdge, flasherRadialSpikes,
+                    lightRotationAngle)
+                If lightLayer Is Nothing Then Return Nothing
+                ColorizeSeparateLightLayer(lightLayer, If(lightcolor = Nothing, DefaultLightColor, lightcolor))
+                ApplyTemperatureToRenderedLight(lightLayer, lightTemperature)
+                Return lightLayer
+            End If
 
             ' maybe create the scaled and illuminated image part
             If imageBackground IsNot Nothing Then
@@ -851,6 +865,31 @@ Namespace Illumination
             End If
 
         End Function
+
+        Private Shared Sub ColorizeSeparateLightLayer(ByVal lightLayer As Bitmap, ByVal lightColor As Color)
+            If lightLayer Is Nothing Then Return
+            Dim data As BitmapData = lightLayer.LockBits(New Rectangle(0, 0, lightLayer.Width, lightLayer.Height),
+                                                         ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
+            Try
+                Dim stride As Integer = Math.Abs(data.Stride)
+                Dim raw(stride * lightLayer.Height - 1) As Byte
+                Marshal.Copy(data.Scan0, raw, 0, raw.Length)
+                For y As Integer = 0 To lightLayer.Height - 1
+                    Dim row As Integer = y * stride
+                    For x As Integer = 0 To lightLayer.Width - 1
+                        Dim pixel As Integer = row + x * 4
+                        If raw(pixel + 3) <> 0 Then
+                            raw(pixel) = lightColor.B
+                            raw(pixel + 1) = lightColor.G
+                            raw(pixel + 2) = lightColor.R
+                        End If
+                    Next
+                Next
+                Marshal.Copy(raw, 0, data.Scan0, raw.Length)
+            Finally
+                lightLayer.UnlockBits(data)
+            End Try
+        End Sub
 
         ' Creates the alpha-only light field used to illuminate a moving snippet.
         ' This intentionally stops before artwork rendering so stationary canvas

@@ -41,6 +41,7 @@ Public Class formLightDiffusionEditor
     Private flasherDescriptionLabel As Label
     Private flasherSettingsGroup As GroupBox
     Private flasherPreviewModeGroup As GroupBox
+    Private separateLightLayerGroup As GroupBox
     Private dynamicLightingGroup As GroupBox
     Private flasherQuickSelectButton As Button
     Private flasherCopyButton As Button
@@ -59,6 +60,7 @@ Public Class formLightDiffusionEditor
     Private ReadOnly originalLightTemperature As Integer
     Private ReadOnly originalLightPurpose As Illumination.eLightPurpose
     Private ReadOnly originalArtworkPixelLighting As Boolean
+    Private ReadOnly originalSeparateLightLayer As Boolean
     Private ReadOnly originalBlendMode As Integer
     Private ReadOnly originalPreviewQuality As Integer
     Private ReadOnly originalInFrontOfMask As Boolean
@@ -111,6 +113,7 @@ Public Class formLightDiffusionEditor
     Private dynamicFrontLighting As CheckBox
     Private dynamicFrontShowLight As CheckBox
     Private dynamicFrontTarget As ComboBox
+    Private separateLightLayer As CheckBox
     Private isUpdatingLivePreview As Boolean = False
     Private isInitializing As Boolean = True
     Private flashColorButton As Button
@@ -156,6 +159,7 @@ Public Class formLightDiffusionEditor
         originalLightTemperature = bulb.LightTemperature
         originalLightPurpose = bulb.LightPurpose
         originalArtworkPixelLighting = bulb.ArtworkPixelLighting
+        originalSeparateLightLayer = bulb.SeparateLightLayer
         originalBlendMode = bulb.GlowBlendMode
         originalPreviewQuality = bulb.GlowPreviewQuality
         originalInFrontOfMask = bulb.InFrontOfGlobalMask
@@ -288,9 +292,33 @@ Public Class formLightDiffusionEditor
             }
             Controls.Add(flasherPreviewModeGroup)
 
+            If Not isDedicatedFlasher Then
+                separateLightLayerGroup = New GroupBox With {
+                    .Text = "  SEPARATE LIGHT LAYER",
+                    .Left = 20, .Top = 710, .Width = 555, .Height = 55,
+                    .ForeColor = accent, .BackColor = panelColor,
+                    .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
+                }
+                separateLightLayer = New CheckBox With {
+                    .Name = "chkSeparateLightLayer",
+                    .Text = "Use light-only overlay layer",
+                    .Left = 18, .Top = 20, .Width = 220, .Height = 24,
+                    .Checked = bulb.SeparateLightLayer,
+                    .ForeColor = Color.WhiteSmoke, .Font = New Font("Tahoma", 9.0F)
+                }
+                Dim separateLayerDescription As New Label With {
+                    .Text = "Lights the full shape, including black pixels.",
+                    .Left = 245, .Top = 23, .Width = 285, .Height = 22,
+                    .ForeColor = Color.Silver, .Font = New Font("Tahoma", 8.25F)
+                }
+                AddHandler separateLightLayer.CheckedChanged, AddressOf SeparateLightLayerChanged
+                separateLightLayerGroup.Controls.AddRange(New Control() {separateLightLayer, separateLayerDescription})
+                Controls.Add(separateLightLayerGroup)
+            End If
+
             dynamicLightingGroup = New GroupBox With {
                 .Text = "  DYNAMIC LIGHTING",
-                .Left = 20, .Top = If(isDedicatedFlasher, 694, 710),
+                .Left = 20, .Top = If(isDedicatedFlasher, 694, 773),
                 .Width = 555, .Height = 55,
                 .ForeColor = accent, .BackColor = panelColor,
                 .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
@@ -592,7 +620,8 @@ Public Class formLightDiffusionEditor
         flasherLeftPanel = New Panel With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
-            .BackColor = BackColor
+            .BackColor = BackColor,
+            .AutoScroll = True
         }
         flasherRightLayout = New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
@@ -621,7 +650,7 @@ Public Class formLightDiffusionEditor
 
         For Each control As Control In New Control() {
             flasherTitleLabel, flasherDescriptionLabel, flasherSettingsGroup,
-            flasherPreviewModeGroup, dynamicLightingGroup, saveTheseSettings
+            flasherPreviewModeGroup, separateLightLayerGroup, dynamicLightingGroup, saveTheseSettings
         }
             If control IsNot Nothing Then flasherLeftPanel.Controls.Add(control)
         Next
@@ -877,7 +906,7 @@ Public Class formLightDiffusionEditor
                 bulb.UsesArtworkPixelRenderer,
                 bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius,
                 bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge,
-                bulb.FlasherRadialSpikes, bulb.LightRotationAngle)
+                bulb.FlasherRadialSpikes, bulb.LightRotationAngle, False, bulb.SeparateLightLayer)
             If overlay IsNot Nothing Then
                 Using g As Graphics = Graphics.FromImage(flashed)
                     g.DrawImage(overlay, rectX.X, rectX.Y, rectX.Width, rectX.Height)
@@ -929,7 +958,7 @@ Public Class formLightDiffusionEditor
             bulb.LightDiffusion, bulb.LightTemperature,
             True, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius,
             bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge,
-            bulb.FlasherRadialSpikes, bulb.LightRotationAngle)
+            bulb.FlasherRadialSpikes, bulb.LightRotationAngle, False, bulb.SeparateLightLayer)
         If overlay Is Nothing Then Return
         Using g As Graphics = Graphics.FromImage(flashed)
             g.DrawImage(overlay, rectX.X, rectX.Y, rectX.Width, rectX.Height)
@@ -1531,6 +1560,18 @@ Public Class formLightDiffusionEditor
         QueueCanvasPreview()
     End Sub
 
+    Private Sub SeparateLightLayerChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If isInitializing OrElse separateLightLayer Is Nothing Then Return
+        For Each selected As Illumination.BulbInfo In selectedBulbs
+            If selected Is Nothing OrElse selected.IsImageSnippit Then Continue For
+            selected.SeparateLightLayer = separateLightLayer.Checked
+            selected.IsIlluminatedImageDirty = True
+        Next
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
+        QueueLivePreview()
+        QueueCanvasPreview()
+    End Sub
+
     Private Sub PopulateDynamicFrontTargetList()
         If dynamicFrontTarget Is Nothing Then Return
         dynamicFrontTarget.Items.Clear()
@@ -1611,6 +1652,7 @@ Public Class formLightDiffusionEditor
             bulb.LightTemperature = originalLightTemperature
             bulb.LightPurpose = originalLightPurpose
             bulb.ArtworkPixelLighting = originalArtworkPixelLighting
+            bulb.SeparateLightLayer = originalSeparateLightLayer
             bulb.GlowBlendMode = originalBlendMode
             bulb.GlowPreviewQuality = originalPreviewQuality
             bulb.InFrontOfGlobalMask = originalInFrontOfMask
@@ -1905,6 +1947,7 @@ Public Class formLightDiffusionEditor
                                                                If(bulb.FlasherPulseDuration > 0, bulb.FlasherPulseDuration, 250)))
                 UpdateFlasherPulseAvailability()
             End If
+            If separateLightLayer IsNot Nothing Then separateLightLayer.Checked = bulb.SeparateLightLayer
             If dynamicFrontLighting IsNot Nothing Then dynamicFrontLighting.Checked = bulb.DynamicFrontLighting
             If dynamicFrontShowLight IsNot Nothing Then
                 dynamicFrontShowLight.Checked = bulb.DynamicFrontShowLight
@@ -1960,6 +2003,7 @@ Public Class formLightDiffusionEditor
                                    Illumination.eLightPurpose.Flasher,
                                    Illumination.eLightPurpose.Lamp)
         End If
+        If separateLightLayer IsNot Nothing Then target.SeparateLightLayer = separateLightLayer.Checked
         If transmissionContrast IsNot Nothing Then target.ArtworkContrast = transmissionContrast.Value
         If blinkerEnabled IsNot Nothing Then target.BlinkEnabled = blinkerEnabled.Checked
         If blinkerInterval IsNot Nothing Then target.BlinkInterval = Math.Max(1, Math.Min(60000, CInt(blinkerInterval.Value)))
@@ -1991,13 +2035,14 @@ Public Class formLightDiffusionEditor
     Private NotInheritable Class LightSettingsSnapshot
         Private ReadOnly spread, softness, falloff, glowIntensity, diffusion, temperature, artworkBrightness, artworkContrast, adjustmentPasses, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge, flasherRadialSpikes, blinkInterval, flasherPulseDuration, dynamicFrontTargetSnippetID As Integer
         Private ReadOnly purpose As Illumination.eLightPurpose
-        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting, dynamicFrontLighting, dynamicFrontShowLight As Boolean
+        Private ReadOnly inFront, globalMaskLayerExplicit, blinkEnabled, smartRadius, artworkPixelLighting, separateLayer, dynamicFrontLighting, dynamicFrontShowLight As Boolean
         Private ReadOnly lightColor As Color
 
         Public Sub New(ByVal source As Illumination.BulbInfo)
             spread = source.GlowSpread : softness = source.GlowSoftness : falloff = source.GlowFalloff : glowIntensity = source.GlowIntensity
             diffusion = source.LightDiffusion : temperature = source.LightTemperature : purpose = source.LightPurpose
             artworkPixelLighting = source.ArtworkPixelLighting
+            separateLayer = source.SeparateLightLayer
             dynamicFrontLighting = source.DynamicFrontLighting
             dynamicFrontShowLight = source.DynamicFrontShowLight
             dynamicFrontTargetSnippetID = source.DynamicFrontTargetSnippetID
@@ -2013,6 +2058,7 @@ Public Class formLightDiffusionEditor
             target.GlowSpread = spread : target.GlowSoftness = softness : target.GlowFalloff = falloff : target.GlowIntensity = glowIntensity
             target.LightDiffusion = diffusion : target.LightTemperature = temperature : target.LightPurpose = purpose
             target.ArtworkPixelLighting = artworkPixelLighting
+            target.SeparateLightLayer = separateLayer
             target.DynamicFrontLighting = dynamicFrontLighting
             target.DynamicFrontShowLight = dynamicFrontShowLight
             target.DynamicFrontTargetSnippetID = dynamicFrontTargetSnippetID

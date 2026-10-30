@@ -501,6 +501,7 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, LayerManager.GetOpacity(bulb))
         hash = MixVisualHash(hash, If(LayerManager.IsVisible(bulb), 1, 0))
         hash = MixVisualHash(hash, If(bulb.ArtworkPixelLighting, 1, 0))
+        hash = MixVisualHash(hash, If(bulb.SeparateLightLayer, 1, 0))
         hash = MixVisualHash(hash, If(bulb.DynamicFrontLighting, 1, 0))
         hash = MixVisualHash(hash, If(bulb.DynamicFrontShowLight, 1, 0))
         If Backglass.currentData IsNot Nothing Then
@@ -1868,7 +1869,7 @@ Public Class B2SPictureBox
                                                   bulb.GlowIntensity,
                                                   bulb.SelectionMaskData,
                                                   bulb.SelectionFeather,
-                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle)
+                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, False, bulb.SeparateLightLayer)
             If overlay IsNot Nothing Then graphics.DrawImageUnscaled(overlay, rectX.Location)
             If TypeOf overlay Is Bitmap Then
                 Dim size As Long = CLng(overlay.Width) * overlay.Height * 4L

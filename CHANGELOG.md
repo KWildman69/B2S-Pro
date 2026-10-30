@@ -2,6 +2,25 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 1.0.9 / Server 3.0.10 — 2026-10-30
+
+**Feature Update — Separate Light Layers and Stability Fixes**
+
+### Designer
+
+- Add a separate light-only overlay layer option that preserves the authored light shape, including black areas, without baking backglass artwork into the light image.
+- Allow all selected blinker lights to be edited together through the existing multi-selection workflow.
+- Prevent the Step 2 VPM information timer from restoring an invalid ListView item after the list changes, eliminating the confirmed `ListView.set_TopItem` crash.
+
+### Server
+
+- Load and render separate light-only overlay layers at their authored Z order without changing existing light or legacy backglass behavior.
+- Correct Dynamic Front Lighting with **Show light through mask** so the stationary light base is drawn beneath the linked moving snippet and the snippet remains opaque.
+
+### Compatibility
+
+- Existing backglasses keep the separate-layer option disabled unless it was explicitly saved. Legacy backglass and animation paths remain unchanged.
+
 ## Designer 1.0.8 / Server 3.0.9 — 2026-10-27
 
 **Feature Update — Dynamic Lighting and Infinity Controls**

@@ -282,7 +282,6 @@ Public Class formVPM
                 txtInfo.ResumeLayout()
 
                 ' show stats
-                Dim topitem As ListViewItem = lvwStats.TopItem
                 lvwStats.SuspendLayout()
                 'lvwStats.Items.Clear()
                 For Each statistic As KeyValuePair(Of String, statistic) In stats
@@ -304,7 +303,6 @@ Public Class formVPM
 
                     End With
                 Next
-                lvwStats.TopItem = topitem
                 lvwStats.ResumeLayout()
 
             End If
