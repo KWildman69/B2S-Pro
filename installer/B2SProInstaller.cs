@@ -420,8 +420,13 @@ namespace B2SPro.Setup
             var flow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = Color.Transparent };
             flow.Controls.Add(new Label { Text = "Install source", AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 10F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 8) });
             _localSource.Text = "Use local packages"; _localSource.AutoSize = true; _localSource.ForeColor = Color.White; _localSource.BackColor = Color.Transparent; _localSource.UseVisualStyleBackColor = false;
-            _localSource.Enabled = _localPackages.AreAvailable(SetupEdition.ServerOnly);
-            _localSource.Checked = _localSource.Enabled;
+            _localSource.Enabled = true;
+            _localSource.Checked = _localPackages.AreAvailable(SetupEdition.ServerOnly);
+            _localSource.CheckedChanged += delegate
+            {
+                if (_localSource.Checked && !_localPackages.AreAvailable(SetupEdition.ServerOnly))
+                    NeonMessage.Show(this, LocalPackageRequirementsMessage(), SetupEdition.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
             _githubSource.Text = "Download from GitHub"; _githubSource.AutoSize = true; _githubSource.ForeColor = Color.White; _githubSource.BackColor = Color.Transparent; _githubSource.UseVisualStyleBackColor = false; _githubSource.Checked = !_localSource.Checked;
             _githubSource.Margin = new Padding(12, 1, 14, 4); _localSource.Margin = new Padding(0, 1, 0, 4);
             flow.Controls.Add(_githubSource); flow.Controls.Add(_localSource);
@@ -601,10 +606,55 @@ namespace B2SPro.Setup
             if (IsLockedForReplacement(Path.Combine(_serverFolder.Text.Trim(), "B2SBackglassServer.dll")))
                 return "The B2S Server is still in use. Close Visual Pinball and any running backglass before installing the update.";
             if (_localSource.Checked && !_localPackages.AreAvailable(SetupEdition.ServerOnly))
-                return SetupEdition.ServerOnly
-                    ? "The required local Server ZIP and checksum are no longer beside the installer."
-                    : "The required local Designer and Server ZIPs and checksums are no longer beside the installer.";
+                return LocalPackageRequirementsMessage();
             return null;
+        }
+
+        private string LocalPackageRequirementsMessage()
+        {
+            string folder = AppDomain.CurrentDomain.BaseDirectory;
+            var missingFiles = new List<string>();
+            if (!SetupEdition.ServerOnly)
+                AddMissingLocalPackageFiles(missingFiles, folder, _localPackages.DesignerPath, "B2S-Pro-Backglass-");
+            AddMissingLocalPackageFiles(missingFiles, folder, _localPackages.ServerPath, "B2S-Pro-Server-");
+
+            var message = new StringBuilder();
+            message.AppendLine(missingFiles.Count == 1
+                ? "Local installation is missing this required GitHub release file:"
+                : "Local installation is missing these required GitHub release files:");
+            message.AppendLine();
+            foreach (string missingFile in missingFiles) message.AppendLine(missingFile);
+            message.AppendLine();
+            message.AppendLine(missingFiles.Count == 1
+                ? "Download that file, keep its original name, and place it beside this setup file:"
+                : "Download those files, keep their original names, and place them beside this setup file:");
+            message.AppendLine(folder);
+            message.AppendLine();
+            message.Append("Then close and reopen the setup.");
+            return message.ToString();
+        }
+
+        private static void AddMissingLocalPackageFiles(List<string> missingFiles, string folder, string packagePath, string packagePrefix)
+        {
+            if (!String.IsNullOrWhiteSpace(packagePath) && File.Exists(packagePath))
+            {
+                string sidecarPath = packagePath + ".sha256";
+                if (!File.Exists(sidecarPath)) missingFiles.Add(Path.GetFileName(sidecarPath));
+                return;
+            }
+
+            string sidecarPattern = packagePrefix + "*.zip.sha256";
+            string sidecarNamePattern = "^" + Regex.Escape(packagePrefix) + "[0-9][A-Za-z0-9._-]*\\.zip\\.sha256$";
+            string sidecar = FindLocalVersionedPackage(folder, sidecarPattern, sidecarNamePattern);
+            if (!String.IsNullOrWhiteSpace(sidecar) && File.Exists(sidecar))
+            {
+                string sidecarName = Path.GetFileName(sidecar);
+                missingFiles.Add(sidecarName.Substring(0, sidecarName.Length - ".sha256".Length));
+                return;
+            }
+
+            missingFiles.Add(packagePrefix + "[version].zip");
+            missingFiles.Add(packagePrefix + "[version].zip.sha256");
         }
 
         private async void RestoreClicked(object sender, EventArgs e)
