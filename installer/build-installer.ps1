@@ -87,6 +87,7 @@ $updateCheckerArguments = @(
     "/win32icon:$icon"
     '/reference:System.dll'
     '/reference:System.Core.dll'
+    '/reference:System.Drawing.dll'
     '/reference:System.Windows.Forms.dll'
     '/reference:System.Net.Http.dll'
     '/reference:System.Web.Extensions.dll'

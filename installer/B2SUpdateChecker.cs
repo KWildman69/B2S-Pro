@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Net;
@@ -137,21 +138,7 @@ namespace B2SPro.Updates
                         return;
                     }
 
-                    string message = target.ProductName + " update available.\r\n\r\n" +
-                        available.UpdateType.ToUpperInvariant() + "\r\n" +
-                        available.ReleaseTitle + "\r\n\r\n" +
-                        "Installed version: " + VersionText(installedVersion) + "\r\n" +
-                        "Available version: " + VersionText(available.Version) + "\r\n\r\n" +
-                        (available.Version == installedVersion ? "The current release package differs from the recorded installation, or this older installation has no package record.\r\n\r\n" : "") +
-                        "WHAT CHANGED\r\n" + available.ReleaseNotes + "\r\n\r\n" +
-                        "Download the verified update and open setup now?\r\n\r\n" +
-                        target.CloseBeforeInstallMessage;
-                    DialogResult answer = MessageBox.Show(
-                        message,
-                        "B2S Pro Update Available",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information,
-                        MessageBoxDefaultButton.Button2);
+                    DialogResult answer = UpdateAvailableDialog.ShowUpdate(target, installedVersion, available, false);
                     if (answer != DialogResult.Yes) return;
 
                     try
@@ -208,21 +195,7 @@ namespace B2SPro.Updates
                 "Feature Update",
                 "Infinity lighting and update transparency preview",
                 "Designer:\r\n- Added Infinity-light trigger controls.\r\n- Improved lighting workflow.\r\n\r\nServer:\r\n- Includes the latest confirmed compatibility fixes.");
-            string message = "TEST NOTIFICATION — no files will be downloaded or changed.\r\n\r\n" +
-                target.ProductName + " update available.\r\n\r\n" +
-                testUpdate.UpdateType.ToUpperInvariant() + "\r\n" +
-                testUpdate.ReleaseTitle + "\r\n\r\n" +
-                "Installed version: " + VersionText(installed) + "\r\n" +
-                "Available version: " + VersionText(available) + "\r\n\r\n" +
-                "WHAT CHANGED\r\n" + testUpdate.ReleaseNotes + "\r\n\r\n" +
-                "Download the verified update and open setup now?\r\n\r\n" +
-                target.CloseBeforeInstallMessage;
-            DialogResult answer = MessageBox.Show(
-                message,
-                "B2S Pro Update Test",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information,
-                MessageBoxDefaultButton.Button2);
+            DialogResult answer = UpdateAvailableDialog.ShowUpdate(target, installed, testUpdate, true);
             if (answer == DialogResult.Yes)
             {
                 MessageBox.Show(
@@ -251,6 +224,183 @@ namespace B2SPro.Updates
         {
             if (version.Revision > 0) return version.Major + "." + version.Minor + "." + Math.Max(0, version.Build) + "." + version.Revision;
             return version.Major + "." + version.Minor + "." + Math.Max(0, version.Build);
+        }
+    }
+
+    internal static class CompactReleaseSummary
+    {
+        public static string[] Build(string releaseNotes, int maximumItems)
+        {
+            var items = new List<string>();
+            if (maximumItems <= 0) return items.ToArray();
+
+            string section = null;
+            string normalized = (releaseNotes ?? String.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            foreach (string rawLine in normalized.Split(new[] { '\n' }, StringSplitOptions.None))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0) continue;
+
+                bool bullet = line[0] == '-' || line[0] == '*' || line[0] == '\u2022';
+                if (!bullet && line.EndsWith(":", StringComparison.Ordinal))
+                {
+                    section = line.Substring(0, line.Length - 1).Trim();
+                    continue;
+                }
+
+                line = line.TrimStart('-', '*', '\u2022').Trim();
+                if (line.Length == 0) continue;
+                string summary = String.IsNullOrWhiteSpace(section) ? line : section + ": " + line;
+                items.Add(Shorten(summary, 112));
+                if (items.Count >= maximumItems) break;
+            }
+
+            if (items.Count == 0) items.Add("See the full release notes for the complete change list.");
+            return items.ToArray();
+        }
+
+        internal static string Shorten(string value, int maximumLength)
+        {
+            string text = (value ?? String.Empty).Trim();
+            if (maximumLength < 4 || text.Length <= maximumLength) return text;
+            return text.Substring(0, maximumLength - 3).TrimEnd() + "...";
+        }
+    }
+
+    internal sealed class UpdateAvailableDialog : Form
+    {
+        private readonly Button _laterButton;
+
+        private UpdateAvailableDialog(UpdateTarget target, Version installedVersion, AvailableUpdate available, bool testOnly)
+        {
+            Text = testOnly ? "B2S Pro Update Test" : "B2S Pro Update Available";
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = true;
+            AutoScaleMode = AutoScaleMode.Dpi;
+            ClientSize = new Size(520, 420);
+            Font = SystemFonts.MessageBoxFont;
+
+            var layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.Padding = new Padding(22, 18, 22, 14);
+            layout.ColumnCount = 1;
+            layout.RowCount = 8;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int index = 0; index < 7; index++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var heading = CreateLabel(
+                target.ProductName + " " + Program.VersionText(available.Version) + " is ready",
+                new Font(Font, FontStyle.Bold),
+                16F);
+            layout.Controls.Add(heading, 0, 0);
+
+            string updateType = String.IsNullOrWhiteSpace(available.UpdateType) ? "Update" : available.UpdateType.Trim();
+            var classification = CreateLabel(updateType, new Font(Font, FontStyle.Bold), 10F);
+            classification.ForeColor = SystemColors.HotTrack;
+            classification.Margin = new Padding(0, 7, 0, 0);
+            layout.Controls.Add(classification, 0, 1);
+
+            var title = CreateLabel(available.ReleaseTitle, Font, 11F);
+            title.ForeColor = SystemColors.GrayText;
+            title.Margin = new Padding(0, 4, 0, 0);
+            layout.Controls.Add(title, 0, 2);
+
+            string versions = "Installed " + Program.VersionText(installedVersion) + "    Available " + Program.VersionText(available.Version);
+            if (available.Version == installedVersion) versions += "    Refreshed package";
+            var versionLabel = CreateLabel(versions, Font, 10F);
+            versionLabel.Margin = new Padding(0, 8, 0, 0);
+            layout.Controls.Add(versionLabel, 0, 3);
+
+            var changes = new GroupBox();
+            changes.Text = "What's fixed";
+            changes.Dock = DockStyle.Top;
+            changes.AutoSize = true;
+            changes.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            changes.Margin = new Padding(0, 14, 0, 0);
+            changes.Padding = new Padding(12, 8, 12, 10);
+            var changeList = new TableLayoutPanel();
+            changeList.Dock = DockStyle.Top;
+            changeList.AutoSize = true;
+            changeList.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            changeList.ColumnCount = 1;
+            changeList.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            foreach (string item in CompactReleaseSummary.Build(available.ReleaseNotes, 3))
+            {
+                var itemLabel = CreateLabel("\u2022  " + item, Font, 10F);
+                itemLabel.Margin = new Padding(0, 3, 0, 3);
+                changeList.Controls.Add(itemLabel);
+            }
+            changes.Controls.Add(changeList);
+            layout.Controls.Add(changes, 0, 4);
+
+            var details = new LinkLabel();
+            details.Text = "View full release notes";
+            details.AutoSize = true;
+            details.Margin = new Padding(0, 8, 0, 0);
+            details.LinkClicked += delegate
+            {
+                MessageBox.Show(this,
+                    String.IsNullOrWhiteSpace(available.ReleaseNotes) ? "No additional release notes were provided." : available.ReleaseNotes,
+                    "B2S Pro Release Notes",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            };
+            layout.Controls.Add(details, 0, 5);
+
+            string closingText = testOnly
+                ? "Test only — nothing will be downloaded, installed, or changed."
+                : target.CloseBeforeInstallMessage;
+            var closing = CreateLabel(closingText, Font, 10F);
+            closing.ForeColor = SystemColors.GrayText;
+            closing.Margin = new Padding(0, 10, 0, 0);
+            layout.Controls.Add(closing, 0, 6);
+
+            var buttons = new FlowLayoutPanel();
+            buttons.Dock = DockStyle.Bottom;
+            buttons.FlowDirection = FlowDirection.RightToLeft;
+            buttons.WrapContents = false;
+            buttons.AutoSize = true;
+            buttons.Margin = new Padding(0, 14, 0, 0);
+
+            var downloadButton = new Button();
+            downloadButton.Text = testOnly ? "Test Download" : "Download Update";
+            downloadButton.AutoSize = true;
+            downloadButton.DialogResult = DialogResult.Yes;
+            downloadButton.Padding = new Padding(8, 2, 8, 2);
+
+            _laterButton = new Button();
+            _laterButton.Text = "Later";
+            _laterButton.AutoSize = true;
+            _laterButton.DialogResult = DialogResult.No;
+            _laterButton.Padding = new Padding(8, 2, 8, 2);
+
+            buttons.Controls.Add(downloadButton);
+            buttons.Controls.Add(_laterButton);
+            layout.Controls.Add(buttons, 0, 7);
+
+            CancelButton = _laterButton;
+            Controls.Add(layout);
+            Shown += delegate { _laterButton.Select(); };
+        }
+
+        public static DialogResult ShowUpdate(UpdateTarget target, Version installedVersion, AvailableUpdate available, bool testOnly)
+        {
+            using (var dialog = new UpdateAvailableDialog(target, installedVersion, available, testOnly))
+                return dialog.ShowDialog();
+        }
+
+        private static Label CreateLabel(string text, Font font, float size)
+        {
+            var label = new Label();
+            label.Text = text ?? String.Empty;
+            label.AutoSize = true;
+            label.MaximumSize = new Size(462, 0);
+            label.Font = new Font(font.FontFamily, size, font.Style, GraphicsUnit.Point);
+            return label;
         }
     }
 
@@ -662,6 +812,13 @@ namespace B2SPro.Updates
                 Assert(GitHubReleaseClient.NormalizeDigest("sha256:not-a-hash") == null, "Invalid GitHub digest was accepted.");
                 Assert(designer.SetupFolderArgument == "--installed-designer", "Designer setup handoff is incorrect.");
                 Assert(server.SetupFolderArgument == "--installed-server", "Server setup handoff is incorrect.");
+                string[] compactNotes = CompactReleaseSummary.Build(
+                    "Designer:\r\n- Added Infinity-light trigger controls.\r\n- Improved lighting workflow.\r\n\r\nServer:\r\n- Includes the latest compatibility fixes.\r\n- This fourth item must not appear.",
+                    3);
+                Assert(compactNotes.Length == 3, "Compact release notes did not stop at three items.");
+                Assert(compactNotes[0] == "Designer: Added Infinity-light trigger controls.", "Designer release-note summary is incorrect.");
+                Assert(compactNotes[2] == "Server: Includes the latest compatibility fixes.", "Server release-note summary is incorrect.");
+                Assert(CompactReleaseSummary.Shorten(new string('x', 120), 20).Length == 20, "Compact release-note truncation is incorrect.");
                 string updateType;
                 string updateTitle;
                 string updateNotes;
@@ -684,7 +841,7 @@ namespace B2SPro.Updates
                 {
                     try { Directory.Delete(preferenceFolder, true); } catch { }
                 }
-                Console.WriteLine("SELF-TEST PASSED: component selection, package parsing, version comparison, digest validation, classified release notes, setup handoff, and automatic-notification preference");
+                Console.WriteLine("SELF-TEST PASSED: component selection, package parsing, version comparison, digest validation, classified and compact release notes, setup handoff, and automatic-notification preference");
                 return 0;
             }
             catch (Exception ex)
