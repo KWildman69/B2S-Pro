@@ -953,6 +953,26 @@ Public Class B2STabPage
         End If
     End Sub
 
+    Friend Shared Function CenteredFrameLocation(ByVal canvasBounds As Rectangle,
+                                                 ByVal viewportBounds As Rectangle,
+                                                 ByVal zoomFactor As Double,
+                                                 ByVal frameSize As Size) As Point
+        If zoomFactor <= 0 OrElse canvasBounds.Width <= 0 OrElse canvasBounds.Height <= 0 Then Return New Point(10, 10)
+
+        Dim visibleCanvas As Rectangle = Rectangle.Intersect(canvasBounds, viewportBounds)
+        If visibleCanvas.IsEmpty Then visibleCanvas = canvasBounds
+
+        Dim centerX As Double = (visibleCanvas.Left + visibleCanvas.Width / 2.0R - canvasBounds.Left) / zoomFactor
+        Dim centerY As Double = (visibleCanvas.Top + visibleCanvas.Height / 2.0R - canvasBounds.Top) / zoomFactor
+        Dim canvasWidth As Integer = Math.Max(0, CInt(Math.Floor(canvasBounds.Width / zoomFactor)))
+        Dim canvasHeight As Integer = Math.Max(0, CInt(Math.Floor(canvasBounds.Height / zoomFactor)))
+        Dim maximumX As Integer = Math.Max(0, canvasWidth - frameSize.Width)
+        Dim maximumY As Integer = Math.Max(0, canvasHeight - frameSize.Height)
+        Dim x As Integer = Math.Max(0, Math.Min(CInt(Math.Round(centerX - frameSize.Width / 2.0R)), maximumX))
+        Dim y As Integer = Math.Max(0, Math.Min(CInt(Math.Round(centerY - frameSize.Height / 2.0R)), maximumY))
+        Return New Point(x, y)
+    End Function
+
     Public Sub ReelsAndLEDs_AddScore()
         BackglassData.IsDirty = True
         ' Repeat the selected score frame's reusable configuration. If the
@@ -999,11 +1019,16 @@ Public Class B2STabPage
                 B2SMessageBox.Show(My.Resources.MSG_CheckB2SScoreTypes, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Exclamation)
             End If
             If CurrentPictureBox IsNot Nothing Then
-                Dim x As Integer = CurrentPictureBox.Left * -1
-                If CurrentPictureBox.Parent IsNot Nothing Then x += (CurrentPictureBox.Parent.Width - 50) / 2 - .Size.Width
-                Dim y As Integer = CurrentPictureBox.Top * -1
-                If CurrentPictureBox.Parent IsNot Nothing Then y += (CurrentPictureBox.Parent.Height - 50) / 2 - .Size.Height
-                .Location = New Point(x / Mouse.factor, y / Mouse.factor)
+                Dim canvasBounds As Rectangle
+                Dim viewportBounds As Rectangle
+                If CurrentPictureBox.Parent IsNot Nothing Then
+                    canvasBounds = CurrentPictureBox.Bounds
+                    viewportBounds = CurrentPictureBox.Parent.ClientRectangle
+                Else
+                    canvasBounds = New Rectangle(Point.Empty, CurrentPictureBox.Size)
+                    viewportBounds = canvasBounds
+                End If
+                .Location = CenteredFrameLocation(canvasBounds, viewportBounds, Mouse.factor, .Size)
             Else
                 .Location = New Point(10, 10)
             End If

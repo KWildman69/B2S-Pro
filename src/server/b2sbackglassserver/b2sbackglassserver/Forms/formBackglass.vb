@@ -876,6 +876,10 @@ Public Class formBackglass
                     DrawDynamicFrontLight(e.Graphics, picbox)
                     Return
                 End If
+                If picbox.HasSparseAnimationFrame Then
+                    DrawSparseInfinityFrame(e.Graphics, picbox, e.ClipRectangle)
+                    Return
+                End If
                 Dim drawImage As Image = picbox.BackgroundImage
                 If B2SData.OnAndOffImage Then
                     If B2SData.IsOffImageVisible AndAlso picbox.OffImage IsNot Nothing Then
@@ -1266,6 +1270,86 @@ Public Class formBackglass
         sparseImageTiles.Add(image, tiles)
         Return tiles
     End Function
+
+    Private Function CreateSparseInfinityFrame(ByVal image As Image) As Generic.List(Of B2SPictureBox.SparseAnimationTile)
+        Const tileSize As Integer = 128
+        Dim source As Bitmap = TryCast(image, Bitmap)
+        If source Is Nothing OrElse source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
+
+        Dim converted As Bitmap = Nothing
+        If source.PixelFormat <> PixelFormat.Format32bppArgb AndAlso source.PixelFormat <> PixelFormat.Format32bppPArgb Then
+            converted = New Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb)
+            Using graphics As Graphics = Graphics.FromImage(converted)
+                graphics.DrawImageUnscaled(source, 0, 0)
+            End Using
+            source = converted
+        End If
+
+        Dim visibleBounds As New Generic.List(Of Rectangle)()
+        Dim fullBounds As New Rectangle(0, 0, source.Width, source.Height)
+        Dim data As BitmapData = source.LockBits(fullBounds, ImageLockMode.ReadOnly, source.PixelFormat)
+        Try
+            Dim stride As Integer = Math.Abs(data.Stride)
+            Dim bytes(stride * source.Height - 1) As Byte
+            Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, bytes.Length)
+            For tileTop As Integer = 0 To source.Height - 1 Step tileSize
+                For tileLeft As Integer = 0 To source.Width - 1 Step tileSize
+                    Dim tileRight As Integer = Math.Min(source.Width, tileLeft + tileSize)
+                    Dim tileBottom As Integer = Math.Min(source.Height, tileTop + tileSize)
+                    Dim minX As Integer = tileRight, minY As Integer = tileBottom
+                    Dim maxX As Integer = -1, maxY As Integer = -1
+                    For y As Integer = tileTop To tileBottom - 1
+                        Dim row As Integer = y * stride
+                        For x As Integer = tileLeft To tileRight - 1
+                            If bytes(row + x * 4 + 3) <> 0 Then
+                                minX = Math.Min(minX, x)
+                                minY = Math.Min(minY, y)
+                                maxX = Math.Max(maxX, x)
+                                maxY = Math.Max(maxY, y)
+                            End If
+                        Next
+                    Next
+                    If maxX >= minX AndAlso maxY >= minY Then
+                        visibleBounds.Add(Rectangle.FromLTRB(minX, minY, maxX + 1, maxY + 1))
+                    End If
+                Next
+            Next
+        Finally
+            source.UnlockBits(data)
+        End Try
+
+        Dim tiles As New Generic.List(Of B2SPictureBox.SparseAnimationTile)()
+        For Each bounds As Rectangle In visibleBounds
+            Dim tile As New Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb)
+            Using graphics As Graphics = Graphics.FromImage(tile)
+                graphics.DrawImage(source, New Rectangle(0, 0, bounds.Width, bounds.Height), bounds, GraphicsUnit.Pixel)
+            End Using
+            tiles.Add(New B2SPictureBox.SparseAnimationTile(tile, bounds.Location))
+        Next
+        If converted IsNot Nothing Then converted.Dispose()
+        Return tiles
+    End Function
+
+    Private Sub DrawSparseInfinityFrame(ByVal graphics As Graphics, ByVal picbox As B2SPictureBox, ByVal clipRectangle As Rectangle)
+        If picbox Is Nothing OrElse Not picbox.HasSparseAnimationFrame Then Return
+        Dim state As Drawing2D.GraphicsState = graphics.Save()
+        Try
+            graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+            For Each tile As B2SPictureBox.SparseAnimationTile In picbox.SparseAnimationTiles
+                Dim destination As RectangleF = picbox.SparseAnimationTileBounds(tile)
+                If destination.IsEmpty OrElse Not clipRectangle.IntersectsWith(Rectangle.Ceiling(destination)) Then Continue For
+                If Math.Abs(destination.Width - tile.Image.Width) < 0.01F AndAlso
+                   Math.Abs(destination.Height - tile.Image.Height) < 0.01F Then
+                    graphics.DrawImageUnscaled(tile.Image, CInt(Math.Round(destination.X)), CInt(Math.Round(destination.Y)))
+                Else
+                    graphics.DrawImage(tile.Image, destination)
+                End If
+            Next
+        Finally
+            graphics.Restore(state)
+        End Try
+    End Sub
 
     Private Function RotationDestinationPoints(ByVal rect As RectangleF, ByVal angle As Single,
                                                Optional ByVal pivotX As Single = 0.5F,
@@ -3142,6 +3226,14 @@ Public Class formBackglass
                         Dim externalPivotTipY As Single = 0.5F
                         Dim pivotAnimation As Boolean = False
                         Dim pivotAutomaticOscillation As Boolean = False
+                        Dim pivotPhysicsEnabled As Boolean = False
+                        Dim pivotPhysicsWeight As Single = 1.0F
+                        Dim pivotPhysicsFriction As Single = 1.25F
+                        Dim pivotPhysicsGrip As Single = 0.5F
+                        Dim pivotPhysicsResponseMode As Integer = 0
+                        Dim pivotPhysicsKnockdownAngle As Single = 90.0F
+                        Dim pivotPhysicsKnockdownDuration As Integer = 180
+                        Dim pivotPhysicsResetDelay As Integer = 1000
                         Dim pivotDownAngle As Single = 0.0F
                         Dim pivotUpAngle As Single = -30.0F
                         Dim pivotDownTrigger As String = String.Empty
@@ -3150,6 +3242,7 @@ Public Class formBackglass
                         Dim pivotTriggerID As Integer = 0
                         Dim physicsBall As Boolean = False
                         Dim physicsFlipperName As String = String.Empty
+                        Dim physicsPivotTargetNames As New List(Of String)()
                         Dim physicsBounds As RectangleF = RectangleF.Empty
                         Dim physicsGravity As Single = 650.0F
                         Dim physicsFlipperStrength As Single = 1.0F
@@ -3179,6 +3272,15 @@ Public Class formBackglass
                         If innerNode.Attributes("ExternalPivotY") IsNot Nothing Then Single.TryParse(innerNode.Attributes("ExternalPivotY").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotY)
                         If innerNode.Attributes("PivotAnimation") IsNot Nothing Then pivotAnimation = (innerNode.Attributes("PivotAnimation").InnerText = "1")
                         If innerNode.Attributes("PivotAutomaticOscillation") IsNot Nothing Then pivotAutomaticOscillation = (innerNode.Attributes("PivotAutomaticOscillation").InnerText = "1")
+                        If innerNode.Attributes("PivotPhysicsEnabled") IsNot Nothing Then pivotPhysicsEnabled = (innerNode.Attributes("PivotPhysicsEnabled").InnerText = "1")
+                        If pivotAnimation AndAlso pivotPhysicsEnabled Then nativerotation = True
+                        If innerNode.Attributes("PivotPhysicsWeight") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotPhysicsWeight").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotPhysicsWeight)
+                        If innerNode.Attributes("PivotPhysicsFriction") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotPhysicsFriction").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotPhysicsFriction)
+                        If innerNode.Attributes("PivotPhysicsGrip") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotPhysicsGrip").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotPhysicsGrip)
+                        If innerNode.Attributes("PivotPhysicsResponseMode") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotPhysicsResponseMode").InnerText, pivotPhysicsResponseMode)
+                        If innerNode.Attributes("PivotPhysicsKnockdownAngle") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotPhysicsKnockdownAngle").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotPhysicsKnockdownAngle)
+                        If innerNode.Attributes("PivotPhysicsKnockdownDuration") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotPhysicsKnockdownDuration").InnerText, pivotPhysicsKnockdownDuration)
+                        If innerNode.Attributes("PivotPhysicsResetDelay") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotPhysicsResetDelay").InnerText, pivotPhysicsResetDelay)
                         If innerNode.Attributes("PivotX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotX)
                         If innerNode.Attributes("PivotY") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotY").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotY)
                         If innerNode.Attributes("PivotTipX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotTipX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, externalPivotTipX)
@@ -3192,6 +3294,11 @@ Public Class formBackglass
                         If innerNode.Attributes("PivotTriggerID") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotTriggerID").InnerText, pivotTriggerID)
                         If innerNode.Attributes("PhysicsBall") IsNot Nothing Then physicsBall = (innerNode.Attributes("PhysicsBall").InnerText = "1")
                         If innerNode.Attributes("PhysicsFlipperName") IsNot Nothing Then physicsFlipperName = innerNode.Attributes("PhysicsFlipperName").InnerText.Trim()
+                        If innerNode.Attributes("PhysicsPivotTargetNames") IsNot Nothing Then
+                            physicsPivotTargetNames.AddRange(innerNode.Attributes("PhysicsPivotTargetNames").InnerText.Split("|"c).Select(Function(target) target.Trim()).Where(Function(target) target.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+                        ElseIf physicsFlipperName.Length > 0 Then
+                            physicsPivotTargetNames.Add(physicsFlipperName)
+                        End If
                         If innerNode.Attributes("PhysicsBounds") IsNot Nothing Then physicsBounds = ParsePhysicsBounds(innerNode.Attributes("PhysicsBounds").InnerText)
                         If innerNode.Attributes("PhysicsGravity") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PhysicsGravity").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, physicsGravity)
                         If innerNode.Attributes("PhysicsFlipperStrength") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PhysicsFlipperStrength").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, physicsFlipperStrength)
@@ -3204,6 +3311,12 @@ Public Class formBackglass
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then physicsSwitchZones = ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText)
                         If physicsSwitchZones IsNot Nothing AndAlso innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then
                             ApplyPhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, physicsSwitchZones)
+                        End If
+                        If physicsSwitchZones IsNot Nothing AndAlso innerNode.Attributes("PhysicsSwitchSoundNames") IsNot Nothing Then
+                            ApplyPhysicsSwitchSounds(innerNode.Attributes("PhysicsSwitchSoundNames").InnerText, physicsSwitchZones)
+                        End If
+                        If physicsSwitchZones IsNot Nothing AndAlso innerNode.Attributes("PhysicsSwitchSoundVolumes") IsNot Nothing Then
+                            ApplyPhysicsSwitchSoundVolumes(innerNode.Attributes("PhysicsSwitchSoundVolumes").InnerText, physicsSwitchZones)
                         End If
                         If innerNode.Attributes("PhysicsLauncherEnabled") IsNot Nothing AndAlso innerNode.Attributes("PhysicsLauncherEnabled").InnerText = "1" Then
                             physicsLauncher = New B2SData.PhysicsLauncher With {.TriggerType = 1, .Angle = -90.0F, .Strength = 900.0F}
@@ -3306,10 +3419,23 @@ Public Class formBackglass
                         Dim visible As Boolean = (CInt(innerNode.Attributes("Visible").InnerText) = 1)
                         Dim loc As Point = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                         Dim size As Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
+                        Dim infinityAnimationFrame As Boolean = isimagesnippit AndAlso
+                            name.StartsWith("PA_InfinityLights", StringComparison.OrdinalIgnoreCase)
                         Dim fullResolutionAttribute As Xml.XmlAttribute = innerNode.Attributes("RuntimeSnippitImage")
-                        Dim fullResolutionSnippet As Boolean = isimagesnippit AndAlso Not nativerotation AndAlso
+                        Dim fullResolutionSnippet As Boolean = isimagesnippit AndAlso Not infinityAnimationFrame AndAlso Not nativerotation AndAlso
                             picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso fullResolutionAttribute IsNot Nothing
-                        Dim image As Image = Base64ToImage(If(fullResolutionSnippet, fullResolutionAttribute.InnerText, innerNode.Attributes("Image").InnerText))
+                        Dim useRuntimeSnippetImage As Boolean = fullResolutionAttribute IsNot Nothing AndAlso
+                            (fullResolutionSnippet OrElse infinityAnimationFrame)
+                        Dim image As Image = Base64ToImage(If(useRuntimeSnippetImage, fullResolutionAttribute.InnerText, innerNode.Attributes("Image").InnerText))
+                        Dim infinityFrameSize As Size = If(image Is Nothing, Size.Empty, image.Size)
+                        Dim infinityFrameTiles As Generic.List(Of B2SPictureBox.SparseAnimationTile) = Nothing
+                        If infinityAnimationFrame AndAlso image IsNot Nothing Then
+                            infinityFrameTiles = CreateSparseInfinityFrame(image)
+                            If infinityFrameTiles IsNot Nothing AndAlso infinityFrameTiles.Count > 0 Then
+                                image.Dispose()
+                                image = Nothing
+                            End If
+                        End If
                         Dim dynamicFrontLightField As Image = Nothing
                         If dynamicFrontLighting AndAlso innerNode.Attributes("DynamicFrontLightField") IsNot Nothing Then
                             dynamicFrontLightField = Base64ToImage(innerNode.Attributes("DynamicFrontLightField").InnerText)
@@ -3319,7 +3445,7 @@ Public Class formBackglass
                             offimage = Base64ToImage(innerNode.Attributes("OffImage").InnerText)
                         End If
                         Dim preserveRollingCanvas As Boolean = (isimagesnippit AndAlso motionPathRollEnabled)
-                        If picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso Not preserveRollingCanvas AndAlso Not fullResolutionSnippet Then
+                        If image IsNot Nothing AndAlso picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso Not preserveRollingCanvas AndAlso Not fullResolutionSnippet Then
                             ' Events of overlapping pictures get merged #76, crop image transparency
                             image = CropImageToTransparency(image, offimage, loc, size)
                         End If
@@ -3347,6 +3473,9 @@ Public Class formBackglass
                         picbox.FlasherPulseDuration = flasherPulseDuration
                         picbox.DualMode = dualmode
                         picbox.BackgroundImage = image
+                        If infinityFrameTiles IsNot Nothing AndAlso infinityFrameTiles.Count > 0 Then
+                            picbox.SetSparseAnimationFrame(infinityFrameTiles, infinityFrameSize)
+                        End If
                         picbox.OffImage = offimage
                         picbox.IsImageSnippit = isimagesnippit
                         picbox.ArtworkPixelLighting = artworkPixelLighting
@@ -3372,7 +3501,7 @@ Public Class formBackglass
                         ' editor placement stays exact. A ball keeps a round visual while
                         ' its center follows those same scaled coordinates.
                         picbox.PreservePhysicsArtworkAspect = physicsBall
-                        picbox.PreservePhysicsArtworkArea = physicsBall AndAlso motionPathGravityDrop
+                        picbox.PreservePhysicsArtworkArea = physicsBall
                         If physicsBall AndAlso innerNode.Attributes("PhysicsSelectionMaskData") IsNot Nothing Then
                             Dim physicsMaskSize As Size = Size.Empty
                             picbox.PhysicsSelectionMaskAlpha = DecodePhysicsSelectionMask(innerNode.Attributes("PhysicsSelectionMaskData").InnerText,
@@ -3389,6 +3518,15 @@ Public Class formBackglass
                         picbox.RotationPivotY = If(pivotAnimation, externalPivotY, Math.Max(0.0F, Math.Min(1.0F, externalPivotY)))
                         picbox.RotationTipX = Math.Max(0.0F, Math.Min(1.0F, externalPivotTipX))
                         picbox.RotationTipY = Math.Max(0.0F, Math.Min(1.0F, externalPivotTipY))
+                        picbox.PivotPhysicsEnabled = pivotPhysicsEnabled AndAlso pivotAnimation
+                        picbox.PivotPhysicsWeight = Math.Max(0.1F, Math.Min(100.0F, pivotPhysicsWeight))
+                        picbox.PivotPhysicsFriction = Math.Max(0.0F, Math.Min(20.0F, pivotPhysicsFriction))
+                        picbox.PivotPhysicsGrip = Math.Max(0.0F, Math.Min(1.0F, pivotPhysicsGrip))
+                        picbox.PivotPhysicsResponseMode = Math.Max(0, Math.Min(2, pivotPhysicsResponseMode))
+                        picbox.PivotPhysicsKnockdownAngle = Math.Max(-360.0F, Math.Min(360.0F, pivotPhysicsKnockdownAngle))
+                        picbox.PivotPhysicsKnockdownDuration = Math.Max(10, Math.Min(5000, pivotPhysicsKnockdownDuration))
+                        picbox.PivotPhysicsResetDelay = Math.Max(0, Math.Min(30000, pivotPhysicsResetDelay))
+                        If pivotAnimation AndAlso image IsNot Nothing Then picbox.ConfigurePhysicsCollisionOutline(image)
                         picbox.BehindCanvas = snippitbehindcanvas
                         picbox.MotionPathDuration = motionPathDuration
                         picbox.MotionPathLoop = motionPathLoop
@@ -3473,16 +3611,22 @@ Public Class formBackglass
                         If pivotAnimation Then
                             picbox.RotationPivotX = externalPivotX
                             picbox.RotationPivotY = externalPivotY
-                            If pivotTriggerType = 0 Then
-                                B2SData.RegisterSingleImagePivot(picbox, "Pivot:" & name, pivotDownTrigger, pivotDownAngle, pivotUpTrigger, pivotUpAngle, externalPivotDuration)
-                            Else
-                                B2SData.RegisterPivotTrigger(picbox, pivotTriggerType, pivotTriggerID, pivotDownAngle, pivotUpAngle, externalPivotDuration, pivotAutomaticOscillation)
+                            B2SData.RegisterPivotPicture(picbox)
+                            ' A collision-driven pivot is stationary until its linked physics ball
+                            ' transfers angular impulse. Legacy scripted pivots retain their existing
+                            ' command/ROM registration path unchanged.
+                            If Not picbox.PivotPhysicsEnabled Then
+                                If pivotTriggerType = 0 Then
+                                    B2SData.RegisterSingleImagePivot(picbox, "Pivot:" & name, pivotDownTrigger, pivotDownAngle, pivotUpTrigger, pivotUpAngle, externalPivotDuration)
+                                Else
+                                    B2SData.RegisterPivotTrigger(picbox, pivotTriggerType, pivotTriggerID, pivotDownAngle, pivotUpAngle, externalPivotDuration, pivotAutomaticOscillation)
+                                End If
                             End If
                         End If
                         If physicsBall AndAlso Not physicsBounds.IsEmpty Then
                             B2SData.RegisterPhysicsBall(picbox, physicsFlipperName, physicsBounds, physicsGravity,
                                                         physicsFlipperStrength, physicsBoundaryBounce, physicsBoundaryPaths, physicsObstacles, physicsSwitchZones, physicsLauncher,
-                                                        physicsBoundarySegmentBounces, physicsObstacleBounces)
+                                                        physicsBoundarySegmentBounces, physicsObstacleBounces, physicsPivotTargetNames)
                         End If
                         If picbox.MotionPathPoints.Count >= 2 AndAlso motionPathSolenoidID > 0 Then
                             If Not B2SData.UsedMotionPathSolenoidIDs.ContainsKey(motionPathSolenoidID) Then
@@ -4650,7 +4794,7 @@ Public Class formBackglass
             Dim parts As String() = encoded.Split(","c)
             Dim x, y, width, height As Single
             Dim switchID As Integer
-            If parts.Length = 5 AndAlso Single.TryParse(parts(0), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, x) AndAlso Single.TryParse(parts(1), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, y) AndAlso Single.TryParse(parts(2), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, width) AndAlso Single.TryParse(parts(3), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, height) AndAlso Integer.TryParse(parts(4), switchID) AndAlso width > 0 AndAlso height > 0 AndAlso switchID > 0 Then
+            If parts.Length = 5 AndAlso Single.TryParse(parts(0), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, x) AndAlso Single.TryParse(parts(1), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, y) AndAlso Single.TryParse(parts(2), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, width) AndAlso Single.TryParse(parts(3), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, height) AndAlso Integer.TryParse(parts(4), switchID) AndAlso width > 0 AndAlso height > 0 AndAlso switchID >= 0 Then
                 result.Add(New B2SData.PhysicsSwitchZone With {.Bounds = New RectangleF(x, y, width, height), .SwitchID = Math.Min(255, switchID)})
             End If
         Next
@@ -4667,6 +4811,25 @@ Public Class formBackglass
                 If angle > 180.0F Then angle -= 360.0F
                 If angle <= -180.0F Then angle += 360.0F
                 zones(index).Angle = angle
+            End If
+        Next
+    End Sub
+
+    Private Sub ApplyPhysicsSwitchSounds(ByVal value As String, ByVal zones As List(Of B2SData.PhysicsSwitchZone))
+        If value Is Nothing OrElse zones Is Nothing Then Return
+        Dim encoded As String() = value.Split(New Char() {"|"c}, StringSplitOptions.None)
+        For index As Integer = 0 To Math.Min(encoded.Length, zones.Count) - 1
+            zones(index).SoundName = encoded(index).Trim()
+        Next
+    End Sub
+
+    Private Sub ApplyPhysicsSwitchSoundVolumes(ByVal value As String, ByVal zones As List(Of B2SData.PhysicsSwitchZone))
+        If value Is Nothing OrElse zones Is Nothing Then Return
+        Dim encoded As String() = value.Split(New Char() {"|"c}, StringSplitOptions.None)
+        For index As Integer = 0 To Math.Min(encoded.Length, zones.Count) - 1
+            Dim volumePercent As Integer
+            If Integer.TryParse(encoded(index), Globalization.NumberStyles.Integer, Globalization.CultureInfo.InvariantCulture, volumePercent) Then
+                zones(index).SoundVolume = Math.Max(0.0F, Math.Min(2.0F, volumePercent / 100.0F))
             End If
         Next
     End Sub

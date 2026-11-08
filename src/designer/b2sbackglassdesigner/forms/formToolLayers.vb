@@ -2,6 +2,7 @@
 Imports System.Drawing
 Imports System.IO
 Imports System.Xml
+Imports System.Linq
 
 Imports System.Drawing.Drawing2D
 
@@ -1229,6 +1230,16 @@ Public Class formToolLayers
             ball.SnippitInfo.PhysicsBall = editor.ResultEnabled
             ball.SnippitInfo.MotionPathRollEnabled = editor.ResultRollEnabled
             ball.SnippitInfo.PhysicsFlipperName = editor.ResultFlipperName
+            ball.SnippitInfo.PhysicsPivotTargetNames.Clear()
+            ball.SnippitInfo.PhysicsPivotTargetNames.AddRange(editor.ResultPivotTargetNames)
+            For Each targetName As String In editor.ResultPivotTargetNames
+                Dim target As Illumination.BulbInfo = Backglass.currentBulbs.FirstOrDefault(
+                    Function(item) item IsNot ball AndAlso item.Name = targetName AndAlso item.SnippitInfo.PivotAnimationEnabled)
+                If target IsNot Nothing Then
+                    editor.ApplyResultPivotPhysicsSettings(target)
+                    target.IsIlluminatedImageDirty = True
+                End If
+            Next
             ball.SnippitInfo.PhysicsBounds = editor.ResultBounds
             ball.SnippitInfo.PhysicsGravity = editor.ResultGravity
             ball.SnippitInfo.PhysicsFlipperStrength = editor.ResultFlipperStrength
@@ -1257,6 +1268,12 @@ Public Class formToolLayers
             ball.SnippitInfo.PhysicsSwitchIDs.AddRange(editor.ResultSwitchIDs)
             ball.SnippitInfo.PhysicsSwitchAngles.Clear()
             ball.SnippitInfo.PhysicsSwitchAngles.AddRange(editor.ResultSwitchAngles)
+            ball.SnippitInfo.PhysicsSwitchSoundNames.Clear()
+            ball.SnippitInfo.PhysicsSwitchSoundNames.AddRange(editor.ResultSwitchSoundNames)
+            ball.SnippitInfo.PhysicsSwitchSoundData.Clear()
+            ball.SnippitInfo.PhysicsSwitchSoundData.AddRange(editor.ResultSwitchSoundData)
+            ball.SnippitInfo.PhysicsSwitchSoundVolumes.Clear()
+            ball.SnippitInfo.PhysicsSwitchSoundVolumes.AddRange(editor.ResultSwitchSoundVolumes)
             ball.SnippitInfo.PhysicsLauncherEnabled = editor.ResultLauncherEnabled
             ball.SnippitInfo.PhysicsLauncherFollowPivot = editor.ResultLauncherFollowPivot
             ball.SnippitInfo.PhysicsLauncherTriggerType = editor.ResultLauncherTriggerType
@@ -1279,6 +1296,7 @@ Public Class formToolLayers
                 CopyTroughPhysicsSettings(ball, member)
                 member.SnippitInfo.MotionPathRollEnabled = ball.SnippitInfo.MotionPathRollEnabled
                 member.SnippitInfo.PhysicsFlipperName = String.Empty
+                member.SnippitInfo.PhysicsPivotTargetNames.Clear()
                 member.SnippitInfo.PhysicsLauncherFollowPivot = False
             Next
         End If
@@ -1558,6 +1576,7 @@ Public Class formToolLayers
         CopyTroughPhysicsSettings(template, ball)
         If wizard.GravityDrop Then
             ball.SnippitInfo.PhysicsFlipperName = String.Empty
+            ball.SnippitInfo.PhysicsPivotTargetNames.Clear()
             ball.SnippitInfo.PhysicsLauncherEnabled = False
             ball.SnippitInfo.PhysicsLauncherFollowPivot = False
             ball.SnippitInfo.PhysicsLauncherTriggerType = 1
@@ -1578,6 +1597,7 @@ Public Class formToolLayers
         With target.SnippitInfo
             .PhysicsBall = source.SnippitInfo.PhysicsBall
             .PhysicsFlipperName = source.SnippitInfo.PhysicsFlipperName
+            .PhysicsPivotTargetNames.Clear() : .PhysicsPivotTargetNames.AddRange(source.SnippitInfo.PhysicsPivotTargetNames)
             .PhysicsBounds = source.SnippitInfo.PhysicsBounds
             .PhysicsGravity = source.SnippitInfo.PhysicsGravity
             .PhysicsFlipperStrength = source.SnippitInfo.PhysicsFlipperStrength
@@ -1598,6 +1618,9 @@ Public Class formToolLayers
             .PhysicsSwitchZones.Clear() : .PhysicsSwitchZones.AddRange(source.SnippitInfo.PhysicsSwitchZones)
             .PhysicsSwitchIDs.Clear() : .PhysicsSwitchIDs.AddRange(source.SnippitInfo.PhysicsSwitchIDs)
             .PhysicsSwitchAngles.Clear() : .PhysicsSwitchAngles.AddRange(source.SnippitInfo.PhysicsSwitchAngles)
+            .PhysicsSwitchSoundNames.Clear() : .PhysicsSwitchSoundNames.AddRange(source.SnippitInfo.PhysicsSwitchSoundNames)
+            .PhysicsSwitchSoundData.Clear() : .PhysicsSwitchSoundData.AddRange(source.SnippitInfo.PhysicsSwitchSoundData)
+            .PhysicsSwitchSoundVolumes.Clear() : .PhysicsSwitchSoundVolumes.AddRange(source.SnippitInfo.PhysicsSwitchSoundVolumes)
             .PhysicsLauncherEnabled = source.SnippitInfo.PhysicsLauncherEnabled
             .PhysicsLauncherFollowPivot = False
             .PhysicsLauncherTriggerType = source.SnippitInfo.PhysicsLauncherTriggerType

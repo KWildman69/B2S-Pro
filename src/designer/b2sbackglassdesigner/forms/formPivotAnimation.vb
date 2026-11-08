@@ -8,6 +8,7 @@ Public Class formPivotAnimation
     Private ReadOnly snippet As Illumination.BulbInfo
     Private ReadOnly canvas As New PivotCanvas()
     Private ReadOnly enabledBox As New CheckBox With {.Text = "Enable pivot animation", .AutoSize = True}
+    Private ReadOnly physicsOnlyBox As New CheckBox With {.Text = "Physics impact only (one pivot point)", .AutoSize = True}
     Private ReadOnly automaticBox As New CheckBox With {.Text = "Automatic Pivot Point: swing while trigger is on", .AutoSize = True}
     Private ReadOnly downAngle As New NumericUpDown()
     Private ReadOnly upAngle As New NumericUpDown()
@@ -29,6 +30,7 @@ Public Class formPivotAnimation
         Text = "Pivot Animation — " & If(String.IsNullOrWhiteSpace(source.Name), "Snippet", source.Name)
         StartPosition = FormStartPosition.CenterParent : Size = New Size(920, 650) : MinimumSize = New Size(800, 560)
         enabledBox.Checked = source.SnippitInfo.PivotAnimationEnabled
+        physicsOnlyBox.Checked = source.SnippitInfo.PivotPhysicsEnabled
         automaticBox.Checked = source.SnippitInfo.PivotAutomaticOscillation
         SetupNumber(downAngle, -360D, 360D, source.SnippitInfo.PivotDownAngle, 1)
         SetupNumber(upAngle, -360D, 360D, source.SnippitInfo.PivotUpAngle, 1)
@@ -57,6 +59,10 @@ Public Class formPivotAnimation
         enabledBox.ForeColor = Color.White : enabledBox.AutoSize = False : enabledBox.Width = 310 : enabledBox.Height = 26
         fields.Controls.Add(SectionHeader("ANIMATION"))
         fields.Controls.Add(enabledBox)
+        physicsOnlyBox.ForeColor = Color.White : physicsOnlyBox.AutoSize = False : physicsOnlyBox.Width = 310 : physicsOnlyBox.Height = 30
+        fields.Controls.Add(physicsOnlyBox)
+        fields.Controls.Add(New Label With {.Text = "Physics impact only: place one hinge point. Ball contact controls the direction and speed.",
+                                             .ForeColor = Color.White, .Width = 310, .Height = 42})
         automaticBox.ForeColor = Color.White : automaticBox.AutoSize = False : automaticBox.Width = 310 : automaticBox.Height = 40
         fields.Controls.Add(automaticBox)
         fields.Controls.Add(FieldRow("Rest/down angle", downAngle))
@@ -108,10 +114,36 @@ Public Class formPivotAnimation
         actions.Controls.Add(save, 0, 0) : actions.Controls.Add(cancel, 1, 0)
         sidebar.Controls.Add(fields) : sidebar.Controls.Add(actions)
         AddHandler triggerType.SelectedIndexChanged, AddressOf TriggerTypeChanged
+        AddHandler physicsOnlyBox.CheckedChanged, AddressOf PhysicsOnlyChanged
         AddHandler save.Click, AddressOf SaveValues
         Controls.Add(canvas) : Controls.Add(sidebar) : canvas.Dock = DockStyle.Fill
         AcceptButton = save : CancelButton = cancel
         TriggerTypeChanged(Nothing, EventArgs.Empty)
+        UpdatePhysicsOnlyState()
+    End Sub
+
+    Private Sub PhysicsOnlyChanged(ByVal sender As Object, ByVal e As EventArgs)
+        UpdatePhysicsOnlyState()
+    End Sub
+
+    Private Sub UpdatePhysicsOnlyState()
+        Dim physicsOnly As Boolean = physicsOnlyBox.Checked
+        If physicsOnly Then
+            enabledBox.Checked = True
+            automaticBox.Checked = False
+            StopAutomaticPreview()
+        End If
+        canvas.PhysicsOnlyMode = physicsOnly
+        automaticBox.Enabled = Not physicsOnly
+        downAngle.Enabled = Not physicsOnly
+        upAngle.Enabled = Not physicsOnly
+        duration.Enabled = Not physicsOnly
+        randomStrength.Enabled = Not physicsOnly
+        triggerType.Enabled = Not physicsOnly
+        triggerID.Enabled = Not physicsOnly AndAlso triggerType.SelectedIndex > 0 AndAlso triggerType.SelectedIndex <> 4
+        downTrigger.Enabled = Not physicsOnly AndAlso triggerType.SelectedIndex = 0
+        upTrigger.Enabled = downTrigger.Enabled
+        automaticPreview.Visible = Not physicsOnly AndAlso automaticBox.Checked
     End Sub
 
     Private Sub CanvasPointEditStarted(ByVal sender As Object, ByVal e As MouseEventArgs)
@@ -200,27 +232,28 @@ Public Class formPivotAnimation
                                .TextAlign = ContentAlignment.BottomLeft, .Margin = New Padding(3, 10, 3, 2)}
     End Function
     Private Sub SaveValues(ByVal sender As Object, ByVal e As EventArgs)
-        If enabledBox.Checked AndAlso triggerType.SelectedIndex = 0 AndAlso (String.IsNullOrWhiteSpace(upTrigger.Text) OrElse String.IsNullOrWhiteSpace(downTrigger.Text)) Then
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso triggerType.SelectedIndex = 0 AndAlso (String.IsNullOrWhiteSpace(upTrigger.Text) OrElse String.IsNullOrWhiteSpace(downTrigger.Text)) Then
             MessageBox.Show(Me, "Enter both the Up and Down command names.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
-        If enabledBox.Checked AndAlso triggerType.SelectedIndex > 0 AndAlso triggerType.SelectedIndex <> 4 AndAlso triggerID.Value <= 0 Then
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso triggerType.SelectedIndex > 0 AndAlso triggerType.SelectedIndex <> 4 AndAlso triggerID.Value <= 0 Then
             MessageBox.Show(Me, "Choose the trigger ID.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
-        If enabledBox.Checked AndAlso triggerType.SelectedIndex = 4 AndAlso Not automaticBox.Checked Then
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso triggerType.SelectedIndex = 4 AndAlso Not automaticBox.Checked Then
             MessageBox.Show(Me, "Turn on Automatic Pivot Point for a swing that starts with the backglass.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
-        If enabledBox.Checked AndAlso automaticBox.Checked AndAlso triggerType.SelectedIndex = 0 Then
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso automaticBox.Checked AndAlso triggerType.SelectedIndex = 0 Then
             MessageBox.Show(Me, "Automatic Pivot Point needs a ROM solenoid, ROM lamp, or B2S ID with an on/off state.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
-        If enabledBox.Checked AndAlso automaticBox.Checked AndAlso Math.Abs(CSng(upAngle.Value - downAngle.Value)) < 0.1F Then
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso automaticBox.Checked AndAlso Math.Abs(CSng(upAngle.Value - downAngle.Value)) < 0.1F Then
             MessageBox.Show(Me, "Choose two different angles for the automatic swing.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
-        If Not automaticBox.Checked Then upAngle.Value = CDec(DirectedUpAngle())
+        If Not physicsOnlyBox.Checked AndAlso Not automaticBox.Checked Then upAngle.Value = CDec(DirectedUpAngle())
         With snippet.SnippitInfo
             .PivotAnimationEnabled = enabledBox.Checked : .PivotX = canvas.Pivot.X : .PivotY = canvas.Pivot.Y
             .PivotTipX = canvas.Tip.X : .PivotTipY = canvas.Tip.Y
             .PivotDownAngle = CSng(downAngle.Value) : .PivotUpAngle = CSng(upAngle.Value) : .PivotDuration = CInt(duration.Value)
-            .PivotAutomaticOscillation = automaticBox.Checked
+            .PivotAutomaticOscillation = automaticBox.Checked AndAlso Not physicsOnlyBox.Checked
+            .PivotPhysicsEnabled = physicsOnlyBox.Checked
             .PivotRandomStrength = CSng(randomStrength.Value)
             .PivotTriggerType = triggerType.SelectedIndex : .PivotTriggerID = CInt(triggerID.Value)
             .PivotDownTrigger = downTrigger.Text.Trim() : .PivotUpTrigger = upTrigger.Text.Trim()
@@ -245,6 +278,10 @@ Public Class formPivotAnimation
     End Function
 
     Private Sub TriggerTypeChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If physicsOnlyBox.Checked Then
+            triggerID.Enabled = False : downTrigger.Enabled = False : upTrigger.Enabled = False
+            Return
+        End If
         Dim named As Boolean = (triggerType.SelectedIndex = 0)
         If triggerType.SelectedIndex = 4 Then automaticBox.Checked = True
         triggerID.Enabled = triggerType.SelectedIndex > 0 AndAlso triggerType.SelectedIndex <> 4
@@ -268,6 +305,20 @@ Public Class formPivotAnimation
         Private pan As PointF = PointF.Empty
         Private panning As Boolean
         Private lastPanPoint As Point
+        Private physicsOnlyValue As Boolean
+        Public Property PhysicsOnlyMode As Boolean
+            Get
+                Return physicsOnlyValue
+            End Get
+            Set(value As Boolean)
+                physicsOnlyValue = value
+                If value Then
+                    editPointValue = PointMode.Hinge
+                    draggingPoint = Nothing
+                End If
+                Invalidate()
+            End Set
+        End Property
         Public Property EditPoint As PointMode
             Get
                 Return editPointValue
@@ -348,11 +399,11 @@ Public Class formPivotAnimation
             If hingeDistance <= markerRadiusSquared AndAlso hingeDistance <= referenceDistance Then
                 draggingPoint = PointMode.Hinge
                 dragOffset = New PointF(hinge.X - e.X, hinge.Y - e.Y)
-            ElseIf referenceDistance <= markerRadiusSquared Then
+            ElseIf Not physicsOnlyValue AndAlso referenceDistance <= markerRadiusSquared Then
                 draggingPoint = PointMode.Tip
                 dragOffset = New PointF(reference.X - e.X, reference.Y - e.Y)
-            ElseIf editPointValue = PointMode.Hinge OrElse r.Contains(e.Location) Then
-                draggingPoint = editPointValue
+            ElseIf physicsOnlyValue OrElse editPointValue = PointMode.Hinge OrElse r.Contains(e.Location) Then
+                draggingPoint = If(physicsOnlyValue, PointMode.Hinge, editPointValue)
                 dragOffset = PointF.Empty
                 MoveSelectedPoint(e.Location)
             Else
@@ -404,8 +455,13 @@ Public Class formPivotAnimation
             e.Graphics.SmoothingMode = SmoothingMode.HighQuality : e.Graphics.TranslateTransform(px, py) : e.Graphics.RotateTransform(angleValue) : e.Graphics.TranslateTransform(-px, -py)
             e.Graphics.DrawImage(SourceImage, r) : e.Graphics.ResetTransform()
             Using p As New Pen(Color.Cyan, 2) : e.Graphics.DrawEllipse(p, px - 8, py - 8, 16, 16) : e.Graphics.DrawLine(p, px - 12, py, px + 12, py) : e.Graphics.DrawLine(p, px, py - 12, px, py + 12) : End Using
-            Using p As New Pen(Color.Lime, 2) : e.Graphics.DrawLine(p, px, py, tx, ty) : e.Graphics.DrawEllipse(p, tx - 7, ty - 7, 14, 14) : End Using
-            e.Graphics.DrawString(If(editPointValue = PointMode.Hinge, "Click to place hinge; drag markers. Wheel zooms, right-drag pans.", "Click to place reference; drag markers. Wheel zooms, right-drag pans."), Font, Brushes.White, 10, 10)
+            If Not physicsOnlyValue Then
+                Using p As New Pen(Color.Lime, 2) : e.Graphics.DrawLine(p, px, py, tx, ty) : e.Graphics.DrawEllipse(p, tx - 7, ty - 7, 14, 14) : End Using
+            End If
+            Dim instruction As String = If(physicsOnlyValue,
+                                           "Click once to place the physics hinge. Wheel zooms, right-drag pans.",
+                                           If(editPointValue = PointMode.Hinge, "Click to place hinge; drag markers. Wheel zooms, right-drag pans.", "Click to place reference; drag markers. Wheel zooms, right-drag pans."))
+            e.Graphics.DrawString(instruction, Font, Brushes.White, 10, 10)
         End Sub
         Private Function ImageRect() As RectangleF
             If SourceImage Is Nothing Then Return RectangleF.Empty

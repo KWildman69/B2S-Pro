@@ -4086,7 +4086,12 @@ Public Class formDesigner
                 Return
             End If
             If selected.IsImageSnippit AndAlso selected.IlluMode <> Illumination.eIlluMode.Flasher Then
-                OpenSelectedSnippitProperties(selected)
+                Dim selectedSnippits = Backglass.currentTabPage.Mouse.SelectedItems.OfType(Of Illumination.BulbInfo)().Where(
+                    Function(item) item.IsImageSnippit AndAlso
+                                   item.IlluMode <> Illumination.eIlluMode.Flasher AndAlso
+                                   item.LightPurpose <> Illumination.eLightPurpose.Flasher AndAlso
+                                   String.IsNullOrEmpty(item.SnippitInfo.InfinityLightsSettings))
+                OpenSelectedSnippitProperties(selected, selectedSnippits)
                 Return
             End If
 
@@ -4100,8 +4105,20 @@ Public Class formDesigner
                 Return
             End If
 
-            ' Normal lights and artwork flashers use the full Light Settings dialog.
-            Dim selectedLights = Backglass.currentTabPage.Mouse.SelectedItems.OfType(Of Illumination.BulbInfo)().Where(Function(item) Not item.IsImageSnippit OrElse item.IlluMode = Illumination.eIlluMode.Flasher)
+            ' Normal lights and artwork flashers use the full Light Settings dialog,
+            ' but a mixed canvas selection must never apply one type's settings to
+            ' another type.
+            Dim selectedIsFlasher As Boolean = (selected.IlluMode = Illumination.eIlluMode.Flasher OrElse
+                                                 selected.LightPurpose = Illumination.eLightPurpose.Flasher)
+            Dim selectedLights = Backglass.currentTabPage.Mouse.SelectedItems.OfType(Of Illumination.BulbInfo)().Where(
+                Function(item)
+                    Dim itemIsFlasher As Boolean = (item.IlluMode = Illumination.eIlluMode.Flasher OrElse
+                                                    item.LightPurpose = Illumination.eLightPurpose.Flasher)
+                    If selectedIsFlasher Then Return itemIsFlasher
+                    Return Not item.IsImageSnippit AndAlso
+                           String.IsNullOrEmpty(item.Text) AndAlso
+                           Not itemIsFlasher
+                End Function)
             Using editor As New formLightDiffusionEditor(selected, selectedLights)
                 editor.ShowDialog(Me)
             End Using
@@ -4254,8 +4271,17 @@ Public Class formDesigner
         End Using
     End Sub
 
-    Private Sub OpenSelectedSnippitProperties(ByVal selected As Illumination.BulbInfo)
+    Private Sub OpenSelectedSnippitProperties(ByVal selected As Illumination.BulbInfo,
+                                              Optional ByVal multiSelection As IEnumerable(Of Illumination.BulbInfo) = Nothing)
         If selected Is Nothing OrElse Backglass.currentTabPage Is Nothing Then Return
+
+        Dim selectedSnippits As New Generic.List(Of Illumination.BulbInfo)()
+        If multiSelection IsNot Nothing Then
+            For Each candidate As Illumination.BulbInfo In multiSelection
+                If candidate IsNot Nothing AndAlso Not selectedSnippits.Contains(candidate) Then selectedSnippits.Add(candidate)
+            Next
+        End If
+        If Not selectedSnippits.Contains(selected) Then selectedSnippits.Insert(0, selected)
 
         Dim snippetName As String = selected.Name
         Dim snippetType As eSnippitType = selected.SnippitInfo.SnippitType
@@ -4284,12 +4310,13 @@ Public Class formDesigner
                                            automaticRotationTriggerType,
                                            automaticRotationSteps, automaticRotationInterval,
                                            automaticRotationDirection,
-                                           automaticRotationStopBehaviour) <> DialogResult.OK Then Return
+                                            automaticRotationStopBehaviour,
+                                            selectedSnippits) <> DialogResult.OK Then Return
         End Using
 
         Backglass.currentTabPage.Illumination_SetName(snippetName)
         Backglass.currentTabPage.Illumination_SetZOrder(zorder)
-        Backglass.currentTabPage.Illumination_SetSnippitInfo(New Illumination.SnippitInfo With {
+        Dim updatedInfo As New Illumination.SnippitInfo With {
             .Brightness = snippetBrightness,
             .BehindCanvas = snippetBehindCanvas,
             .SnippitType = snippetType,
@@ -4306,7 +4333,35 @@ Public Class formDesigner
             .AutomaticRotationInterval = automaticRotationInterval,
             .AutomaticRotationDirection = automaticRotationDirection,
             .AutomaticRotationStopBehaviour = automaticRotationStopBehaviour
-        })
+        }
+        Backglass.currentTabPage.Illumination_SetSnippitInfo(updatedInfo)
+
+        ' Name and Z layer identify each placed object, so they remain individual.
+        ' Apply only the shared fields exposed by this dialog to the other selected
+        ' snippets, preserving their pivot, physics, motion, and external settings.
+        For Each candidate As Illumination.BulbInfo In selectedSnippits
+            If Object.ReferenceEquals(candidate, selected) Then Continue For
+            With candidate.SnippitInfo
+                .Brightness = updatedInfo.Brightness
+                .BehindCanvas = updatedInfo.BehindCanvas
+                .SnippitType = updatedInfo.SnippitType
+                .SnippitMechID = updatedInfo.SnippitMechID
+                .SnippitRotatingSteps = updatedInfo.SnippitRotatingSteps
+                .SnippitRotatingInterval = updatedInfo.SnippitRotatingInterval
+                .SnippitRotatingDirection = updatedInfo.SnippitRotatingDirection
+                .SnippitRotatingStopBehaviour = updatedInfo.SnippitRotatingStopBehaviour
+                .AutomaticRotationEnabled = updatedInfo.AutomaticRotationEnabled
+                .AutomaticRotationContinuous = updatedInfo.AutomaticRotationContinuous
+                .AutomaticRotationTriggerID = updatedInfo.AutomaticRotationTriggerID
+                .AutomaticRotationTriggerType = updatedInfo.AutomaticRotationTriggerType
+                .AutomaticRotationSteps = updatedInfo.AutomaticRotationSteps
+                .AutomaticRotationInterval = updatedInfo.AutomaticRotationInterval
+                .AutomaticRotationDirection = updatedInfo.AutomaticRotationDirection
+                .AutomaticRotationStopBehaviour = updatedInfo.AutomaticRotationStopBehaviour
+            End With
+            candidate.IsIlluminatedImageDirty = True
+        Next
+        Backglass.currentTabPage.BackglassData.IsDirty = True
 
         Backglass.currentTabPage.RefreshIllumination()
         Backglass.currentTabPage.Invalidate()

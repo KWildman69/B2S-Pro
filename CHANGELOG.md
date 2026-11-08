@@ -2,6 +2,39 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 1.0.10 / Server 3.0.11 — 2026-11-08
+
+**Feature Update — Physics Interaction, Sound Sensors, and Designer Workflow**
+
+### Designer
+
+- Add pivot-physics authoring with solid nonzero-alpha artwork outlines, stable ball separation, and impact-driven rotation while preserving legacy animation formats.
+- Add invisible, non-colliding physics sound-sensor zones with an embedded WAV and saved volume control. The ball keeps its motion and the sound re-arms after it leaves the zone.
+- Allow one Dynamic Front light to target multiple selected snippets while retaining the established legacy single-target fallback.
+- Allow compatible multi-selections of lights, flashers, and snippets to open together for shared property editing.
+- Add a resizable Snippet Settings window with a full-backglass Fit/100%/zoom/pan preview. Pending brightness and behind-canvas changes remain inside the preview until **Save & Close**.
+- Keep moving physics balls out of baked light artwork, preserve their intended round visual size after export, and retain the larger Accurate Light Preview cache that removes repeated full-light redraw pauses.
+- Center newly added reel and LED frames in the visible canvas at the current zoom and scroll position.
+- Ignore invisible leading and trailing filename whitespace during ID Tester matching without changing the saved filenames.
+
+### Server
+
+- Run the matching pivot collision, sound-sensor, saved-volume, and multiple-light-target data emitted by the Designer.
+- Repaint both the previous and current bounds of moving physics balls, eliminating scale-dependent trails confirmed on the development computer and cabinet.
+- Preserve the authored round-ball visual area when backglass X and Y scales differ.
+- Remove the misleading x64/x86 suffix from the Server Settings version label; the installed Server continues to support its existing 32-bit and 64-bit registrations.
+
+### Installer and updater
+
+- Keep Designer and Server updates isolated: `B2SProSetup.exe` changes only the Designer installation, and `B2SServerSetup.exe` changes only the Server installation.
+- On an existing installation, replace only the approved current runtime files and the current `B2SUpdateChecker.exe`; preserve the existing Server registration, settings, plugins, projects, tables, and backglasses.
+- Install the complete applicable payload on a fresh installation and register only a fresh Server installation.
+- Show a compact classified update summary, retain the detailed release notes link, and support same-version refreshed packages through the verified package digest.
+
+### Compatibility
+
+- Existing legacy backglasses, legacy snippet animation formats, ScreenRes files, table settings, and plugin folders remain unchanged unless their established runtime path is used normally.
+
 ## Designer 1.0.9 / Server 3.0.10 — 2026-10-30
 
 **Feature Update — Separate Light Layers and Stability Fixes**

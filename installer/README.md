@@ -2,9 +2,9 @@
 
 The same tested installation engine produces two separate setup programs:
 
-- `B2SProSetup.exe` installs B2S Pro Backglass Designer 1.0.9 beside the
-  original Designer and installs or updates B2S Pro Server 3.0.10.
-- `B2SServerSetup.exe` installs or updates only B2S Pro Server 3.0.10 for VPX
+- `B2SProSetup.exe` installs or updates only B2S Pro Backglass Designer 1.0.10.
+  It does not inspect, install, update, register, or otherwise change the Server.
+- `B2SServerSetup.exe` installs or updates only B2S Pro Server 3.0.11 for VPX
   players who do not need the Designer.
 
 ## Installation model
@@ -18,25 +18,24 @@ The same tested installation engine produces two separate setup programs:
   stored for the current Windows user and applies to automatic Designer and
   Server checks. Manual **Check for Updates** remains available. Rerun setup
   with the option cleared to re-enable automatic notifications.
-- The installer automatically detects a server in `B2SServer`, `Tables`, or the
-  VPX folder itself. A Change button remains available for nonstandard layouts.
-- On a completely fresh setup, the installer creates `B2SServer` inside the
-  selected Visual Pinball folder and installs the complete server payload there.
-- The complete B2S Pro setup installs the Designer to its own user-selected
-  folder. The server-only setup never creates or changes a Designer folder.
-- The complete setup associates `.B2SPro` and legacy `.directB2S` files with
-  the installed `B2SPro.exe`. Each extension keeps its own exact Explorer type
-  label, and double-clicking either format opens that file in the Designer.
-- The B2S Server is installed or updated in its own user-selected folder.
+- The Server setup automatically detects a server in `B2SServer`, `Tables`, or
+  the VPX folder itself. A Change button remains available for nonstandard layouts.
+- On a completely fresh Server setup, the installer creates `B2SServer` inside
+  the selected Visual Pinball folder, installs the complete Server payload, and
+  runs the included registration application.
+- The Designer setup installs the Designer to its own user-selected folder. It
+  never creates or changes a Server folder. The Server setup never creates or
+  changes a Designer folder.
+- On an existing Designer installation, setup replaces only `B2SPro.exe` and
+  `B2SUpdateChecker.exe`. On an existing Server installation, setup replaces
+  only `B2SBackglassServer.dll`, `B2SBackglassServerEXE.exe`, and
+  `B2SUpdateChecker.exe`.
 - An existing original Designer is never removed or overwritten.
 - Existing B2S Pro or B2S Server program files are listed and require an
   explicit overwrite confirmation.
-- The B2S Server is mandatory. Declining an existing-server update cancels the
-  complete installation rather than leaving mismatched Designer and Server
-  versions.
-- Both setups save and verify only existing Server files that the update replaces
-  or removes, under `%ProgramData%\B2SPro\Recovery`. Existing protected settings,
-  plugins, tables, projects, Designer files, and old backups are not included.
+- Both setups save and verify only existing files covered by that installation,
+  under `%ProgramData%\B2SPro\Recovery`. Existing protected settings, plugins,
+  tables, projects, unrelated program files, and old backups are not included.
   Unreadable selected files, linked paths, insufficient space, or failed checksums
   stop installation. Designer replacement files have temporary rollback copies
   during installation; those copies are discarded after successful installation.
@@ -48,7 +47,7 @@ The same tested installation engine produces two separate setup programs:
   during that update. Existing settings, plugins, unrelated files and backup folders
   remain. A failed restore attempts to recover the pre-restore files and reports
   the safety backup location if recovery also fails.
-- These are **server-file backups**, not a Windows system rollback: registration,
+- These are **application-file backups**, not a Windows system rollback: registration,
   file associations, shortcuts, filesystem permissions, and settings outside the
   selected folders are not restored. Existing older `B2SPro-Backups` folders are
   replacement-file backups and cannot be selected in the new Restore screen.
@@ -62,39 +61,34 @@ The same tested installation engine produces two separate setup programs:
   Hidden attribute is applied; Explorer can show them when hidden items are enabled.
 - Other installed programs, DLLs, tools, and backup folders remain visible.
   Unrelated user files and display settings are preserved.
-- The complete setup creates a `B2S Pro` shortcut on the current user's desktop and in a
-  `B2S Pro` Start Menu folder. Reinstalling refreshes both shortcuts without
-  changing the original Designer's shortcuts. Server-only setup creates no
-  Designer shortcut.
 
 ## Package sources
 
 For private development or offline installation, keep the applicable verified
 files together in one folder:
 
-- Complete setup: `B2SProSetup.exe`, `B2S-Pro-Backglass-1.0.9.zip`,
-  `B2S-Pro-Backglass-1.0.9.zip.sha256`, `B2S-Pro-Server-3.0.10.zip`, and
-  `B2S-Pro-Server-3.0.10.zip.sha256`.
-- Server-only setup: `B2SServerSetup.exe`, `B2S-Pro-Server-3.0.10.zip`, and
-  `B2S-Pro-Server-3.0.10.zip.sha256`.
+- Designer setup: `B2SProSetup.exe`, `B2S-Pro-Backglass-1.0.10.zip`, and
+  `B2S-Pro-Backglass-1.0.10.zip.sha256`.
+- Server-only setup: `B2SServerSetup.exe`, `B2S-Pro-Server-3.0.11.zip`, and
+  `B2S-Pro-Server-3.0.11.zip.sha256`.
 
 Each package's checksum sidecar is required. Setup verifies every required
 package before changing any installed files.
 
 The Designer ZIP stores architecture-neutral OCR, help, ID Tester, and Infinity
 artwork once under `common`, with only architecture-specific executables under
-`x64` and `x86`. The current complete setup overlays `common` with the selected
+`x64` and `x86`. The Designer setup overlays `common` with the selected
 architecture in the Designer installation folder. It also continues to accept
 the earlier self-contained x64/x86 package layout. A previously downloaded
-standalone complete setup does not understand the compact package and must be
-replaced with the current fixed-name `B2SProSetup.exe`. Server-only setup and
-the Server package layout are unchanged.
+older combined setup does not understand the compact package and must be
+replaced with the current fixed-name `B2SProSetup.exe`. Server setup and the
+Server package layout are unchanged.
 
 When the GitHub repository is public, each setup can query the latest release
-of `KWildman69/B2S-Pro`. Complete setup downloads the latest versioned Designer
-and Server packages; server-only setup downloads only the latest versioned
-Server package. Each package must have a matching `.sha256` release asset and
-is verified before use.
+of `KWildman69/B2S-Pro`. Designer setup downloads only the latest versioned
+Designer package; Server setup downloads only the latest versioned Server
+package. Each package must have a matching `.sha256` release asset and is
+verified before use.
 
 Every GitHub release is restricted to exactly six custom assets: the two setup
 programs, the Designer and Server runtime ZIPs, and one `.sha256` sidecar for
@@ -123,8 +117,9 @@ distributed to users.
 
 ## Server registration
 
-Both setup programs request administrator permission when they start and run
-the included official `B2SBackglassServerRegisterApp.exe silent` after the file
-transaction completes. Fresh and updated servers are therefore registered
-automatically without a second user workflow. The command is disabled during
-the sandbox self-test so development tests cannot change a live registration.
+Both setup programs request administrator permission when they start. The
+Designer setup never changes Server registration. Server setup runs the included
+official registration application only for a fresh Server installation. Updating
+an existing Server in the same folder preserves its established 32-bit and
+64-bit registrations. Registration is disabled during the sandbox self-test so
+development tests cannot change a live installation.

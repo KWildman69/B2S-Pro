@@ -20,6 +20,7 @@ Public Module IDTester
     Public Sub Run(ByVal owner As IWin32Window, ByVal backglassName As String, ByVal designerTablesFolder As String)
         Try
             IDTesterRestore.RecoverPendingTests()
+            backglassName = If(backglassName, String.Empty).Trim()
             If String.IsNullOrWhiteSpace(backglassName) OrElse
                Not String.Equals(Path.GetFileName(backglassName), backglassName, StringComparison.Ordinal) Then
                 Throw New InvalidDataException("The open backglass does not have a valid table filename.")

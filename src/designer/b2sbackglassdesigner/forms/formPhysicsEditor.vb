@@ -19,7 +19,14 @@ Public Partial Class formPhysicsEditor
     Private ReadOnly addObstacleButton As New Button()
     Private ReadOnly deleteObstacleButton As New Button()
     Private ReadOnly addSwitchButton As New Button()
+    Private ReadOnly addSoundSensorButton As New Button()
     Private ReadOnly deleteSwitchButton As New Button()
+    Private ReadOnly chooseSensorSoundButton As New Button()
+    Private ReadOnly clearSensorSoundButton As New Button()
+    Private ReadOnly sensorSoundLabel As New Label()
+    Private ReadOnly sensorSoundVolumeLabel As New Label()
+    Private ReadOnly sensorSoundVolumeBar As New TrackBar()
+    Private updatingSensorSoundVolume As Boolean
     Private ReadOnly switchIDBox As New NumericUpDown()
     Private ReadOnly launcherEnabledCheck As New CheckBox()
     Private ReadOnly launcherFollowPivotCheck As New CheckBox()
@@ -36,6 +43,18 @@ Public Partial Class formPhysicsEditor
     Private ReadOnly enabledCheck As New CheckBox()
     Private ReadOnly rollBallCheckBox As New CheckBox()
     Private ReadOnly flipperBox As New ComboBox()
+    Private ReadOnly impactTargetBox As New CheckedListBox()
+    Private ReadOnly pivotPhysicsCheck As New CheckBox()
+    Private ReadOnly pivotPhysicsWeightBox As New NumericUpDown()
+    Private ReadOnly pivotPhysicsFrictionBox As New NumericUpDown()
+    Private ReadOnly pivotPhysicsGripBox As New NumericUpDown()
+    Private ReadOnly pivotPhysicsResponseBox As New ComboBox()
+    Private ReadOnly pivotPhysicsKnockdownAngleBox As New NumericUpDown()
+    Private ReadOnly pivotPhysicsKnockdownDurationBox As New NumericUpDown()
+    Private ReadOnly pivotPhysicsResetDelayBox As New NumericUpDown()
+    Private loadingPivotPhysicsSettings As Boolean
+    Private activePivotPhysicsName As String = String.Empty
+    Private ReadOnly pivotPhysicsEdits As New Dictionary(Of String, PivotPhysicsEditState)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly gravityBox As New NumericUpDown()
     Private ReadOnly strengthBox As New NumericUpDown()
     Private ReadOnly bumperBounceBox As New NumericUpDown()
@@ -45,6 +64,17 @@ Public Partial Class formPhysicsEditor
     Private ReadOnly segmentUseDefaultCheck As New CheckBox()
     Private ReadOnly segmentBounceBox As New NumericUpDown()
     Private updatingSegmentBounce As Boolean
+
+    Private Class PivotPhysicsEditState
+        Public Enabled As Boolean
+        Public Weight As Single
+        Public Friction As Single
+        Public Grip As Single
+        Public ResponseMode As Integer
+        Public KnockdownAngle As Single
+        Public KnockdownDuration As Integer
+        Public ResetDelay As Integer
+    End Class
 
     Public Sub New(ByVal ball As Illumination.BulbInfo,
                    ByVal backglassImage As Image,
@@ -76,15 +106,34 @@ Public Partial Class formPhysicsEditor
         ConfigureButton(addObstacleButton, "Add Circular Bumper", AddressOf AddObstacle)
         ConfigureButton(deleteObstacleButton, "Delete Bumper", AddressOf DeleteObstacle)
         ConfigureButton(addSwitchButton, "Add Switch Zone", AddressOf AddSwitchZone)
+        ConfigureButton(addSoundSensorButton, "Add Sound Sensor", AddressOf AddSoundSensor)
         ConfigureButton(deleteSwitchButton, "Delete Switch Zone", AddressOf DeleteSwitchZone)
-        switchIDBox.Minimum = 1D
+        ConfigureButton(chooseSensorSoundButton, "Choose WAV", AddressOf ChooseSensorSound)
+        ConfigureButton(clearSensorSoundButton, "Clear WAV", AddressOf ClearSensorSound)
+        switchIDBox.Minimum = 0D
         switchIDBox.Maximum = 255D
         switchIDBox.Value = 1D
         switchIDBox.Width = 58
         switchIDBox.Enabled = False
         switchIDBox.Margin = New Padding(0, 3, 8, 0)
         AddHandler switchIDBox.ValueChanged, AddressOf SwitchIDChanged
-        Dim switchIDLabel As Label = ToolbarLabel("Switch ID:")
+        Dim switchIDLabel As Label = ToolbarLabel("Switch ID (0 = no ROM switch):")
+        sensorSoundLabel.Text = "Sound: (none)"
+        sensorSoundLabel.ForeColor = Color.White
+        sensorSoundLabel.AutoEllipsis = True
+        sensorSoundVolumeLabel.Text = "WAV volume: 100%"
+        sensorSoundVolumeLabel.ForeColor = Color.White
+        sensorSoundVolumeLabel.AutoSize = True
+        sensorSoundVolumeBar.Minimum = 0
+        sensorSoundVolumeBar.Maximum = 200
+        sensorSoundVolumeBar.Value = 100
+        sensorSoundVolumeBar.TickFrequency = 25
+        sensorSoundVolumeBar.SmallChange = 5
+        sensorSoundVolumeBar.LargeChange = 10
+        sensorSoundVolumeBar.AutoSize = False
+        sensorSoundVolumeBar.Height = 34
+        sensorSoundVolumeBar.Enabled = False
+        AddHandler sensorSoundVolumeBar.ValueChanged, AddressOf SensorSoundVolumeChanged
 
         launcherEnabledCheck.Text = "Enable launcher"
         launcherEnabledCheck.Checked = ball.SnippitInfo.PhysicsLauncherEnabled
@@ -131,7 +180,7 @@ Public Partial Class formPhysicsEditor
         rollBallCheckBox.AutoSize = True
         rollBallCheckBox.Margin = New Padding(8, 8, 5, 0)
 
-        Dim flipperLabel As Label = ToolbarLabel("Pivot snippet:")
+        Dim flipperLabel As Label = ToolbarLabel("Pivot settings / launcher pivot:")
         flipperBox.DropDownStyle = ComboBoxStyle.DropDownList
         flipperBox.Width = 145
         flipperBox.Margin = New Padding(0, 3, 5, 0)
@@ -142,6 +191,42 @@ Public Partial Class formPhysicsEditor
         Next
         Dim selectedFlipper As Integer = flipperBox.FindStringExact(ball.SnippitInfo.PhysicsFlipperName)
         flipperBox.SelectedIndex = If(selectedFlipper >= 0, selectedFlipper, 0)
+
+        Dim impactTargetsLabel As Label = ToolbarLabel("Ball impact targets:")
+        impactTargetBox.CheckOnClick = True
+        impactTargetBox.Height = 96
+        impactTargetBox.IntegralHeight = False
+        impactTargetBox.BackColor = Color.FromArgb(9, 12, 20)
+        impactTargetBox.ForeColor = Color.White
+        Dim savedImpactTargets As New HashSet(Of String)(ball.SnippitInfo.PhysicsPivotTargetNames, StringComparer.OrdinalIgnoreCase)
+        If savedImpactTargets.Count = 0 AndAlso Not String.IsNullOrWhiteSpace(ball.SnippitInfo.PhysicsFlipperName) Then
+            savedImpactTargets.Add(ball.SnippitInfo.PhysicsFlipperName)
+        End If
+        For index As Integer = 1 To flipperBox.Items.Count - 1
+            Dim targetName As String = CStr(flipperBox.Items(index))
+            impactTargetBox.Items.Add(targetName, savedImpactTargets.Contains(targetName))
+        Next
+        If flipperBox.SelectedIndex = 0 AndAlso impactTargetBox.CheckedItems.Count > 0 Then
+            flipperBox.SelectedIndex = flipperBox.FindStringExact(CStr(impactTargetBox.CheckedItems(0)))
+        End If
+
+        pivotPhysicsCheck.Text = "Ball impacts rotate selected pivot"
+        pivotPhysicsCheck.ForeColor = Color.White
+        pivotPhysicsCheck.AutoSize = True
+        ConfigurePivotPhysicsBox(pivotPhysicsWeightBox, 0.1D, 100D, 1D, 2, 0.1D)
+        ConfigurePivotPhysicsBox(pivotPhysicsFrictionBox, 0D, 20D, 1.25D, 2, 0.05D)
+        ConfigurePivotPhysicsBox(pivotPhysicsGripBox, 0D, 1D, 0.5D, 2, 0.05D)
+        pivotPhysicsResponseBox.DropDownStyle = ComboBoxStyle.DropDownList
+        pivotPhysicsResponseBox.Items.AddRange(New Object() {"Free spin", "Knock down and stay down", "Knock down then reset"})
+        ConfigurePivotPhysicsBox(pivotPhysicsKnockdownAngleBox, -360D, 360D, 90D, 1, 5D)
+        ConfigurePivotPhysicsBox(pivotPhysicsKnockdownDurationBox, 10D, 5000D, 180D, 0, 10D)
+        ConfigurePivotPhysicsBox(pivotPhysicsResetDelayBox, 0D, 30000D, 1000D, 0, 100D)
+        AddHandler flipperBox.SelectedIndexChanged, AddressOf SelectedPivotChanged
+        AddHandler impactTargetBox.SelectedIndexChanged, AddressOf ImpactTargetSelected
+        AddHandler impactTargetBox.ItemCheck, AddressOf ImpactTargetChecked
+        AddHandler pivotPhysicsCheck.CheckedChanged, AddressOf PivotPhysicsEnabledChanged
+        AddHandler pivotPhysicsResponseBox.SelectedIndexChanged, AddressOf PivotPhysicsResponseChanged
+        LoadSelectedPivotPhysicsSettings()
 
         Dim gravityLabel As Label = ToolbarLabel("Gravity:")
         gravityBox.Minimum = 0D
@@ -201,7 +286,16 @@ Public Partial Class formPhysicsEditor
         boundaryBox.Margin = New Padding(0, 3, 3, 0)
         AddHandler boundaryBox.SelectedIndexChanged, AddressOf ActiveBoundaryChanged
 
-        AddPageControls(ballPage, New Control() {enabledCheck, rollBallCheckBox, flipperLabel, flipperBox, gravityLabel, gravityBox,
+        AddPageControls(ballPage, New Control() {enabledCheck, rollBallCheckBox, impactTargetsLabel, impactTargetBox, flipperLabel, flipperBox,
+                                                 SidebarHeader("BALL-IMPACT PIVOT"), pivotPhysicsCheck,
+                                                 ToolbarLabel("Pivot weight:"), pivotPhysicsWeightBox,
+                                                 ToolbarLabel("Rotation friction:"), pivotPhysicsFrictionBox,
+                                                 ToolbarLabel("Surface grip:"), pivotPhysicsGripBox,
+                                                 ToolbarLabel("Impact response:"), pivotPhysicsResponseBox,
+                                                 ToolbarLabel("Knockdown angle:"), pivotPhysicsKnockdownAngleBox,
+                                                 ToolbarLabel("Knockdown time (ms):"), pivotPhysicsKnockdownDurationBox,
+                                                 ToolbarLabel("Reset delay (ms):"), pivotPhysicsResetDelayBox,
+                                                 gravityLabel, gravityBox,
                                                  strengthLabel, strengthBox, bounceLabel, bounceBox})
         AddPageControls(boundaryPage, New Control() {boundaryLabel, boundaryBox, segmentBounceLabel, segmentUseDefaultCheck,
                                                      segmentBounceBox, lockBoundaryButton, newBoundaryButton,
@@ -209,8 +303,10 @@ Public Partial Class formPhysicsEditor
                                                      clearButton,
                                                      SidebarHeader("CIRCULAR BUMPERS"), addObstacleButton, deleteObstacleButton,
                                                      ToolbarLabel("Selected bumper bounce (0.00–3.00):"), bumperDefaultCheck, bumperBounceBox,
-                                                    SidebarHeader("SWITCH ZONES"), addSwitchButton, deleteSwitchButton,
-                                                    switchIDLabel, switchIDBox})
+                                                    SidebarHeader("TRIGGER SENSORS"), addSwitchButton, addSoundSensorButton,
+                                                    deleteSwitchButton, switchIDLabel, switchIDBox,
+                                                    sensorSoundLabel, chooseSensorSoundButton, clearSensorSoundButton,
+                                                    sensorSoundVolumeLabel, sensorSoundVolumeBar})
         AddPageControls(launcherPage, New Control() {launcherEnabledCheck, launcherFollowPivotCheck, ToolbarLabel("Trigger type:"), launcherTypeBox,
                                                      ToolbarLabel("Trigger ID:"), launcherIDBox,
                                                      ToolbarLabel("Launch angle:"), launcherAngleBox, ToolbarLabel("Strength:"), launcherStrengthBox,
@@ -281,6 +377,9 @@ Public Partial Class formPhysicsEditor
         canvas.SwitchZones.AddRange(ball.SnippitInfo.PhysicsSwitchZones)
         canvas.SwitchIDs.AddRange(ball.SnippitInfo.PhysicsSwitchIDs)
         canvas.SwitchAngles.AddRange(ball.SnippitInfo.PhysicsSwitchAngles)
+        canvas.SwitchSoundNames.AddRange(ball.SnippitInfo.PhysicsSwitchSoundNames)
+        canvas.SwitchSoundData.AddRange(ball.SnippitInfo.PhysicsSwitchSoundData)
+        canvas.SwitchSoundVolumes.AddRange(ball.SnippitInfo.PhysicsSwitchSoundVolumes)
         While canvas.SwitchIDs.Count < canvas.SwitchZones.Count
             canvas.SwitchIDs.Add(1)
         End While
@@ -290,6 +389,12 @@ Public Partial Class formPhysicsEditor
         While canvas.SwitchAngles.Count > canvas.SwitchZones.Count
             canvas.SwitchAngles.RemoveAt(canvas.SwitchAngles.Count - 1)
         End While
+        While canvas.SwitchSoundNames.Count < canvas.SwitchZones.Count : canvas.SwitchSoundNames.Add(String.Empty) : End While
+        While canvas.SwitchSoundData.Count < canvas.SwitchZones.Count : canvas.SwitchSoundData.Add(String.Empty) : End While
+        While canvas.SwitchSoundVolumes.Count < canvas.SwitchZones.Count : canvas.SwitchSoundVolumes.Add(100) : End While
+        While canvas.SwitchSoundNames.Count > canvas.SwitchZones.Count : canvas.SwitchSoundNames.RemoveAt(canvas.SwitchSoundNames.Count - 1) : End While
+        While canvas.SwitchSoundData.Count > canvas.SwitchZones.Count : canvas.SwitchSoundData.RemoveAt(canvas.SwitchSoundData.Count - 1) : End While
+        While canvas.SwitchSoundVolumes.Count > canvas.SwitchZones.Count : canvas.SwitchSoundVolumes.RemoveAt(canvas.SwitchSoundVolumes.Count - 1) : End While
         RefreshBoundaryList(0)
         AddHandler canvas.SelectionChanged, AddressOf CanvasSelectionChanged
         AddHandler canvas.BoundaryStructureChanged, AddressOf CanvasBoundaryStructureChanged
@@ -327,6 +432,151 @@ Public Partial Class formPhysicsEditor
             End If
             list.Controls.Add(control)
         Next
+    End Sub
+
+    Private Shared Sub ConfigurePivotPhysicsBox(ByVal box As NumericUpDown, ByVal minimum As Decimal,
+                                                 ByVal maximum As Decimal, ByVal value As Decimal,
+                                                 ByVal decimalPlaces As Integer, ByVal increment As Decimal)
+        box.Minimum = minimum
+        box.Maximum = maximum
+        box.DecimalPlaces = decimalPlaces
+        box.Increment = increment
+        box.Value = Math.Max(minimum, Math.Min(maximum, value))
+        box.Width = 80
+    End Sub
+
+    Private Sub SelectedPivotChanged(ByVal sender As Object, ByVal e As EventArgs)
+        CaptureActivePivotPhysicsSettings()
+        LoadSelectedPivotPhysicsSettings()
+    End Sub
+
+    Private Sub ImpactTargetSelected(ByVal sender As Object, ByVal e As EventArgs)
+        If impactTargetBox.SelectedIndex < 0 Then Return
+        Dim targetName As String = CStr(impactTargetBox.SelectedItem)
+        Dim targetIndex As Integer = flipperBox.FindStringExact(targetName)
+        If targetIndex >= 0 AndAlso flipperBox.SelectedIndex <> targetIndex Then flipperBox.SelectedIndex = targetIndex
+    End Sub
+
+    Private Sub ImpactTargetChecked(ByVal sender As Object, ByVal e As ItemCheckEventArgs)
+        If loadingPivotPhysicsSettings Then Return
+        Dim targetName As String = CStr(impactTargetBox.Items(e.Index))
+        If flipperBox.SelectedIndex > 0 AndAlso String.Equals(CStr(flipperBox.SelectedItem), targetName, StringComparison.OrdinalIgnoreCase) Then
+            BeginInvoke(New MethodInvoker(Sub()
+                                              loadingPivotPhysicsSettings = True
+                                              pivotPhysicsCheck.Checked = (impactTargetBox.GetItemChecked(e.Index))
+                                              loadingPivotPhysicsSettings = False
+                                              UpdatePivotPhysicsControlState()
+                                          End Sub))
+        End If
+    End Sub
+
+    Private Sub PivotPhysicsEnabledChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If loadingPivotPhysicsSettings Then Return
+        Dim pivot As Illumination.BulbInfo = SelectedPivotSnippet()
+        If pivot IsNot Nothing Then
+            Dim index As Integer = impactTargetBox.FindStringExact(pivot.Name)
+            If index >= 0 AndAlso impactTargetBox.GetItemChecked(index) <> pivotPhysicsCheck.Checked Then
+                impactTargetBox.SetItemChecked(index, pivotPhysicsCheck.Checked)
+            End If
+            Dim state As PivotPhysicsEditState = PivotPhysicsSettingsFor(pivot)
+            state.Enabled = pivotPhysicsCheck.Checked
+        End If
+        UpdatePivotPhysicsControlState()
+    End Sub
+
+    Private Sub PivotPhysicsResponseChanged(ByVal sender As Object, ByVal e As EventArgs)
+        If Not loadingPivotPhysicsSettings Then UpdatePivotPhysicsControlState()
+    End Sub
+
+    Private Sub LoadSelectedPivotPhysicsSettings()
+        loadingPivotPhysicsSettings = True
+        Try
+            Dim pivot As Illumination.BulbInfo = SelectedPivotSnippet()
+            activePivotPhysicsName = If(pivot Is Nothing, String.Empty, pivot.Name)
+            Dim state As PivotPhysicsEditState = If(pivot Is Nothing, Nothing, PivotPhysicsSettingsFor(pivot))
+            Dim targetIndex As Integer = If(pivot Is Nothing, -1, impactTargetBox.FindStringExact(pivot.Name))
+            If state IsNot Nothing Then state.Enabled = targetIndex >= 0 AndAlso impactTargetBox.GetItemChecked(targetIndex)
+            pivotPhysicsCheck.Checked = state IsNot Nothing AndAlso state.Enabled
+            pivotPhysicsWeightBox.Value = CDec(If(state Is Nothing, 1.0F, Math.Max(0.1F, Math.Min(100.0F, state.Weight))))
+            pivotPhysicsFrictionBox.Value = CDec(If(state Is Nothing, 1.25F, Math.Max(0.0F, Math.Min(20.0F, state.Friction))))
+            pivotPhysicsGripBox.Value = CDec(If(state Is Nothing, 0.5F, Math.Max(0.0F, Math.Min(1.0F, state.Grip))))
+            pivotPhysicsResponseBox.SelectedIndex = If(state Is Nothing, 0, Math.Max(0, Math.Min(2, state.ResponseMode)))
+            pivotPhysicsKnockdownAngleBox.Value = CDec(If(state Is Nothing, 90.0F, Math.Max(-360.0F, Math.Min(360.0F, state.KnockdownAngle))))
+            pivotPhysicsKnockdownDurationBox.Value = CDec(If(state Is Nothing, 180, Math.Max(10, Math.Min(5000, state.KnockdownDuration))))
+            pivotPhysicsResetDelayBox.Value = CDec(If(state Is Nothing, 1000, Math.Max(0, Math.Min(30000, state.ResetDelay))))
+        Finally
+            loadingPivotPhysicsSettings = False
+        End Try
+        UpdatePivotPhysicsControlState()
+    End Sub
+
+    Private Function PivotPhysicsSettingsFor(ByVal pivot As Illumination.BulbInfo) As PivotPhysicsEditState
+        Dim state As PivotPhysicsEditState = Nothing
+        If pivotPhysicsEdits.TryGetValue(pivot.Name, state) Then Return state
+        Dim targetIndex As Integer = impactTargetBox.FindStringExact(pivot.Name)
+        state = New PivotPhysicsEditState With {
+            .Enabled = targetIndex >= 0 AndAlso impactTargetBox.GetItemChecked(targetIndex),
+            .Weight = pivot.SnippitInfo.PivotPhysicsWeight,
+            .Friction = pivot.SnippitInfo.PivotPhysicsFriction,
+            .Grip = pivot.SnippitInfo.PivotPhysicsGrip,
+            .ResponseMode = pivot.SnippitInfo.PivotPhysicsResponseMode,
+            .KnockdownAngle = pivot.SnippitInfo.PivotPhysicsKnockdownAngle,
+            .KnockdownDuration = pivot.SnippitInfo.PivotPhysicsKnockdownDuration,
+            .ResetDelay = pivot.SnippitInfo.PivotPhysicsResetDelay}
+        pivotPhysicsEdits(pivot.Name) = state
+        Return state
+    End Function
+
+    Private Sub CaptureActivePivotPhysicsSettings()
+        If loadingPivotPhysicsSettings OrElse String.IsNullOrWhiteSpace(activePivotPhysicsName) Then Return
+        Dim pivot As Illumination.BulbInfo = physicsSnippets.FirstOrDefault(Function(item) item IsNot sourceBall AndAlso
+                                                                            item.Name = activePivotPhysicsName AndAlso
+                                                                            item.SnippitInfo.PivotAnimationEnabled)
+        If pivot Is Nothing Then Return
+        Dim state As PivotPhysicsEditState = PivotPhysicsSettingsFor(pivot)
+        state.Enabled = pivotPhysicsCheck.Checked
+        state.Weight = CSng(pivotPhysicsWeightBox.Value)
+        state.Friction = CSng(pivotPhysicsFrictionBox.Value)
+        state.Grip = CSng(pivotPhysicsGripBox.Value)
+        state.ResponseMode = Math.Max(0, pivotPhysicsResponseBox.SelectedIndex)
+        state.KnockdownAngle = CSng(pivotPhysicsKnockdownAngleBox.Value)
+        state.KnockdownDuration = CInt(pivotPhysicsKnockdownDurationBox.Value)
+        state.ResetDelay = CInt(pivotPhysicsResetDelayBox.Value)
+    End Sub
+
+    Public Sub ApplyResultPivotPhysicsSettings(ByVal pivot As Illumination.BulbInfo)
+        If pivot Is Nothing OrElse String.IsNullOrWhiteSpace(pivot.Name) Then Return
+        CaptureActivePivotPhysicsSettings()
+        Dim state As PivotPhysicsEditState = PivotPhysicsSettingsFor(pivot)
+        state.Enabled = ResultPivotTargetNames.Any(Function(name) String.Equals(name, pivot.Name, StringComparison.OrdinalIgnoreCase))
+        pivot.SnippitInfo.PivotPhysicsEnabled = state.Enabled
+        pivot.SnippitInfo.PivotPhysicsWeight = state.Weight
+        pivot.SnippitInfo.PivotPhysicsFriction = state.Friction
+        pivot.SnippitInfo.PivotPhysicsGrip = state.Grip
+        pivot.SnippitInfo.PivotPhysicsResponseMode = state.ResponseMode
+        pivot.SnippitInfo.PivotPhysicsKnockdownAngle = state.KnockdownAngle
+        pivot.SnippitInfo.PivotPhysicsKnockdownDuration = state.KnockdownDuration
+        pivot.SnippitInfo.PivotPhysicsResetDelay = state.ResetDelay
+    End Sub
+
+    Private Function SelectedPivotSnippet() As Illumination.BulbInfo
+        If flipperBox.SelectedIndex <= 0 Then Return Nothing
+        Dim selectedName As String = CStr(flipperBox.SelectedItem)
+        Return physicsSnippets.FirstOrDefault(Function(item) item IsNot sourceBall AndAlso
+                                               item.Name = selectedName AndAlso item.SnippitInfo.PivotAnimationEnabled)
+    End Function
+
+    Private Sub UpdatePivotPhysicsControlState()
+        Dim hasPivot As Boolean = SelectedPivotSnippet() IsNot Nothing
+        pivotPhysicsCheck.Enabled = hasPivot
+        pivotPhysicsWeightBox.Enabled = hasPivot AndAlso pivotPhysicsCheck.Checked
+        pivotPhysicsFrictionBox.Enabled = hasPivot AndAlso pivotPhysicsCheck.Checked
+        pivotPhysicsGripBox.Enabled = hasPivot AndAlso pivotPhysicsCheck.Checked
+        pivotPhysicsResponseBox.Enabled = hasPivot AndAlso pivotPhysicsCheck.Checked
+        Dim knockdown As Boolean = pivotPhysicsResponseBox.Enabled AndAlso pivotPhysicsResponseBox.SelectedIndex > 0
+        pivotPhysicsKnockdownAngleBox.Enabled = knockdown
+        pivotPhysicsKnockdownDurationBox.Enabled = knockdown
+        pivotPhysicsResetDelayBox.Enabled = knockdown AndAlso pivotPhysicsResponseBox.SelectedIndex = 2
     End Sub
 
     Private Shared Function SidebarHeader(ByVal caption As String) As Label
@@ -419,6 +669,24 @@ Public Partial Class formPhysicsEditor
         End Get
     End Property
 
+    Public ReadOnly Property ResultSwitchSoundNames As List(Of String)
+        Get
+            Return New List(Of String)(canvas.SwitchSoundNames)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultSwitchSoundData As List(Of String)
+        Get
+            Return New List(Of String)(canvas.SwitchSoundData)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultSwitchSoundVolumes As List(Of Integer)
+        Get
+            Return New List(Of Integer)(canvas.SwitchSoundVolumes)
+        End Get
+    End Property
+
     Public ReadOnly Property ResultEnabled As Boolean
         Get
             Return enabledCheck.Checked
@@ -434,6 +702,60 @@ Public Partial Class formPhysicsEditor
     Public ReadOnly Property ResultFlipperName As String
         Get
             Return If(flipperBox.SelectedIndex <= 0, String.Empty, CStr(flipperBox.SelectedItem))
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotTargetNames As List(Of String)
+        Get
+            Return impactTargetBox.CheckedItems.Cast(Of Object)().Select(Function(item) CStr(item)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsEnabled As Boolean
+        Get
+            Return ResultFlipperName.Length > 0 AndAlso pivotPhysicsCheck.Checked
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsWeight As Single
+        Get
+            Return CSng(pivotPhysicsWeightBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsFriction As Single
+        Get
+            Return CSng(pivotPhysicsFrictionBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsGrip As Single
+        Get
+            Return CSng(pivotPhysicsGripBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsResponseMode As Integer
+        Get
+            Return Math.Max(0, pivotPhysicsResponseBox.SelectedIndex)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsKnockdownAngle As Single
+        Get
+            Return CSng(pivotPhysicsKnockdownAngleBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsKnockdownDuration As Integer
+        Get
+            Return CInt(pivotPhysicsKnockdownDurationBox.Value)
+        End Get
+    End Property
+
+    Public ReadOnly Property ResultPivotPhysicsResetDelay As Integer
+        Get
+            Return CInt(pivotPhysicsResetDelayBox.Value)
         End Get
     End Property
 
@@ -587,7 +909,15 @@ Public Partial Class formPhysicsEditor
         Dim switchID As Nullable(Of Integer) = canvas.SelectedSwitchID
         switchIDBox.Enabled = switchID.HasValue
         deleteSwitchButton.Enabled = switchID.HasValue
+        chooseSensorSoundButton.Enabled = switchID.HasValue
+        clearSensorSoundButton.Enabled = switchID.HasValue AndAlso canvas.SelectedSwitchSoundName.Length > 0
+        sensorSoundLabel.Text = "Sound: " & If(canvas.SelectedSwitchSoundName.Length > 0, canvas.SelectedSwitchSoundName, "(none)")
         If switchID.HasValue Then switchIDBox.Value = Math.Max(switchIDBox.Minimum, Math.Min(switchIDBox.Maximum, switchID.Value))
+        updatingSensorSoundVolume = True
+        sensorSoundVolumeBar.Enabled = switchID.HasValue AndAlso canvas.SelectedSwitchSoundName.Length > 0
+        sensorSoundVolumeBar.Value = Math.Max(sensorSoundVolumeBar.Minimum, Math.Min(sensorSoundVolumeBar.Maximum, canvas.SelectedSwitchSoundVolume))
+        sensorSoundVolumeLabel.Text = "WAV volume: " & sensorSoundVolumeBar.Value.ToString() & "%"
+        updatingSensorSoundVolume = False
 
         updatingSegmentBounce = True
         Dim hasSegment As Boolean = canvas.SelectedSegmentIndex >= 0
@@ -670,8 +1000,48 @@ Public Partial Class formPhysicsEditor
     End Sub
 
     Private Sub AddSwitchZone(ByVal sender As Object, ByVal e As EventArgs)
-        canvas.AddSwitchZone(CInt(switchIDBox.Value))
+        canvas.AddSwitchZone(Math.Max(1, CInt(switchIDBox.Value)))
     End Sub
+
+    Private Sub AddSoundSensor(ByVal sender As Object, ByVal e As EventArgs)
+        Dim soundName As String = String.Empty, soundData As String = String.Empty
+        If Not SelectWaveFile(soundName, soundData) Then Return
+        canvas.AddSwitchZone(0, soundName, soundData)
+    End Sub
+
+    Private Sub ChooseSensorSound(ByVal sender As Object, ByVal e As EventArgs)
+        If Not canvas.SelectedSwitchID.HasValue Then Return
+        Dim soundName As String = String.Empty, soundData As String = String.Empty
+        If SelectWaveFile(soundName, soundData) Then
+            canvas.SetSelectedSwitchSound(soundName, soundData)
+            CanvasSelectionChanged(Nothing, EventArgs.Empty)
+        End If
+    End Sub
+
+    Private Sub ClearSensorSound(ByVal sender As Object, ByVal e As EventArgs)
+        canvas.SetSelectedSwitchSound(String.Empty, String.Empty)
+        CanvasSelectionChanged(Nothing, EventArgs.Empty)
+    End Sub
+
+    Private Function SelectWaveFile(ByRef soundName As String, ByRef soundData As String) As Boolean
+        Using dialog As New OpenFileDialog With {.Title = "Choose motion-sensor WAV", .Filter = "Wave audio (*.wav)|*.wav", .CheckFileExists = True}
+            If dialog.ShowDialog(Me) <> DialogResult.OK Then Return False
+            Dim bytes As Byte() = IO.File.ReadAllBytes(dialog.FileName)
+            If bytes.Length < 12 OrElse System.Text.Encoding.ASCII.GetString(bytes, 0, 4) <> "RIFF" OrElse
+               System.Text.Encoding.ASCII.GetString(bytes, 8, 4) <> "WAVE" Then
+                MessageBox.Show(Me, "That file is not a valid WAV file.", "Sound Sensor", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return False
+            End If
+            Using sha = Security.Cryptography.SHA256.Create()
+                Dim suffix As String = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", String.Empty).Substring(0, 8)
+                Dim baseName As String = IO.Path.GetFileNameWithoutExtension(dialog.FileName).Replace("|", "_").Trim()
+                If baseName.Length = 0 Then baseName = "Sensor"
+                soundName = baseName & "_" & suffix
+            End Using
+            soundData = Convert.ToBase64String(bytes)
+            Return True
+        End Using
+    End Function
 
     Private Sub DeleteSwitchZone(ByVal sender As Object, ByVal e As EventArgs)
         canvas.DeleteSelectedSwitchZone()
@@ -679,6 +1049,12 @@ Public Partial Class formPhysicsEditor
 
     Private Sub SwitchIDChanged(ByVal sender As Object, ByVal e As EventArgs)
         If switchIDBox.Enabled Then canvas.SetSelectedSwitchID(CInt(switchIDBox.Value))
+    End Sub
+
+    Private Sub SensorSoundVolumeChanged(ByVal sender As Object, ByVal e As EventArgs)
+        sensorSoundVolumeLabel.Text = "WAV volume: " & sensorSoundVolumeBar.Value.ToString() & "%"
+        If updatingSensorSoundVolume OrElse Not sensorSoundVolumeBar.Enabled Then Return
+        canvas.SetSelectedSwitchSoundVolume(sensorSoundVolumeBar.Value)
     End Sub
 
     Private Sub ActiveBoundaryChanged(ByVal sender As Object, ByVal e As EventArgs)
@@ -726,6 +1102,12 @@ Public Partial Class formPhysicsEditor
     End Sub
 
     Private Sub SaveBoundaries(ByVal sender As Object, ByVal e As EventArgs)
+        CaptureActivePivotPhysicsSettings()
+        If pivotPhysicsCheck.Checked AndAlso flipperBox.SelectedIndex <= 0 Then
+            MessageBox.Show(Me, "Select a pivot-enabled snippet before enabling ball-impact rotation.", "Physics Boundary Editor",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
         If launcherEnabledCheck.Checked AndAlso launcherFollowPivotCheck.Checked AndAlso flipperBox.SelectedIndex <= 0 Then
             MessageBox.Show(Me, "Select a pivot-enabled snippet on the Ball tab before attaching the launcher.", "Physics Boundary Editor",
                             MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -806,6 +1188,7 @@ Public Partial Class formPhysicsEditor
         Public PreviewBallAngle As Single
         Public PreviewPivot As PhysicsPreview.B2SPictureBox
         Public PreviewPivotName As String
+        Public ReadOnly PreviewPivots As New Dictionary(Of String, PhysicsPreview.B2SPictureBox)(StringComparer.OrdinalIgnoreCase)
         Public ReadOnly PreviewSwitchHits As New Dictionary(Of Integer, DateTime)()
         Public ReadOnly Scene As New List(Of SceneItem)()
         Public ReadOnly Paths As New List(Of List(Of PointF))()
@@ -835,6 +1218,9 @@ Public Partial Class formPhysicsEditor
         Public ReadOnly SwitchZones As New List(Of RectangleF)()
         Public ReadOnly SwitchIDs As New List(Of Integer)()
         Public ReadOnly SwitchAngles As New List(Of Single)()
+        Public ReadOnly SwitchSoundNames As New List(Of String)()
+        Public ReadOnly SwitchSoundData As New List(Of String)()
+        Public ReadOnly SwitchSoundVolumes As New List(Of Integer)()
         Public LauncherEnabled As Boolean
         Public LauncherOrigin As PointF
         Public LauncherAngle As Single
@@ -863,7 +1249,7 @@ Public Partial Class formPhysicsEditor
         Private cachedSceneCount As Integer = -1
 
         Private Function IsMovingArtwork(ByVal item As SceneItem) As Boolean
-            Return item.IsBall OrElse (PreviewPivot IsNot Nothing AndAlso item.Name = PreviewPivotName)
+            Return item.IsBall OrElse PreviewPivots.ContainsKey(item.Name)
         End Function
 
         Private Shared Function BallRollDestinationPoints(ByVal bounds As RectangleF, ByVal angle As Single) As PointF()
@@ -939,7 +1325,7 @@ Public Partial Class formPhysicsEditor
         End Sub
 
         Private Sub EnsureSceneCache(ByVal view As RectangleF)
-            Dim pivotName As String = If(PreviewPivot Is Nothing, Nothing, PreviewPivotName)
+            Dim pivotName As String = String.Join("|", PreviewPivots.Keys.OrderBy(Function(name) name).ToArray())
             If cachedView = view AndAlso cachedClientSize = ClientSize AndAlso
                cachedPivotName = pivotName AndAlso cachedSceneCount = Scene.Count Then Return
             ClearSceneCache()
@@ -1066,6 +1452,20 @@ Public Partial Class formPhysicsEditor
             End Get
         End Property
 
+        Public ReadOnly Property SelectedSwitchSoundName As String
+            Get
+                If selectedSwitch < 0 OrElse selectedSwitch >= SwitchSoundNames.Count Then Return String.Empty
+                Return If(SwitchSoundNames(selectedSwitch), String.Empty)
+            End Get
+        End Property
+
+        Public ReadOnly Property SelectedSwitchSoundVolume As Integer
+            Get
+                If selectedSwitch < 0 OrElse selectedSwitch >= SwitchSoundVolumes.Count Then Return 100
+                Return Math.Max(0, Math.Min(200, SwitchSoundVolumes(selectedSwitch)))
+            End Get
+        End Property
+
         Public Sub SetActivePath(ByVal index As Integer)
             EnsureBoundaryMetadata()
             If Paths.Count = 0 Then ActivePathIndex = -1 Else ActivePathIndex = Math.Max(0, Math.Min(index, Paths.Count - 1))
@@ -1105,7 +1505,8 @@ Public Partial Class formPhysicsEditor
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
         End Sub
 
-        Public Sub AddSwitchZone(ByVal switchID As Integer)
+        Public Sub AddSwitchZone(ByVal switchID As Integer, Optional ByVal soundName As String = "", Optional ByVal soundData As String = "",
+                                 Optional ByVal soundVolume As Integer = 100)
             Dim width As Single = Math.Max(60.0F, AuthoredSize.Width * 0.12F)
             Dim height As Single = Math.Max(40.0F, AuthoredSize.Height * 0.1F)
             If Not lastSwitchSize.IsEmpty Then
@@ -1117,8 +1518,11 @@ Public Partial Class formPhysicsEditor
             End If
             lastSwitchSize = New SizeF(width, height)
             SwitchZones.Add(New RectangleF((AuthoredSize.Width - width) / 2.0F, (AuthoredSize.Height - height) / 2.0F, width, height))
-            SwitchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
+            SwitchIDs.Add(Math.Max(0, Math.Min(255, switchID)))
             SwitchAngles.Add(0.0F)
+            SwitchSoundNames.Add(If(soundName, String.Empty))
+            SwitchSoundData.Add(If(soundData, String.Empty))
+            SwitchSoundVolumes.Add(Math.Max(0, Math.Min(200, soundVolume)))
             selectedSwitch = SwitchZones.Count - 1
             selectedObstacle = -1
             selectedIndex = -1
@@ -1132,6 +1536,9 @@ Public Partial Class formPhysicsEditor
             SwitchZones.RemoveAt(selectedSwitch)
             SwitchIDs.RemoveAt(selectedSwitch)
             If selectedSwitch < SwitchAngles.Count Then SwitchAngles.RemoveAt(selectedSwitch)
+            If selectedSwitch < SwitchSoundNames.Count Then SwitchSoundNames.RemoveAt(selectedSwitch)
+            If selectedSwitch < SwitchSoundData.Count Then SwitchSoundData.RemoveAt(selectedSwitch)
+            If selectedSwitch < SwitchSoundVolumes.Count Then SwitchSoundVolumes.RemoveAt(selectedSwitch)
             selectedSwitch = -1
             Invalidate()
             RaiseEvent SelectionChanged(Me, EventArgs.Empty)
@@ -1139,7 +1546,24 @@ Public Partial Class formPhysicsEditor
 
         Public Sub SetSelectedSwitchID(ByVal switchID As Integer)
             If selectedSwitch < 0 OrElse selectedSwitch >= SwitchIDs.Count Then Return
-            SwitchIDs(selectedSwitch) = Math.Max(1, Math.Min(255, switchID))
+            SwitchIDs(selectedSwitch) = Math.Max(0, Math.Min(255, switchID))
+            Invalidate()
+        End Sub
+
+        Public Sub SetSelectedSwitchSound(ByVal soundName As String, ByVal soundData As String)
+            If selectedSwitch < 0 OrElse selectedSwitch >= SwitchZones.Count Then Return
+            While SwitchSoundNames.Count < SwitchZones.Count : SwitchSoundNames.Add(String.Empty) : End While
+            While SwitchSoundData.Count < SwitchZones.Count : SwitchSoundData.Add(String.Empty) : End While
+            While SwitchSoundVolumes.Count < SwitchZones.Count : SwitchSoundVolumes.Add(100) : End While
+            SwitchSoundNames(selectedSwitch) = If(soundName, String.Empty)
+            SwitchSoundData(selectedSwitch) = If(soundData, String.Empty)
+            Invalidate()
+        End Sub
+
+        Public Sub SetSelectedSwitchSoundVolume(ByVal volume As Integer)
+            If selectedSwitch < 0 OrElse selectedSwitch >= SwitchZones.Count Then Return
+            While SwitchSoundVolumes.Count < SwitchZones.Count : SwitchSoundVolumes.Add(100) : End While
+            SwitchSoundVolumes(selectedSwitch) = Math.Max(0, Math.Min(200, volume))
             Invalidate()
         End Sub
 
@@ -1219,11 +1643,12 @@ Public Partial Class formPhysicsEditor
                 ElseIf item.IsBall AndAlso PreviewBallBounds.HasValue Then
                     e.Graphics.DrawImage(item.Image, BallRollDestinationPoints(drawBounds, PreviewBallAngle),
                                          New RectangleF(0, 0, item.Image.Width, item.Image.Height), GraphicsUnit.Pixel)
-                ElseIf PreviewPivot IsNot Nothing AndAlso item.Name = PreviewPivotName Then
-                    Dim hinge As New PointF(drawBounds.X + drawBounds.Width * PreviewPivot.RotationPivotX,
-                                           drawBounds.Y + drawBounds.Height * PreviewPivot.RotationPivotY)
+                ElseIf PreviewPivots.ContainsKey(item.Name) Then
+                    Dim previewPivot As PhysicsPreview.B2SPictureBox = PreviewPivots(item.Name)
+                    Dim hinge As New PointF(drawBounds.X + drawBounds.Width * previewPivot.RotationPivotX,
+                                           drawBounds.Y + drawBounds.Height * previewPivot.RotationPivotY)
                     e.Graphics.TranslateTransform(hinge.X, hinge.Y)
-                    e.Graphics.RotateTransform(PreviewPivot.RotationAngle)
+                    e.Graphics.RotateTransform(previewPivot.RotationAngle)
                     e.Graphics.TranslateTransform(-hinge.X, -hinge.Y)
                     e.Graphics.DrawImage(item.Image, drawBounds)
                 Else
@@ -1287,13 +1712,17 @@ Public Partial Class formPhysicsEditor
                 e.Graphics.TranslateTransform(center.X, center.Y)
                 e.Graphics.RotateTransform(angle)
                 e.Graphics.TranslateTransform(-center.X, -center.Y)
-                Dim hit As Boolean = PreviewSwitchHits.ContainsKey(SwitchIDs(switchIndex)) AndAlso PreviewSwitchHits(SwitchIDs(switchIndex)) > DateTime.UtcNow
+                Dim switchID As Integer = SwitchIDs(switchIndex)
+                Dim soundName As String = If(switchIndex < SwitchSoundNames.Count, SwitchSoundNames(switchIndex), String.Empty)
+                Dim hit As Boolean = switchID > 0 AndAlso PreviewSwitchHits.ContainsKey(switchID) AndAlso PreviewSwitchHits(switchID) > DateTime.UtcNow
                 Using fill As New SolidBrush(If(hit, Color.FromArgb(180, 255, 180, 0), Color.FromArgb(45, 0, 255, 90))),
                       outline As New Pen(If(switchIndex = selectedSwitch, Color.Yellow, Color.Lime), 3.0F / scale),
                       labelFont As New Font(Font.FontFamily, Math.Max(8.0F, 12.0F / scale), FontStyle.Bold)
                     e.Graphics.FillRectangle(fill, zone)
                     e.Graphics.DrawRectangle(outline, zone.X, zone.Y, zone.Width, zone.Height)
-                    e.Graphics.DrawString("SW " & SwitchIDs(switchIndex).ToString(), labelFont, Brushes.White, zone.X + 3.0F / scale, zone.Y + 3.0F / scale)
+                    Dim label As String = If(soundName.Length > 0, "SOUND", "SW " & switchID.ToString())
+                    If soundName.Length > 0 AndAlso switchID > 0 Then label &= " + SW " & switchID.ToString()
+                    e.Graphics.DrawString(label, labelFont, Brushes.White, zone.X + 3.0F / scale, zone.Y + 3.0F / scale)
                 End Using
                 e.Graphics.Restore(switchState)
                 If switchIndex = selectedSwitch Then

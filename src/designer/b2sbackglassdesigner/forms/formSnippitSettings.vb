@@ -32,9 +32,30 @@ Public Class formSnippitSettings
     Private IsDirty As Boolean = False
     Private bulbID As Integer = -1
     Private revealCompletedLayout As Boolean = True
-    Private previewBulb As Illumination.BulbInfo = Nothing
-    Private originalBrightness As Integer = 100
-    Private originalBehindCanvas As Boolean = False
+    Private ReadOnly previewBulbs As New Generic.List(Of Illumination.BulbInfo)()
+    Private ReadOnly originalBrightness As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
+    Private ReadOnly originalBehindCanvas As New Generic.Dictionary(Of Illumination.BulbInfo, Boolean)()
+    Private snippetLayoutRoot As TableLayoutPanel
+    Private snippetLeftPanel As Panel
+    Private snippetLeftContent As Panel
+    Private snippetRightLayout As TableLayoutPanel
+    Private snippetActionPanel As FlowLayoutPanel
+    Private snippetPreviewGroup As GroupBox
+    Private snippetPreviewBox As EditorPreviewPictureBox
+    Private snippetPreviewStatus As Label
+    Private snippetPreviewZoomLabel As Label
+    Private snippetPreviewZoomOutButton As Button
+    Private snippetPreviewZoomInButton As Button
+    Private snippetPreviewFitButton As Button
+    Private snippetPreviewActualButton As Button
+    Private snippetPreviewSource As Bitmap
+    Private snippetPreviewTimer As Timer
+    Private snippetPreviewPending As Boolean
+    Private snippetPreviewZoomPercent As Integer
+    Private snippetPreviewPanOffset As Point = Point.Empty
+    Private snippetPreviewIsPanning As Boolean
+    Private snippetPreviewPanStart As Point
+    Private snippetPreviewPanStartOffset As Point
 
     Public Sub New()
         InitializeComponent()
@@ -42,11 +63,11 @@ Public Class formSnippitSettings
         BuildAutomaticRotationSection()
         TraceWindow("constructor after InitializeComponent")
 
-        ' Build the complete B2S Pro frame while this dialog is still only a
-        ' managed object. Waiting for SetVisibleCore/ShowDialog lets Windows
-        ' expose the legacy 431x310 frame before the custom chrome expands it.
-        AppThemeManager.Initialize()
-        AppThemeManager.ApplyToForm(Me)
+        ' Build the complete resizable layout before B2SThemedForm applies the
+        ' shared B2S window chrome during the first ShowDialog call. Applying
+        ' the chrome before changing the legacy dialog to Sizable would leave
+        ' both the native Windows frame and the B2S frame active.
+        BuildSnippetManagedLayout()
         TraceWindow("constructor after theme")
 
         ' Keep the already completed frame out of the compositor until its
@@ -55,6 +76,7 @@ Public Class formSnippitSettings
         AddHandler Me.LocationChanged, Sub() TraceWindow("LocationChanged")
         AddHandler Me.SizeChanged, Sub() TraceWindow("SizeChanged")
         AddHandler Me.VisibleChanged, Sub() TraceWindow("VisibleChanged")
+        AddHandler Me.FormClosed, AddressOf SnippetSettings_FormClosed
     End Sub
 
     Private Sub TraceWindow(ByVal action As String)
@@ -82,7 +104,8 @@ Public Class formSnippitSettings
                                        ByRef automaticRotationSteps As Integer,
                                        ByRef automaticRotationInterval As Integer,
                                        ByRef automaticRotationDirection As eSnippitRotationDirection,
-                                       ByRef automaticRotationStopBehaviour As eSnippitRotationStopBehaviour) As DialogResult
+                                       ByRef automaticRotationStopBehaviour As eSnippitRotationStopBehaviour,
+                                       Optional ByVal multiSelection As IEnumerable(Of Illumination.BulbInfo) = Nothing) As DialogResult
 
         ' Several legacy routes can reach snippet properties during the same
         ' double-click message sequence. Enforce the single-window rule at the
@@ -101,14 +124,25 @@ Public Class formSnippitSettings
         ignoreChange = True
         ' set starting values
         bulbID = id
-        previewBulb = Nothing
+        previewBulbs.Clear()
+        originalBrightness.Clear()
+        originalBehindCanvas.Clear()
+        If multiSelection IsNot Nothing Then
+            For Each candidate As Illumination.BulbInfo In multiSelection
+                If candidate IsNot Nothing AndAlso Not previewBulbs.Contains(candidate) Then previewBulbs.Add(candidate)
+            Next
+        End If
         If Backglass.currentTabPage IsNot Nothing AndAlso Backglass.currentTabPage.Mouse IsNot Nothing Then
             Dim selected As Illumination.BulbInfo = Backglass.currentTabPage.Mouse.SelectedBulb
-            If selected IsNot Nothing AndAlso selected.ID = id Then previewBulb = selected
+            If selected IsNot Nothing AndAlso selected.ID = id AndAlso Not previewBulbs.Contains(selected) Then previewBulbs.Insert(0, selected)
         End If
-        originalBrightness = Math.Max(0, Math.Min(200, If(previewBulb IsNot Nothing, previewBulb.SnippitInfo.Brightness, brightness)))
-        originalBehindCanvas = If(previewBulb IsNot Nothing, previewBulb.SnippitInfo.BehindCanvas, behindCanvas)
-        brightness = originalBrightness
+        For Each candidate As Illumination.BulbInfo In previewBulbs
+            originalBrightness(candidate) = Math.Max(0, Math.Min(200, candidate.SnippitInfo.Brightness))
+            originalBehindCanvas(candidate) = candidate.SnippitInfo.BehindCanvas
+        Next
+        Dim primaryPreview As Illumination.BulbInfo = previewBulbs.FirstOrDefault(Function(candidate) candidate.ID = id)
+        brightness = Math.Max(0, Math.Min(200, If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.Brightness, brightness)))
+        behindCanvas = If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.BehindCanvas, behindCanvas)
 
         Dim legacySelfRotation As Boolean = (snippittype = eSnippitType.SelfRotatingImage)
         Dim legacyMechanicalRotation As Boolean = (snippittype = eSnippitType.MechRotatingImage)
@@ -133,7 +167,7 @@ Public Class formSnippitSettings
         brightness = Math.Max(0, Math.Min(200, brightness))
         trkBrightness.Value = brightness
         numericBrightness.Value = brightness
-        chkBehindCanvas.Checked = originalBehindCanvas
+        chkBehindCanvas.Checked = behindCanvas
         If mechid < numericMechID.Minimum OrElse mechid > numericMechID.Maximum Then mechid = numericMechID.Minimum
         numericMechID.Value = mechid
         If rotatingsteps < numericRotatingSteps.Minimum Then rotatingsteps = numericRotatingSteps.Minimum
@@ -166,6 +200,7 @@ Public Class formSnippitSettings
         cmbRotationStopBehaviour.SelectedIndex = displayedStop
         ignoreChange = False
         EnableDisable()
+        QueueSnippetPreview()
         
         ' open dialog
         Dim ret As DialogResult
@@ -196,10 +231,6 @@ Public Class formSnippitSettings
             automaticRotationInterval = CInt(numericAutomaticRotationInterval.Value)
             automaticRotationDirection = CType(cmbAutomaticRotationDirection.SelectedIndex, eSnippitRotationDirection)
             automaticRotationStopBehaviour = CType(cmbRotationStopBehaviour.SelectedIndex, eSnippitRotationStopBehaviour)
-            ApplyBrightnessPreview(CInt(numericBrightness.Value))
-        Else
-            ApplyBrightnessPreview(originalBrightness)
-            ApplyBehindCanvasPreview(originalBehindCanvas)
         End If
 
         Return ret
@@ -302,6 +333,7 @@ Public Class formSnippitSettings
             Me.Opacity = 1.0R
             txtName.Focus()
         End If
+        QueueSnippetPreview()
     End Sub
 
     Private Sub EnableDisable()
@@ -422,13 +454,10 @@ Public Class formSnippitSettings
     End Sub
 
     Private Sub ApplyBrightnessPreview(ByVal value As Integer)
-        If previewBulb Is Nothing Then Return
-        value = Math.Max(0, Math.Min(200, value))
-        If previewBulb.SnippitInfo.Brightness <> value Then
-            previewBulb.SnippitInfo.Brightness = value
-            previewBulb.IsIlluminatedImageDirty = True
-        End If
-        If Backglass.currentTabPage IsNot Nothing Then Backglass.currentTabPage.Refresh()
+        ' Appearance changes remain local to this dialog until Save & Close.
+        ' RefreshSnippetPreviewSource temporarily applies the pending values
+        ' only while composing the embedded preview, then restores the model.
+        QueueSnippetPreview()
     End Sub
 
     Private Sub BehindCanvasChanged(sender As Object, e As EventArgs) Handles chkBehindCanvas.CheckedChanged
@@ -438,12 +467,7 @@ Public Class formSnippitSettings
     End Sub
 
     Private Sub ApplyBehindCanvasPreview(ByVal value As Boolean)
-        If previewBulb Is Nothing Then Return
-        If previewBulb.SnippitInfo.BehindCanvas <> value Then
-            previewBulb.SnippitInfo.BehindCanvas = value
-            previewBulb.IsIlluminatedImageDirty = True
-        End If
-        If Backglass.currentTabPage IsNot Nothing Then Backglass.currentTabPage.Refresh()
+        QueueSnippetPreview()
     End Sub
 
     Private Sub BuildAutomaticRotationSection()
@@ -585,6 +609,407 @@ Public Class formSnippitSettings
         btnCancel.Top = newButtonY
     End Sub
 
+    Private Sub BuildSnippetManagedLayout()
+        Dim accent As Color = Color.FromArgb(255, 153, 0)
+        Dim background As Color = Color.FromArgb(18, 20, 22)
+        Dim panelColor As Color = Color.FromArgb(27, 29, 31)
+
+        Text = "Snippet"
+        ClientSize = New Size(1260, 780)
+        MinimumSize = New Size(1080, 700)
+        MaximumSize = Size.Empty
+        FormBorderStyle = FormBorderStyle.Sizable
+        MaximizeBox = True
+        MinimizeBox = False
+        DoubleBuffered = True
+        Font = New Font("Tahoma", 9.0F)
+        BackColor = background
+        ForeColor = Color.WhiteSmoke
+
+        snippetLayoutRoot = New TableLayoutPanel With {
+            .Dock = DockStyle.Fill,
+            .ColumnCount = 2,
+            .RowCount = 1,
+            .Padding = New Padding(15, 18, 15, 10),
+            .Margin = Padding.Empty,
+            .BackColor = background
+        }
+        snippetLayoutRoot.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 475.0F))
+        snippetLayoutRoot.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+        snippetLayoutRoot.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+
+        snippetLeftPanel = New Panel With {
+            .Dock = DockStyle.Fill,
+            .Margin = Padding.Empty,
+            .AutoScroll = True,
+            .BackColor = background
+        }
+        snippetLeftContent = New Panel With {
+            .Location = Point.Empty,
+            .Size = New Size(460, 560),
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
+            .BackColor = background
+        }
+        snippetRightLayout = New TableLayoutPanel With {
+            .Dock = DockStyle.Fill,
+            .ColumnCount = 1,
+            .RowCount = 2,
+            .Margin = New Padding(5, 0, 0, 0),
+            .Padding = Padding.Empty,
+            .BackColor = background
+        }
+        snippetRightLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+        snippetRightLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+        snippetRightLayout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48.0F))
+        snippetActionPanel = New FlowLayoutPanel With {
+            .Dock = DockStyle.Fill,
+            .FlowDirection = FlowDirection.RightToLeft,
+            .WrapContents = False,
+            .Margin = Padding.Empty,
+            .Padding = New Padding(0, 5, 0, 5),
+            .BackColor = background
+        }
+
+        Dim title As New Label With {
+            .Text = "▣  Snippet",
+            .Left = 9, .Top = 0, .Width = 430, .Height = 42,
+            .Font = New Font("Tahoma", 20.0F, FontStyle.Bold),
+            .ForeColor = accent
+        }
+        Dim description As New Label With {
+            .Text = "Adjust the selected snippet settings and see the complete backglass update live.",
+            .Left = 11, .Top = 43, .Width = 440, .Height = 38,
+            .ForeColor = Color.Gainsboro
+        }
+        grpAppearance.SetBounds(10, 88, 440, grpAppearance.Height)
+        grpAppearance.ForeColor = accent
+        grpAppearance.BackColor = panelColor
+        grpAutomaticRotation.SetBounds(10, grpAppearance.Bottom + 8, 440, grpAutomaticRotation.Height)
+        grpAutomaticRotation.ForeColor = accent
+        grpAutomaticRotation.BackColor = panelColor
+
+        snippetLeftContent.Controls.Add(title)
+        snippetLeftContent.Controls.Add(description)
+        snippetLeftContent.Controls.Add(grpAppearance)
+        snippetLeftContent.Controls.Add(grpAutomaticRotation)
+        snippetLeftContent.Size = New Size(460, grpAutomaticRotation.Bottom + 20)
+        snippetLeftPanel.Controls.Add(snippetLeftContent)
+        snippetLeftPanel.AutoScrollMinSize = snippetLeftContent.Size
+
+        BuildSnippetPreviewUi(accent, panelColor)
+
+        btnOk.Text = "✓  Save & Close"
+        btnOk.Size = New Size(146, 38)
+        btnOk.FlatStyle = FlatStyle.Flat
+        btnOk.BackColor = accent
+        btnOk.ForeColor = Color.Black
+        btnOk.Font = New Font("Tahoma", 10.0F, FontStyle.Bold)
+        btnOk.Margin = Padding.Empty
+        btnCancel.Text = "Cancel"
+        btnCancel.Size = New Size(126, 38)
+        btnCancel.FlatStyle = FlatStyle.Flat
+        btnCancel.Margin = New Padding(10, 0, 0, 0)
+        StyleSnippetButton(btnCancel)
+
+        Controls.Add(snippetLayoutRoot)
+        snippetLayoutRoot.Controls.Add(snippetLeftPanel, 0, 0)
+        snippetLayoutRoot.Controls.Add(snippetRightLayout, 1, 0)
+        snippetRightLayout.Controls.Add(snippetPreviewGroup, 0, 0)
+        snippetRightLayout.Controls.Add(snippetActionPanel, 0, 1)
+        snippetActionPanel.Controls.Add(btnCancel)
+        snippetActionPanel.Controls.Add(btnOk)
+        snippetLayoutRoot.BringToFront()
+
+        AddHandler Me.Resize, AddressOf SnippetSettings_Resize
+        AddHandler snippetPreviewGroup.Resize, AddressOf SnippetPreviewGroup_Resize
+        LayoutSnippetPreview()
+    End Sub
+
+    Private Sub BuildSnippetPreviewUi(ByVal accent As Color, ByVal panelColor As Color)
+        snippetPreviewGroup = New GroupBox With {
+            .Text = "  LIVE SNIPPET PREVIEW",
+            .Size = New Size(700, 690),
+            .Dock = DockStyle.Fill,
+            .Margin = Padding.Empty,
+            .ForeColor = accent,
+            .BackColor = panelColor,
+            .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
+        }
+        snippetPreviewGroup.Controls.Add(New Label With {
+            .Text = "Live Snippet Result",
+            .Left = 14, .Top = 29, .Width = 665, .Height = 24,
+            .TextAlign = ContentAlignment.MiddleCenter,
+            .ForeColor = Color.WhiteSmoke,
+            .Font = New Font("Tahoma", 9.0F),
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+        })
+        snippetPreviewBox = New EditorPreviewPictureBox With {
+            .Left = 14, .Top = 57, .Width = 665, .Height = 500,
+            .BackColor = Color.FromArgb(11, 12, 13),
+            .BorderStyle = BorderStyle.FixedSingle,
+            .SizeMode = PictureBoxSizeMode.Normal,
+            .TabStop = True
+        }
+        snippetPreviewZoomOutButton = New Button With {.Text = "−", .Width = 42, .Height = 29, .FlatStyle = FlatStyle.Flat}
+        snippetPreviewZoomInButton = New Button With {.Text = "+", .Width = 42, .Height = 29, .FlatStyle = FlatStyle.Flat}
+        snippetPreviewFitButton = New Button With {.Text = "Fit", .Width = 58, .Height = 29, .FlatStyle = FlatStyle.Flat}
+        snippetPreviewActualButton = New Button With {.Text = "100%", .Width = 66, .Height = 29, .FlatStyle = FlatStyle.Flat}
+        For Each button As Button In New Button() {snippetPreviewZoomOutButton, snippetPreviewZoomInButton, snippetPreviewFitButton, snippetPreviewActualButton}
+            StyleSnippetButton(button)
+            snippetPreviewGroup.Controls.Add(button)
+        Next
+        snippetPreviewZoomLabel = New Label With {
+            .Text = "Fit", .Width = 62, .Height = 22,
+            .TextAlign = ContentAlignment.MiddleCenter,
+            .ForeColor = accent,
+            .Font = New Font("Tahoma", 8.25F, FontStyle.Bold)
+        }
+        snippetPreviewStatus = New Label With {
+            .Text = "Preparing preview...", .Width = 240, .Height = 36,
+            .TextAlign = ContentAlignment.MiddleCenter,
+            .ForeColor = Color.Silver,
+            .Font = New Font("Tahoma", 8.25F)
+        }
+        snippetPreviewGroup.Controls.Add(snippetPreviewBox)
+        snippetPreviewGroup.Controls.Add(snippetPreviewZoomLabel)
+        snippetPreviewGroup.Controls.Add(snippetPreviewStatus)
+
+        AddHandler snippetPreviewZoomOutButton.Click, AddressOf SnippetPreviewZoomOut_Click
+        AddHandler snippetPreviewZoomInButton.Click, AddressOf SnippetPreviewZoomIn_Click
+        AddHandler snippetPreviewFitButton.Click, AddressOf SnippetPreviewFit_Click
+        AddHandler snippetPreviewActualButton.Click, AddressOf SnippetPreviewActual_Click
+        AddHandler snippetPreviewBox.MouseWheel, AddressOf SnippetPreview_MouseWheel
+        AddHandler snippetPreviewBox.MouseDown, AddressOf SnippetPreview_MouseDown
+        AddHandler snippetPreviewBox.MouseMove, AddressOf SnippetPreview_MouseMove
+        AddHandler snippetPreviewBox.MouseUp, AddressOf SnippetPreview_MouseUp
+        AddHandler snippetPreviewBox.MouseLeave, AddressOf SnippetPreview_MouseLeave
+        AddHandler snippetPreviewBox.MouseEnter, AddressOf SnippetPreview_MouseEnter
+        AddHandler snippetPreviewBox.DoubleClick, AddressOf SnippetPreview_DoubleClick
+
+        snippetPreviewTimer = New Timer With {.Interval = 75}
+        AddHandler snippetPreviewTimer.Tick, AddressOf SnippetPreviewTimer_Tick
+    End Sub
+
+    Private Sub StyleSnippetButton(ByVal button As Button)
+        button.BackColor = Color.FromArgb(38, 40, 43)
+        button.ForeColor = Color.WhiteSmoke
+        button.FlatAppearance.BorderColor = Color.FromArgb(78, 80, 84)
+        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(52, 54, 57)
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(64, 66, 70)
+    End Sub
+
+    Private Sub SnippetSettings_Resize(ByVal sender As Object, ByVal e As EventArgs)
+        LayoutSnippetPreview()
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreviewGroup_Resize(ByVal sender As Object, ByVal e As EventArgs)
+        LayoutSnippetPreview()
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub LayoutSnippetPreview()
+        If snippetPreviewGroup Is Nothing OrElse snippetPreviewBox Is Nothing Then Return
+        Dim controlsTop As Integer = Math.Max(245, snippetPreviewGroup.ClientSize.Height - 48)
+        snippetPreviewBox.SetBounds(14, 57,
+                                    Math.Max(300, snippetPreviewGroup.ClientSize.Width - 28),
+                                    Math.Max(180, controlsTop - 65))
+        snippetPreviewZoomOutButton.SetBounds(14, controlsTop, 42, 29)
+        snippetPreviewZoomInButton.SetBounds(61, controlsTop, 42, 29)
+        snippetPreviewFitButton.SetBounds(108, controlsTop, 58, 29)
+        snippetPreviewActualButton.SetBounds(171, controlsTop, 66, 29)
+        snippetPreviewZoomLabel.SetBounds(246, controlsTop + 4, 62, 22)
+        snippetPreviewStatus.SetBounds(Math.Max(316, snippetPreviewGroup.ClientSize.Width - 250), controlsTop - 3, 240, 36)
+    End Sub
+
+    Private Sub QueueSnippetPreview()
+        If snippetPreviewTimer Is Nothing Then Return
+        snippetPreviewPending = True
+        If Not snippetPreviewTimer.Enabled Then snippetPreviewTimer.Start()
+    End Sub
+
+    Private Sub SnippetPreviewTimer_Tick(ByVal sender As Object, ByVal e As EventArgs)
+        snippetPreviewTimer.Stop()
+        If Not snippetPreviewPending Then Return
+        snippetPreviewPending = False
+        RefreshSnippetPreviewSource()
+        If snippetPreviewPending Then snippetPreviewTimer.Start()
+    End Sub
+
+    Private Sub RefreshSnippetPreviewSource()
+        If snippetPreviewBox Is Nothing Then Return
+        Dim canvas As B2SPictureBox = If(Backglass.currentTabPage IsNot Nothing, Backglass.currentTabPage.CurrentPictureBox, Nothing)
+        If canvas Is Nothing Then
+            snippetPreviewStatus.Text = "No backglass image is available for preview."
+            SetSnippetPreviewImage(Nothing)
+            Return
+        End If
+
+        Dim rendered As Bitmap = Nothing
+        Dim pendingBrightness As Integer = Math.Max(0, Math.Min(200, CInt(numericBrightness.Value)))
+        Dim pendingBehindCanvas As Boolean = chkBehindCanvas.Checked
+        Try
+            ' Compose the pending appearance values in the embedded preview
+            ' without changing the live Designer canvas or committing project
+            ' data. Every model value is restored before this method returns.
+            For Each previewBulb As Illumination.BulbInfo In previewBulbs
+                previewBulb.SnippitInfo.Brightness = pendingBrightness
+                previewBulb.SnippitInfo.BehindCanvas = pendingBehindCanvas
+                previewBulb.IsIlluminatedImageDirty = True
+            Next
+            rendered = canvas.CreateLayeredPreviewImage()
+        Finally
+            For Each previewBulb As Illumination.BulbInfo In previewBulbs
+                If originalBrightness.ContainsKey(previewBulb) Then previewBulb.SnippitInfo.Brightness = originalBrightness(previewBulb)
+                If originalBehindCanvas.ContainsKey(previewBulb) Then previewBulb.SnippitInfo.BehindCanvas = originalBehindCanvas(previewBulb)
+                previewBulb.IsIlluminatedImageDirty = True
+            Next
+        End Try
+        If rendered Is Nothing Then
+            snippetPreviewStatus.Text = "The snippet preview could not be rendered."
+            Return
+        End If
+        If snippetPreviewSource IsNot Nothing Then snippetPreviewSource.Dispose()
+        snippetPreviewSource = rendered
+        snippetPreviewStatus.Text = If(previewBulbs.Count > 1,
+                                       "Live preview — " & previewBulbs.Count.ToString() & " selected snippets",
+                                       "Live preview — selected snippet")
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub RefreshSnippetPreviewImage()
+        If snippetPreviewBox Is Nothing Then Return
+        SetSnippetPreviewImage(RenderSnippetPreviewCanvas(snippetPreviewSource, snippetPreviewBox.ClientSize))
+        If snippetPreviewZoomLabel IsNot Nothing Then
+            snippetPreviewZoomLabel.Text = If(snippetPreviewZoomPercent <= 0, "Fit", snippetPreviewZoomPercent.ToString() & "%")
+        End If
+    End Sub
+
+    Private Function RenderSnippetPreviewCanvas(ByVal source As Image, ByVal canvasSize As Size) As Bitmap
+        If source Is Nothing OrElse canvasSize.Width <= 0 OrElse canvasSize.Height <= 0 Then Return Nothing
+        Dim scale As Double = If(snippetPreviewZoomPercent <= 0,
+                                 Math.Min(canvasSize.Width / CDbl(source.Width), canvasSize.Height / CDbl(source.Height)),
+                                 snippetPreviewZoomPercent / 100.0R)
+        scale = Math.Max(0.05R, Math.Min(8.0R, scale))
+        Dim drawWidth As Integer = Math.Max(1, CInt(Math.Round(source.Width * scale)))
+        Dim drawHeight As Integer = Math.Max(1, CInt(Math.Round(source.Height * scale)))
+        Dim result As New Bitmap(canvasSize.Width, canvasSize.Height, Imaging.PixelFormat.Format32bppArgb)
+        Using graphics As Graphics = Graphics.FromImage(result)
+            graphics.Clear(Color.FromArgb(11, 12, 13))
+            graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+            graphics.CompositingQuality = Drawing2D.CompositingQuality.HighQuality
+            Dim left As Integer = (canvasSize.Width - drawWidth) \ 2 + snippetPreviewPanOffset.X
+            Dim top As Integer = (canvasSize.Height - drawHeight) \ 2 + snippetPreviewPanOffset.Y
+            graphics.DrawImage(source, New Rectangle(left, top, drawWidth, drawHeight))
+        End Using
+        Return result
+    End Function
+
+    Private Sub SetSnippetPreviewImage(ByVal image As Image)
+        If snippetPreviewBox Is Nothing Then
+            If image IsNot Nothing Then image.Dispose()
+            Return
+        End If
+        Dim oldImage As Image = snippetPreviewBox.Image
+        snippetPreviewBox.Image = image
+        If oldImage IsNot Nothing Then oldImage.Dispose()
+    End Sub
+
+    Private Sub SnippetPreviewZoomOut_Click(ByVal sender As Object, ByVal e As EventArgs)
+        If snippetPreviewZoomPercent <= 0 Then snippetPreviewZoomPercent = GetSnippetFitZoomPercent()
+        snippetPreviewZoomPercent = Math.Max(10, snippetPreviewZoomPercent - 25)
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreviewZoomIn_Click(ByVal sender As Object, ByVal e As EventArgs)
+        If snippetPreviewZoomPercent <= 0 Then snippetPreviewZoomPercent = GetSnippetFitZoomPercent()
+        snippetPreviewZoomPercent = Math.Min(800, snippetPreviewZoomPercent + 25)
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreviewFit_Click(ByVal sender As Object, ByVal e As EventArgs)
+        snippetPreviewZoomPercent = 0
+        snippetPreviewPanOffset = Point.Empty
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreviewActual_Click(ByVal sender As Object, ByVal e As EventArgs)
+        snippetPreviewZoomPercent = 100
+        snippetPreviewPanOffset = Point.Empty
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreview_MouseWheel(ByVal sender As Object, ByVal e As MouseEventArgs)
+        If snippetPreviewBox Is Nothing Then Return
+        Dim oldZoom As Integer = snippetPreviewZoomPercent
+        If oldZoom <= 0 Then oldZoom = GetSnippetFitZoomPercent()
+        Dim newZoom As Integer = If(e.Delta > 0, Math.Min(800, oldZoom + 25), If(e.Delta < 0, Math.Max(10, oldZoom - 25), oldZoom))
+        If newZoom = oldZoom Then Return
+        Dim canvasCenter As New Point(snippetPreviewBox.ClientSize.Width \ 2, snippetPreviewBox.ClientSize.Height \ 2)
+        Dim relativeX As Double = e.X - canvasCenter.X - snippetPreviewPanOffset.X
+        Dim relativeY As Double = e.Y - canvasCenter.Y - snippetPreviewPanOffset.Y
+        Dim ratio As Double = newZoom / CDbl(oldZoom)
+        snippetPreviewPanOffset = New Point(
+            CInt(Math.Round(e.X - canvasCenter.X - relativeX * ratio)),
+            CInt(Math.Round(e.Y - canvasCenter.Y - relativeY * ratio)))
+        snippetPreviewZoomPercent = newZoom
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreview_MouseDown(ByVal sender As Object, ByVal e As MouseEventArgs)
+        If e.Button <> MouseButtons.Left OrElse snippetPreviewBox Is Nothing Then Return
+        snippetPreviewIsPanning = True
+        snippetPreviewPanStart = e.Location
+        snippetPreviewPanStartOffset = snippetPreviewPanOffset
+        snippetPreviewBox.Cursor = Cursors.Hand
+        snippetPreviewBox.Capture = True
+    End Sub
+
+    Private Sub SnippetPreview_MouseMove(ByVal sender As Object, ByVal e As MouseEventArgs)
+        If Not snippetPreviewIsPanning Then Return
+        snippetPreviewPanOffset = New Point(snippetPreviewPanStartOffset.X + e.X - snippetPreviewPanStart.X,
+                                            snippetPreviewPanStartOffset.Y + e.Y - snippetPreviewPanStart.Y)
+        RefreshSnippetPreviewImage()
+    End Sub
+
+    Private Sub SnippetPreview_MouseUp(ByVal sender As Object, ByVal e As MouseEventArgs)
+        If e.Button = MouseButtons.Left Then EndSnippetPreviewPan()
+    End Sub
+
+    Private Sub SnippetPreview_MouseLeave(ByVal sender As Object, ByVal e As EventArgs)
+        If snippetPreviewIsPanning AndAlso Control.MouseButtons = MouseButtons.None Then EndSnippetPreviewPan()
+    End Sub
+
+    Private Sub SnippetPreview_MouseEnter(ByVal sender As Object, ByVal e As EventArgs)
+        If snippetPreviewBox IsNot Nothing Then snippetPreviewBox.Focus()
+    End Sub
+
+    Private Sub SnippetPreview_DoubleClick(ByVal sender As Object, ByVal e As EventArgs)
+        SnippetPreviewFit_Click(sender, e)
+    End Sub
+
+    Private Sub EndSnippetPreviewPan()
+        snippetPreviewIsPanning = False
+        If snippetPreviewBox IsNot Nothing Then
+            snippetPreviewBox.Capture = False
+            snippetPreviewBox.Cursor = Cursors.Default
+        End If
+    End Sub
+
+    Private Function GetSnippetFitZoomPercent() As Integer
+        If snippetPreviewSource Is Nothing OrElse snippetPreviewBox Is Nothing Then Return 100
+        Dim scale As Double = Math.Min(snippetPreviewBox.ClientSize.Width / CDbl(snippetPreviewSource.Width),
+                                       snippetPreviewBox.ClientSize.Height / CDbl(snippetPreviewSource.Height))
+        Return Math.Max(10, Math.Min(800, CInt(Math.Round(scale * 100.0R))))
+    End Function
+
+    Private Sub SnippetSettings_FormClosed(ByVal sender As Object, ByVal e As FormClosedEventArgs)
+        If snippetPreviewTimer IsNot Nothing Then snippetPreviewTimer.Stop()
+        If snippetPreviewSource IsNot Nothing Then snippetPreviewSource.Dispose() : snippetPreviewSource = Nothing
+        SetSnippetPreviewImage(Nothing)
+    End Sub
+
     Private Sub AutomaticRotationChanged(sender As Object, e As EventArgs) Handles chkAutomaticRotation.CheckedChanged, radAutomaticRotationContinuous.CheckedChanged, radAutomaticRotationTriggered.CheckedChanged, numericAutomaticRotationTriggerID.ValueChanged, radAutomaticRotationLamp.CheckedChanged, radAutomaticRotationSolenoid.CheckedChanged, radAutomaticRotationB2S.CheckedChanged, radAutomaticRotationSW.CheckedChanged, cmbAutomaticRotationDirection.SelectedIndexChanged, numericAutomaticRotationSteps.ValueChanged, numericAutomaticRotationInterval.ValueChanged, cmbRotationStopBehaviour.SelectedIndexChanged, numericMechID.ValueChanged
         ' numericMechID is created by InitializeComponent before the rebuilt
         ' rotation panel exists, so its initial Minimum/Value events are ignored.
@@ -652,6 +1077,7 @@ Public Class formSnippitSettings
                         Backglass.currentImages.Insert(Images.eImageInfoType.Title4IlluminationSnippits, imageInfo)
 
                         B2SBackglassDesigner.formDesigner.RefreshImageInfoList()
+                        QueueSnippetPreview()
                     End If
                 End With
             End Using
@@ -685,6 +1111,7 @@ Public Class formSnippitSettings
 
                 Backglass.currentImages.SetNewImage(Images.eImageInfoType.IlluminationSnippits, selected_bulb.Name, selected_bulb.Image)
                 B2SBackglassDesigner.formDesigner.RefreshImageInfoList()
+                QueueSnippetPreview()
             End If
         End If
     End Sub

@@ -642,13 +642,15 @@ Public Class B2SAnimation
                 ' Dream7 displays are independent child controls. Full-screen
                 ' animation images invalidate their entire parent, so explicitly
                 ' keep the displays above that repaint and refresh only them.
-                For Each leddisplay As KeyValuePair(Of String, Dream7Display) In B2SData.LEDDisplays
-                    If leddisplay.Value.Parent Is Form AndAlso leddisplay.Value.Visible Then
-                        leddisplay.Value.BringToFront()
-                        leddisplay.Value.Invalidate()
-                        leddisplay.Value.Update()
-                    End If
-                Next
+                If Not _GroupName.StartsWith("PA_InfinityLights", StringComparison.OrdinalIgnoreCase) Then
+                    For Each leddisplay As KeyValuePair(Of String, Dream7Display) In B2SData.LEDDisplays
+                        If leddisplay.Value.Parent Is Form AndAlso leddisplay.Value.Visible Then
+                            leddisplay.Value.BringToFront()
+                            leddisplay.Value.Invalidate()
+                            leddisplay.Value.Update()
+                        End If
+                    Next
+                End If
 
             End If
 

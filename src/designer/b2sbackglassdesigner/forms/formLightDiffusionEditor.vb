@@ -321,7 +321,8 @@ Public Class formLightDiffusionEditor
                 .Left = 20, .Top = If(isDedicatedFlasher, 694, 773),
                 .Width = 555, .Height = 55,
                 .ForeColor = accent, .BackColor = panelColor,
-                .Font = New Font("Tahoma", 9.0F, FontStyle.Bold)
+                .Font = New Font("Tahoma", 9.0F, FontStyle.Bold),
+                .Visible = Not isDedicatedFlasher
             }
             Controls.Add(dynamicLightingGroup)
 
@@ -777,17 +778,17 @@ Public Class formLightDiffusionEditor
             ' changes cannot alter that image while this modal editor is open.
             ' Keep it for the life of the dialog instead of rerendering every
             ' other flasher effect on every slider tick. The on image forces
-            ' only the active flasher and keeps every other flasher excluded.
+            ' only the selected flashers and keeps every other flasher excluded.
             Dim original As Bitmap = Nothing
             Dim flashed As Bitmap = Nothing
             If canvas IsNot Nothing Then
-                Dim otherFlashers As Generic.List(Of Illumination.BulbInfo) = PreviewFlashersExceptActive()
+                Dim otherFlashers As Generic.List(Of Illumination.BulbInfo) = PreviewFlashersExceptSelected()
                 Dim allFlashers As New Generic.List(Of Illumination.BulbInfo)(otherFlashers)
-                allFlashers.Add(bulb)
+                allFlashers.AddRange(selectedBulbs)
                 If previewOriginalSource Is Nothing Then
                     original = canvas.CreateLayeredPreviewImageForBulbs(allFlashers, Nothing)
                 End If
-                flashed = canvas.CreateLayeredPreviewImageForBulbs(otherFlashers, New Illumination.BulbInfo() {bulb})
+                flashed = canvas.CreateLayeredPreviewImageForBulbs(otherFlashers, selectedBulbs)
             End If
             If original Is Nothing AndAlso previewOriginalSource Is Nothing Then original = New Bitmap(bg)
             If flashed Is Nothing Then
@@ -801,8 +802,8 @@ Public Class formLightDiffusionEditor
                 SetFlashedPreviewSource(flashed)
             End If
             livePreviewStatus.Text = If(String.IsNullOrEmpty(bulb.SelectionMaskData),
-                                        "Live preview — the placed flasher box defines the mask.",
-                                        "Live preview — Quick Selection masks the flasher in the full backglass view.")
+                                        "Live preview — the selected flasher boxes define their masks.",
+                                        "Live preview — Quick Selection masks the selected flashers in the full backglass view.")
         Catch ex As Exception
             livePreviewStatus.Text = "Preview error: " & ex.Message
         Finally
@@ -810,12 +811,14 @@ Public Class formLightDiffusionEditor
         End Try
     End Sub
 
-    Private Function PreviewFlashersExceptActive() As Generic.List(Of Illumination.BulbInfo)
+    Private Function PreviewFlashersExceptSelected() As Generic.List(Of Illumination.BulbInfo)
         Dim result As New Generic.List(Of Illumination.BulbInfo)()
         If Backglass.currentBulbs Is Nothing Then Return result
 
+        Dim selectedSet As New Generic.HashSet(Of Illumination.BulbInfo)(selectedBulbs)
+
         For Each candidate As Illumination.BulbInfo In Backglass.currentBulbs
-            If candidate Is Nothing OrElse Object.ReferenceEquals(candidate, bulb) Then Continue For
+            If candidate Is Nothing OrElse selectedSet.Contains(candidate) Then Continue For
             If candidate.IlluMode = Illumination.eIlluMode.Flasher OrElse
                candidate.LightPurpose = Illumination.eLightPurpose.Flasher Then
                 result.Add(candidate)

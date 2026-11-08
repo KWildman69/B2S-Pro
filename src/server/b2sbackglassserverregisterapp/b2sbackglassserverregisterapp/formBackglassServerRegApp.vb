@@ -20,8 +20,11 @@ Public Class formBackglassServerRegApp
         End If
 
         Dim CommandSilent As Boolean = False
+        Dim CommandRegisterOnly As Boolean = False
         If My.Application.CommandLineArgs.Count > 0 Then
-            CommandSilent = InStr(My.Application.CommandLineArgs(0).ToString().ToLower(), "silent", CompareMethod.Text) > 0
+            Dim command As String = My.Application.CommandLineArgs(0).ToString().ToLower()
+            CommandSilent = InStr(command, "silent", CompareMethod.Text) > 0
+            CommandRegisterOnly = InStr(command, "register-only", CompareMethod.Text) > 0
         End If
         Me.Visible = False
 
@@ -92,9 +95,11 @@ Public Class formBackglassServerRegApp
 
             ' check whether everything is fine
             If String.IsNullOrEmpty(basepath) Then
-                MessageBox.Show("Error, no basepath found.")
+                If Not CommandSilent Then MessageBox.Show("Error, no basepath found.")
+                Environment.ExitCode = 1
             ElseIf String.IsNullOrEmpty(regasmpath) Then
-                MessageBox.Show("Error, no regasmpath found.")
+                If Not CommandSilent Then MessageBox.Show("Error, no regasmpath found.")
+                Environment.ExitCode = 1
             Else
                 ' cleanup earlier B2S.Server entries
                 If clsID IsNot String.Empty Then
@@ -109,12 +114,24 @@ Public Class formBackglassServerRegApp
                         regRoot.OpenSubKey("WOW6432Node\CLSID", True).DeleteSubKeyTree(clsID, False)
                     End Using
                 End If
-                CleanupLegacyB2SEntries(CommandSilent)
+                If Not CommandRegisterOnly Then CleanupLegacyB2SEntries(CommandSilent)
                 ' do the register operation
-                ShellAndWait(regasmpath, "B2SBackglassServer.DLL")
-                ShellAndWait(regasmpath.Replace("\Framework\", "\Framework64\"), "B2SBackglassServer.DLL")
+                Dim registered As Boolean = ShellAndWait(regasmpath, "B2SBackglassServer.DLL", CommandSilent, CommandRegisterOnly)
+                If Environment.Is64BitOperatingSystem Then
+                    registered = ShellAndWait(regasmpath.Replace("\Framework\", "\Framework64\"), "B2SBackglassServer.DLL", CommandSilent, CommandRegisterOnly) AndAlso registered
+                End If
+                If Not registered Then
+                    Environment.ExitCode = 1
+                    Me.Close()
+                    Return
+                End If
             End If
             If Not CommandSilent Then CheckB2SServer(True) 'Make sure no window is opened on silent option
+        End If
+
+        If CommandRegisterOnly Then
+            Me.Close()
+            Return
         End If
 
         If Not CommandSilent Then
@@ -248,7 +265,7 @@ Public Class formBackglassServerRegApp
 
     End Function
 
-    Private Sub ShellAndWait(ByVal regasmpath As String, ByVal dllpath As String)
+    Private Function ShellAndWait(ByVal regasmpath As String, ByVal dllpath As String, ByVal commandSilent As Boolean, ByVal registerOnly As Boolean) As Boolean
 
         If IO.File.Exists(IO.Path.Combine(regasmpath, "regasm.exe")) Then
 
@@ -256,24 +273,31 @@ Public Class formBackglassServerRegApp
             Dim process As New System.Diagnostics.Process()
             process.StartInfo.FileName = IO.Path.Combine(regasmpath, "regasm.exe")
             process.StartInfo.Arguments = dllpath + " /codebase"
-            process.StartInfo.WindowStyle = ProcessWindowStyle.Normal
+            process.StartInfo.WindowStyle = If(commandSilent, ProcessWindowStyle.Hidden, ProcessWindowStyle.Normal)
+            process.StartInfo.UseShellExecute = False
+            process.StartInfo.CreateNoWindow = commandSilent
             Dim installPath As String = IO.Path.GetDirectoryName(Application.ExecutablePath())
-            UnblockDeploymentFiles(installPath)
-            UnblockFile(IO.Path.Combine(installPath, dllpath))
+            If Not registerOnly Then
+                UnblockDeploymentFiles(installPath)
+                UnblockFile(IO.Path.Combine(installPath, dllpath))
+            End If
             process.Start()
 
             ' wait until the process passes back an exit code
             process.WaitForExit()
 
+            Dim succeeded As Boolean = process.ExitCode = 0
+
             ' free resources associated with this process
             process.Close()
             process.Dispose()
-            'process = Nothing
+            Return succeeded
         Else
-            MessageBox.Show("Oops, the regasm.exe could not be found. Have you started this app as 'Administrator'?", My.Application.Info.AssemblyName, MessageBoxButtons.OK, MessageBoxIcon.Error)
+            If Not commandSilent Then MessageBox.Show("Oops, the regasm.exe could not be found. Have you started this app as 'Administrator'?", My.Application.Info.AssemblyName, MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return False
         End If
 
-    End Sub
+    End Function
 
     <DllImport("kernel32.dll", CharSet:=CharSet.Unicode, SetLastError:=True)>
     Private Shared Function DeleteFile(lpFileName As String) As <MarshalAs(UnmanagedType.Bool)> Boolean

@@ -10,6 +10,16 @@ Imports System.Threading
 Public Partial Class B2SData
 
     Public Shared Property PhysicsSwitchPulseTestHandler As Action(Of Integer)
+    Public Shared Property PhysicsSoundTestHandler As Action(Of String)
+    Public Shared Property PhysicsSoundVolumeTestHandler As Action(Of String, Single)
+
+    Public Shared Sub PlayPhysicsSound(ByVal soundName As String, Optional ByVal soundVolume As Single = 1.0F)
+        soundVolume = Math.Max(0.0F, Math.Min(2.0F, soundVolume))
+        If PhysicsSoundVolumeTestHandler IsNot Nothing Then PhysicsSoundVolumeTestHandler.Invoke(soundName, soundVolume) : Return
+        If PhysicsSoundTestHandler IsNot Nothing Then PhysicsSoundTestHandler.Invoke(soundName) : Return
+        If String.IsNullOrWhiteSpace(soundName) OrElse Not Sounds.ContainsKey(soundName) Then Return
+        My.Computer.Audio.Play(PhysicsSoundVolume.Apply(Sounds(soundName), soundVolume), AudioPlayMode.Background)
+    End Sub
 
     Public Shared Property SwitchPulsePipeName As String = String.Empty
     Public Shared Property PhysicsLauncherPipeName As String = String.Empty
@@ -363,7 +373,9 @@ Public Partial Class B2SData
         Try
             Dim pivots As New Generic.HashSet(Of B2SPictureBox)()
             For Each state As PhysicsBallState In PhysicsBalls
-                If state.PhysicsPivot IsNot Nothing Then pivots.Add(state.PhysicsPivot)
+                For Each pivot As B2SPictureBox In state.PhysicsPivots
+                    pivots.Add(pivot)
+                Next
             Next
             physicsPendingSeconds += elapsed
             Dim steps As Integer = CInt(Math.Floor((physicsPendingSeconds + 0.000000001R) / 0.001R))
@@ -396,11 +408,16 @@ Public Partial Class B2SData
     End Property
 
     Friend Shared Function IsPhysicsPivot(ByVal pivot As B2SPictureBox) As Boolean
-        Return PhysicsBalls.Any(Function(state) state.PhysicsPivot Is pivot)
+        Return PhysicsBalls.Any(Function(state) state.PhysicsPivots.Contains(pivot))
     End Function
     Private Shared ReadOnly PhysicsLauncherLampIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherSolenoidIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherB2SIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
+
+    Public Shared Sub RegisterPivotPicture(ByVal pictureBox As B2SPictureBox)
+        If pictureBox Is Nothing OrElse String.IsNullOrWhiteSpace(pictureBox.GroupName) Then Return
+        PivotPicturesByName(pictureBox.GroupName.Trim()) = pictureBox
+    End Sub
 
     Public Shared Sub RegisterPivotTrigger(ByVal pictureBox As B2SPictureBox, ByVal triggerType As Integer, ByVal triggerID As Integer,
                                            ByVal downAngle As Single, ByVal upAngle As Single, ByVal duration As Integer,
@@ -411,7 +428,7 @@ Public Partial Class B2SData
         pictureBox.PivotMoveDuration = Math.Max(10, Math.Min(5000, duration))
         pictureBox.PivotAutomaticOscillation = automaticOscillation OrElse triggerType = 4
         pictureBox.RotationAngle = If(pictureBox.PivotAutomaticOscillation, 0.0F, downAngle)
-        If Not String.IsNullOrWhiteSpace(pictureBox.GroupName) Then PivotPicturesByName(pictureBox.GroupName.Trim()) = pictureBox
+        RegisterPivotPicture(pictureBox)
         If triggerType = 4 Then
             StartupPivotPictures.Add(pictureBox)
             Return
@@ -470,7 +487,8 @@ Public Partial Class B2SData
                                           ByVal switchZones As Generic.List(Of PhysicsSwitchZone),
                                           ByVal launcher As PhysicsLauncher,
                                           Optional ByVal boundarySegmentBounces As Generic.List(Of Generic.List(Of Single)) = Nothing,
-                                          Optional ByVal obstacleBounces As Generic.List(Of Single) = Nothing)
+                                          Optional ByVal obstacleBounces As Generic.List(Of Single) = Nothing,
+                                          Optional ByVal pivotTargetNames As Generic.List(Of String) = Nothing)
         If pictureBox Is Nothing OrElse bounds.IsEmpty Then Return
         Dim normalizedFlipperName As String = If(pictureBox.MotionPathGravityDrop, String.Empty, If(flipperName, String.Empty).Trim())
         ' Gravity-trough balls remain live physics objects wherever they settle.
@@ -481,7 +499,7 @@ Public Partial Class B2SData
                                           Math.Max(0.0F, Math.Min(10000.0F, gravity)),
                                           Math.Max(0.0F, Math.Min(5.0F, flipperStrength)),
                                           Math.Max(0.0F, Math.Min(1.0F, boundaryBounce)), boundaryPaths, obstacles, switchZones, runtimeLauncher,
-                                          boundarySegmentBounces, obstacleBounces)
+                                          boundarySegmentBounces, obstacleBounces, pivotTargetNames)
         PhysicsBalls.Add(state)
         PhysicsBallStatesByPicture(pictureBox) = state
         If runtimeLauncher IsNot Nothing AndAlso runtimeLauncher.TriggerID > 0 Then

@@ -10,6 +10,16 @@ Public Class B2SPictureBox
 
     Inherits B2SBaseBox
 
+    Public NotInheritable Class SparseAnimationTile
+        Public ReadOnly Image As Bitmap
+        Public ReadOnly Offset As Point
+
+        Public Sub New(ByVal image As Bitmap, ByVal offset As Point)
+            Me.Image = image
+            Me.Offset = offset
+        End Sub
+    End Class
+
     Public Enum ePictureBoxType
         StandardImage = 0
         SelfRotatingImage = 1
@@ -82,6 +92,49 @@ Public Class B2SPictureBox
     Public Property IsImageSnippit() As Boolean = False
     Public Property ArtworkPixelLighting() As Boolean = False
     Public Property SeparateLightLayer() As Boolean = False
+    Private sparseAnimationTilesValue As Generic.List(Of SparseAnimationTile) = Nothing
+    Private sparseAnimationSourceSizeValue As Size = Size.Empty
+
+    Public ReadOnly Property HasSparseAnimationFrame As Boolean
+        Get
+            Return sparseAnimationTilesValue IsNot Nothing AndAlso sparseAnimationTilesValue.Count > 0 AndAlso
+                   sparseAnimationSourceSizeValue.Width > 0 AndAlso sparseAnimationSourceSizeValue.Height > 0
+        End Get
+    End Property
+
+    Public ReadOnly Property SparseAnimationTiles As Generic.List(Of SparseAnimationTile)
+        Get
+            Return sparseAnimationTilesValue
+        End Get
+    End Property
+
+    Public Sub SetSparseAnimationFrame(ByVal tiles As Generic.List(Of SparseAnimationTile), ByVal sourceSize As Size)
+        DisposeSparseAnimationFrame()
+        sparseAnimationTilesValue = tiles
+        sparseAnimationSourceSizeValue = sourceSize
+    End Sub
+
+    Public Function SparseAnimationTileBounds(ByVal tile As SparseAnimationTile) As RectangleF
+        If tile Is Nothing OrElse tile.Image Is Nothing OrElse sparseAnimationSourceSizeValue.Width <= 0 OrElse
+           sparseAnimationSourceSizeValue.Height <= 0 Then Return RectangleF.Empty
+        Dim scaleX As Single = Me.RectangleF.Width / sparseAnimationSourceSizeValue.Width
+        Dim scaleY As Single = Me.RectangleF.Height / sparseAnimationSourceSizeValue.Height
+        Return New RectangleF(Me.RectangleF.Left + tile.Offset.X * scaleX,
+                              Me.RectangleF.Top + tile.Offset.Y * scaleY,
+                              tile.Image.Width * scaleX,
+                              tile.Image.Height * scaleY)
+    End Function
+
+    Private Sub DisposeSparseAnimationFrame()
+        If sparseAnimationTilesValue IsNot Nothing Then
+            For Each tile As SparseAnimationTile In sparseAnimationTilesValue
+                If tile IsNot Nothing AndAlso tile.Image IsNot Nothing Then tile.Image.Dispose()
+            Next
+            sparseAnimationTilesValue.Clear()
+            sparseAnimationTilesValue = Nothing
+        End If
+        sparseAnimationSourceSizeValue = Size.Empty
+    End Sub
     ' Retained only so older DirectB2S files can still be read. New exports and
     ' rendering do not use the removed behind-light path.
     Public Property LightBehindCanvas() As Boolean = False
@@ -138,6 +191,18 @@ Public Class B2SPictureBox
     Public Property PivotMoveDuration() As Integer = 80
     Public Property PivotRandomStrength As Single = 0.0F
     Public Property PivotAutomaticOscillation() As Boolean = False
+    Public Property PivotPhysicsEnabled() As Boolean = False
+    Public Property PivotPhysicsWeight() As Single = 1.0F
+    Public Property PivotPhysicsFriction() As Single = 1.25F
+    Public Property PivotPhysicsGrip() As Single = 0.5F
+    Public Property PivotPhysicsResponseMode() As Integer = 0
+    Public Property PivotPhysicsKnockdownAngle() As Single = 90.0F
+    Public Property PivotPhysicsKnockdownDuration() As Integer = 180
+    Public Property PivotPhysicsResetDelay() As Integer = 1000
+    Public Property PhysicsCollisionMaskAlpha() As Byte()
+    Public Property PhysicsCollisionMaskSize() As Size = Size.Empty
+    Public Property PhysicsCollisionContour() As PointF()
+    Public Property PhysicsAngularVelocity() As Single = 0.0F
     Private pivotAutomaticActive As Boolean = False
 
     Public Sub SetPivotTriggerState(ByVal enabled As Boolean)
@@ -160,6 +225,53 @@ Public Class B2SPictureBox
     Public Property RotationTipX() As Single = 0.9F
     Public Property RotationTipY() As Single = 0.5F
     Public Property BehindCanvas() As Boolean = False
+
+    Public Sub ConfigurePhysicsCollisionOutline(ByVal source As Image)
+        PhysicsCollisionMaskAlpha = Nothing
+        PhysicsCollisionMaskSize = Size.Empty
+        PhysicsCollisionContour = Nothing
+        If source Is Nothing OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return
+
+        Dim maskWidth As Integer = Math.Max(1, Math.Min(512, Me.Width))
+        Dim maskHeight As Integer = Math.Max(1, Math.Min(512, Me.Height))
+        Dim alpha(maskWidth * maskHeight - 1) As Byte
+        Dim hasSolid As Boolean = False
+
+        Using bitmap As New Bitmap(maskWidth, maskHeight, Imaging.PixelFormat.Format32bppArgb)
+            Using graphics As Graphics = Graphics.FromImage(bitmap)
+                graphics.CompositingMode = CompositingMode.SourceCopy
+                graphics.CompositingQuality = CompositingQuality.HighQuality
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality
+                graphics.Clear(Color.Transparent)
+                graphics.DrawImage(source, New Rectangle(0, 0, maskWidth, maskHeight))
+            End Using
+
+            Dim data As Imaging.BitmapData = bitmap.LockBits(New Rectangle(0, 0, maskWidth, maskHeight),
+                                                              Imaging.ImageLockMode.ReadOnly,
+                                                              Imaging.PixelFormat.Format32bppArgb)
+            Try
+                Dim row(maskWidth * 4 - 1) As Byte
+                For y As Integer = 0 To maskHeight - 1
+                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                    For x As Integer = 0 To maskWidth - 1
+                        Dim value As Byte = If(row(x * 4 + 3) > 0, CByte(255), CByte(0))
+                        alpha(y * maskWidth + x) = value
+                        If value <> 0 Then hasSolid = True
+                    Next
+                Next
+            Finally
+                bitmap.UnlockBits(data)
+            End Try
+        End Using
+
+        If hasSolid Then
+            PhysicsCollisionMaskAlpha = alpha
+            PhysicsCollisionMaskSize = New Size(maskWidth, maskHeight)
+            PhysicsCollisionContour = B2SData.BuildPhysicsContour(
+                alpha, maskWidth, maskHeight, RotationPivotX, RotationPivotY)
+        End If
+    End Sub
     ' Zero preserves the legacy behavior where visibility follows the trigger state.
     Public Property FlasherPulseDuration() As Integer = 0
     Public Property MotionPathDuration() As Integer = 3000
@@ -307,6 +419,10 @@ Public Class B2SPictureBox
     Private physicsPivotElapsed As Double
     Private physicsPivotMoving As Boolean
     Private physicsPivotNeedsRedraw As Boolean
+    Private physicsResponseState As Integer
+    Private physicsResponseElapsed As Double
+    Private physicsResponseStartAngle As Single
+    Private physicsResponseRestAngle As Single
     Friend Property PhysicsPreviousAngle As Single
     Private motionPathClock As New Stopwatch()
     Private ReadOnly _motionPathPoints As New List(Of PointF)()
@@ -617,6 +733,7 @@ Public Class B2SPictureBox
         If physicsDriven Then B2SData.SynchronizePhysics()
         pivotRotationTimer.Stop()
         pivotRotationClock.Reset()
+        PhysicsAngularVelocity = 0.0F
         pivotRotationStartAngle = RotationAngle
         pivotRotationTargetAngle = targetAngle
         pivotRotationDuration = Math.Max(10, Math.Min(If(PivotAutomaticOscillation, 5000, 1000), duration))
@@ -636,20 +753,94 @@ Public Class B2SPictureBox
 
     Friend Sub AdvancePhysicsPivot(ByVal elapsed As Double)
         PhysicsPreviousAngle = RotationAngle
-        If Not physicsPivotMoving Then Return
-        physicsPivotElapsed += elapsed * 1000.0R
-        Dim progress As Single = CSng(Math.Min(1.0R, physicsPivotElapsed / pivotRotationDuration))
-        Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
-        RotationAngle = pivotRotationStartAngle + (pivotRotationTargetAngle - pivotRotationStartAngle) * eased
-        If progress >= 1.0F Then
-            RotationAngle = pivotRotationTargetAngle
-            physicsPivotMoving = False
-            If PivotAutomaticOscillation AndAlso pivotAutomaticActive Then
-                SetPivotRotationTarget(If(Math.Abs(pivotRotationTargetAngle - PivotUpAngle) < 0.01F,
-                                          PivotDownAngle, PivotUpAngle), PivotMoveDuration)
-            End If
+        If PivotPhysicsEnabled AndAlso PivotPhysicsResponseMode > 0 Then
+            AdvancePivotPhysicsResponse(elapsed)
+            PhysicsAngularVelocity = If(elapsed > 0.0R, CSng((RotationAngle - PhysicsPreviousAngle) / elapsed), 0.0F)
+            Return
         End If
+        If physicsPivotMoving Then
+            physicsPivotElapsed += elapsed * 1000.0R
+            Dim progress As Single = CSng(Math.Min(1.0R, physicsPivotElapsed / pivotRotationDuration))
+            Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
+            RotationAngle = pivotRotationStartAngle + (pivotRotationTargetAngle - pivotRotationStartAngle) * eased
+            If progress >= 1.0F Then
+                RotationAngle = pivotRotationTargetAngle
+                physicsPivotMoving = False
+                If PivotAutomaticOscillation AndAlso pivotAutomaticActive Then
+                    SetPivotRotationTarget(If(Math.Abs(pivotRotationTargetAngle - PivotUpAngle) < 0.01F,
+                                              PivotDownAngle, PivotUpAngle), PivotMoveDuration)
+                End If
+            End If
+            physicsPivotNeedsRedraw = True
+            Return
+        End If
+        If Not PivotPhysicsEnabled OrElse elapsed <= 0.0R OrElse Math.Abs(PhysicsAngularVelocity) < 0.0001F Then Return
+        RotationAngle = CSng((RotationAngle + PhysicsAngularVelocity * elapsed) Mod 360.0R)
+        Dim damping As Double = Math.Exp(-Math.Max(0.0F, PivotPhysicsFriction) * elapsed)
+        PhysicsAngularVelocity = CSng(PhysicsAngularVelocity * damping)
+        If Math.Abs(PhysicsAngularVelocity) < 0.01F Then PhysicsAngularVelocity = 0.0F
         physicsPivotNeedsRedraw = True
+    End Sub
+
+    Public Sub ApplyPivotPhysicsAngularImpulse(ByVal deltaDegreesPerSecond As Single)
+        If Not PivotPhysicsEnabled OrElse Single.IsNaN(deltaDegreesPerSecond) OrElse Single.IsInfinity(deltaDegreesPerSecond) Then Return
+        pivotRotationTimer.Stop()
+        pivotRotationClock.Reset()
+        physicsPivotMoving = False
+        If PivotPhysicsResponseMode > 0 Then
+            If physicsResponseState <> 0 Then Return
+            PhysicsAngularVelocity = 0.0F
+            physicsResponseRestAngle = RotationAngle
+            physicsResponseStartAngle = RotationAngle
+            physicsResponseElapsed = 0.0R
+            physicsResponseState = 1
+            PivotRotation = True
+            NativeRotation = True
+            Me.Visible = True
+            physicsPivotNeedsRedraw = True
+            Return
+        End If
+        PhysicsAngularVelocity = Math.Max(-2160.0F, Math.Min(2160.0F, PhysicsAngularVelocity + deltaDegreesPerSecond))
+        PivotRotation = True
+        NativeRotation = True
+        Me.Visible = True
+        physicsPivotNeedsRedraw = True
+    End Sub
+
+    Private Sub AdvancePivotPhysicsResponse(ByVal elapsed As Double)
+        If elapsed <= 0.0R OrElse physicsResponseState = 0 OrElse physicsResponseState = 2 Then Return
+        physicsResponseElapsed += elapsed * 1000.0R
+        If physicsResponseState = 1 Then
+            Dim duration As Double = Math.Max(10, Math.Min(5000, PivotPhysicsKnockdownDuration))
+            Dim progress As Single = CSng(Math.Min(1.0R, physicsResponseElapsed / duration))
+            Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
+            RotationAngle = physicsResponseStartAngle + (PivotPhysicsKnockdownAngle - physicsResponseStartAngle) * eased
+            If progress >= 1.0F Then
+                RotationAngle = PivotPhysicsKnockdownAngle
+                physicsResponseElapsed = 0.0R
+                physicsResponseState = If(PivotPhysicsResponseMode = 2, 3, 2)
+            End If
+            physicsPivotNeedsRedraw = True
+            Return
+        End If
+        If physicsResponseState = 3 Then
+            If physicsResponseElapsed < Math.Max(0, Math.Min(30000, PivotPhysicsResetDelay)) Then Return
+            physicsResponseStartAngle = RotationAngle
+            physicsResponseElapsed = 0.0R
+            physicsResponseState = 4
+        End If
+        If physicsResponseState = 4 Then
+            Dim duration As Double = Math.Max(10, Math.Min(5000, PivotPhysicsKnockdownDuration))
+            Dim progress As Single = CSng(Math.Min(1.0R, physicsResponseElapsed / duration))
+            Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
+            RotationAngle = physicsResponseStartAngle + (physicsResponseRestAngle - physicsResponseStartAngle) * eased
+            If progress >= 1.0F Then
+                RotationAngle = physicsResponseRestAngle
+                physicsResponseElapsed = 0.0R
+                physicsResponseState = 0
+            End If
+            physicsPivotNeedsRedraw = True
+        End If
     End Sub
 
     Friend Sub PresentPhysicsPivot()
@@ -1095,14 +1286,14 @@ Public Class B2SPictureBox
 
     Private Sub SetMotionPathCenter(ByVal center As PointF, Optional ByVal advanceRoll As Boolean = False)
         Dim previousCenter As PointF = MotionPathCenter
-        Dim oldBounds As Rectangle = MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle)
+        Dim oldBounds As Rectangle = MotionPathPaintBounds(Me.VisualArtworkBounds, VisualRotationAngle)
         If advanceRoll Then AdvanceMotionPathRoll(previousCenter, center, Me.RectangleF.Size, MotionPathRollAngle)
         Me.RectangleF = New RectangleF(center.X - motionPathStartRectangle.Width / 2.0F,
                                        center.Y - motionPathStartRectangle.Height / 2.0F,
                                        motionPathStartRectangle.Width,
                                        motionPathStartRectangle.Height)
         If Me.Parent IsNot Nothing Then
-            Dim dirty As Rectangle = Rectangle.Union(oldBounds, MotionPathPaintBounds(Me.RectangleF, VisualRotationAngle))
+            Dim dirty As Rectangle = Rectangle.Union(oldBounds, MotionPathPaintBounds(Me.VisualArtworkBounds, VisualRotationAngle))
             dirty.Inflate(2, 2)
             Me.Parent.Invalidate(dirty)
         End If
@@ -1199,6 +1390,7 @@ Public Class B2SPictureBox
             DynamicFrontLightField.Dispose()
             DynamicFrontLightField = Nothing
         End If
+        If disposing Then DisposeSparseAnimationFrame()
         MyBase.Dispose(disposing)
     End Sub
 
@@ -1229,9 +1421,20 @@ Public Class B2SPictureBox
         SetThruAnimation = setThruAnimationValue
         _Visible = value
         If Me.Parent IsNot Nothing Then
-            Dim dirty As Rectangle = Rectangle.Round(Me.RectangleF)
-            If HasPersistentMotionPathSource Then dirty = Rectangle.Union(dirty, Rectangle.Round(MotionPathSourceRectangle))
-            Me.Parent.Invalidate(dirty)
+            If HasSparseAnimationFrame Then
+                Using dirty As New Region()
+                    dirty.MakeEmpty()
+                    For Each tile As SparseAnimationTile In sparseAnimationTilesValue
+                        Dim tileBounds As RectangleF = SparseAnimationTileBounds(tile)
+                        If Not tileBounds.IsEmpty Then dirty.Union(Rectangle.Ceiling(tileBounds))
+                    Next
+                    Me.Parent.Invalidate(dirty)
+                End Using
+            Else
+                Dim dirty As Rectangle = Rectangle.Round(Me.RectangleF)
+                If HasPersistentMotionPathSource Then dirty = Rectangle.Union(dirty, Rectangle.Round(MotionPathSourceRectangle))
+                Me.Parent.Invalidate(dirty)
+            End If
         End If
     End Sub
 

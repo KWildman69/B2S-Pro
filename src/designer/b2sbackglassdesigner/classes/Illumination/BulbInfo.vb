@@ -205,6 +205,17 @@
         Public PivotDuration As Integer = 80
         Public PivotRandomStrength As Single = 0.0F
         Public PivotAutomaticOscillation As Boolean = False
+        ' Optional collision-driven motion for a pivot snippet. Disabled by
+        ' default so every existing pivot and legacy backglass is unchanged.
+        Public PivotPhysicsEnabled As Boolean = False
+        Public PivotPhysicsWeight As Single = 1.0F
+        Public PivotPhysicsFriction As Single = 1.25F
+        Public PivotPhysicsGrip As Single = 0.5F
+        ' 0=free spin, 1=knock down and stay, 2=knock down then reset.
+        Public PivotPhysicsResponseMode As Integer = 0
+        Public PivotPhysicsKnockdownAngle As Single = 90.0F
+        Public PivotPhysicsKnockdownDuration As Integer = 180
+        Public PivotPhysicsResetDelay As Integer = 1000
         ' 0=named commands, 1=solenoid, 2=lamp, 3=B2S ID.
         Public PivotTriggerType As Integer = 1
         Public PivotTriggerID As Integer = 0
@@ -215,6 +226,9 @@
         ' every legacy backglass and disables the physics runtime path.
         Public PhysicsBall As Boolean = False
         Public PhysicsFlipperName As String = String.Empty
+        ' PhysicsFlipperName remains the single legacy/launcher pivot. New
+        ' files can additionally name every pivot that receives ball impacts.
+        Public PhysicsPivotTargetNames As New List(Of String)()
         Public PhysicsBounds As String = String.Empty
         Public PhysicsGravity As Single = 800.0F
         Public PhysicsFlipperStrength As Single = 1.0F
@@ -231,6 +245,12 @@
         Public PhysicsSwitchZones As New List(Of RectangleF)()
         Public PhysicsSwitchIDs As New List(Of Integer)()
         Public PhysicsSwitchAngles As New List(Of Single)()
+        ' Optional embedded WAV per sensor zone. Empty entries preserve the
+        ' existing ROM-switch-only behavior. Data is Base64 so project saves
+        ' remain self-contained and do not depend on the original WAV path.
+        Public PhysicsSwitchSoundNames As New List(Of String)()
+        Public PhysicsSwitchSoundData As New List(Of String)()
+        Public PhysicsSwitchSoundVolumes As New List(Of Integer)()
         Public PhysicsLauncherEnabled As Boolean = False
         Public PhysicsLauncherFollowPivot As Boolean = False
         Public PhysicsLauncherTriggerType As Integer = 1

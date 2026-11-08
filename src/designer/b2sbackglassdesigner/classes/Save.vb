@@ -448,12 +448,26 @@ Public Class Save
                         bulb.SnippitInfo.PivotDuration = ReadIntAttribute(innerNode, "PivotDuration", 80, 10, 5000)
                         bulb.SnippitInfo.PivotRandomStrength = ReadSingleAttribute(innerNode, "PivotRandomStrength", 0.0F, 0.0F, 100.0F)
                         bulb.SnippitInfo.PivotAutomaticOscillation = ReadIntAttribute(innerNode, "PivotAutomaticOscillation", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PivotPhysicsEnabled = ReadIntAttribute(innerNode, "PivotPhysicsEnabled", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PivotPhysicsWeight = ReadSingleAttribute(innerNode, "PivotPhysicsWeight", 1.0F, 0.1F, 100.0F)
+                        bulb.SnippitInfo.PivotPhysicsFriction = ReadSingleAttribute(innerNode, "PivotPhysicsFriction", 1.25F, 0.0F, 20.0F)
+                        bulb.SnippitInfo.PivotPhysicsGrip = ReadSingleAttribute(innerNode, "PivotPhysicsGrip", 0.5F, 0.0F, 1.0F)
+                        bulb.SnippitInfo.PivotPhysicsResponseMode = ReadIntAttribute(innerNode, "PivotPhysicsResponseMode", 0, 0, 2)
+                        bulb.SnippitInfo.PivotPhysicsKnockdownAngle = ReadSingleAttribute(innerNode, "PivotPhysicsKnockdownAngle", 90.0F, -360.0F, 360.0F)
+                        bulb.SnippitInfo.PivotPhysicsKnockdownDuration = ReadIntAttribute(innerNode, "PivotPhysicsKnockdownDuration", 180, 10, 5000)
+                        bulb.SnippitInfo.PivotPhysicsResetDelay = ReadIntAttribute(innerNode, "PivotPhysicsResetDelay", 1000, 0, 30000)
                         bulb.SnippitInfo.PivotTriggerType = ReadIntAttribute(innerNode, "PivotTriggerType", 1, 0, 5)
                         bulb.SnippitInfo.PivotTriggerID = ReadIntAttribute(innerNode, "PivotTriggerID", 0, 0, 255)
                         bulb.SnippitInfo.PivotDownTrigger = If(innerNode.Attributes("PivotDownTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotDownTrigger").InnerText.Trim())
                         bulb.SnippitInfo.PivotUpTrigger = If(innerNode.Attributes("PivotUpTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotUpTrigger").InnerText.Trim())
                         bulb.SnippitInfo.PhysicsBall = (ReadIntAttribute(innerNode, "PhysicsBall", 0, 0, 1) = 1)
                         bulb.SnippitInfo.PhysicsFlipperName = If(innerNode.Attributes("PhysicsFlipperName") Is Nothing, String.Empty, innerNode.Attributes("PhysicsFlipperName").InnerText.Trim())
+                        bulb.SnippitInfo.PhysicsPivotTargetNames.Clear()
+                        If innerNode.Attributes("PhysicsPivotTargetNames") IsNot Nothing Then
+                            bulb.SnippitInfo.PhysicsPivotTargetNames.AddRange(innerNode.Attributes("PhysicsPivotTargetNames").InnerText.Split("|"c).Select(Function(name) name.Trim()).Where(Function(name) name.Length > 0))
+                        ElseIf bulb.SnippitInfo.PhysicsFlipperName.Length > 0 Then
+                            bulb.SnippitInfo.PhysicsPivotTargetNames.Add(bulb.SnippitInfo.PhysicsFlipperName)
+                        End If
                         bulb.SnippitInfo.PhysicsBounds = If(innerNode.Attributes("PhysicsBounds") Is Nothing, String.Empty, innerNode.Attributes("PhysicsBounds").InnerText.Trim())
                         bulb.SnippitInfo.PhysicsGravity = ReadSingleAttribute(innerNode, "PhysicsGravity", 800.0F, 0.0F, 10000.0F)
                         bulb.SnippitInfo.PhysicsFlipperStrength = ReadSingleAttribute(innerNode, "PhysicsFlipperStrength", 1.0F, 0.0F, 5.0F)
@@ -479,12 +493,21 @@ Public Class Save
                             If innerNode.Attributes("PhysicsObstacleBounces") IsNot Nothing Then bulb.SnippitInfo.PhysicsObstacleBounces.AddRange(ParsePhysicsObstacleBounces(innerNode.Attributes("PhysicsObstacleBounces").InnerText))
                         If innerNode.Attributes("PhysicsSwitchZones") IsNot Nothing Then ParsePhysicsSwitchZones(innerNode.Attributes("PhysicsSwitchZones").InnerText, bulb.SnippitInfo.PhysicsSwitchZones, bulb.SnippitInfo.PhysicsSwitchIDs)
                         If innerNode.Attributes("PhysicsSwitchAngles") IsNot Nothing Then ParsePhysicsSwitchAngles(innerNode.Attributes("PhysicsSwitchAngles").InnerText, bulb.SnippitInfo.PhysicsSwitchAngles)
+                        If innerNode.Attributes("PhysicsSwitchSoundNames") IsNot Nothing Then bulb.SnippitInfo.PhysicsSwitchSoundNames.AddRange(ParsePhysicsSwitchStrings(innerNode.Attributes("PhysicsSwitchSoundNames").InnerText))
+                        If innerNode.Attributes("PhysicsSwitchSoundData") IsNot Nothing Then bulb.SnippitInfo.PhysicsSwitchSoundData.AddRange(ParsePhysicsSwitchStrings(innerNode.Attributes("PhysicsSwitchSoundData").InnerText))
+                        If innerNode.Attributes("PhysicsSwitchSoundVolumes") IsNot Nothing Then bulb.SnippitInfo.PhysicsSwitchSoundVolumes.AddRange(ParsePhysicsSwitchVolumes(innerNode.Attributes("PhysicsSwitchSoundVolumes").InnerText))
                         While bulb.SnippitInfo.PhysicsSwitchAngles.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count
                             bulb.SnippitInfo.PhysicsSwitchAngles.Add(0.0F)
                         End While
                         While bulb.SnippitInfo.PhysicsSwitchAngles.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count
                             bulb.SnippitInfo.PhysicsSwitchAngles.RemoveAt(bulb.SnippitInfo.PhysicsSwitchAngles.Count - 1)
                         End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundNames.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundNames.Add(String.Empty) : End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundData.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundData.Add(String.Empty) : End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundVolumes.Count < bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundVolumes.Add(100) : End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundNames.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundNames.RemoveAt(bulb.SnippitInfo.PhysicsSwitchSoundNames.Count - 1) : End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundData.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundData.RemoveAt(bulb.SnippitInfo.PhysicsSwitchSoundData.Count - 1) : End While
+                        While bulb.SnippitInfo.PhysicsSwitchSoundVolumes.Count > bulb.SnippitInfo.PhysicsSwitchZones.Count : bulb.SnippitInfo.PhysicsSwitchSoundVolumes.RemoveAt(bulb.SnippitInfo.PhysicsSwitchSoundVolumes.Count - 1) : End While
                         bulb.SnippitInfo.PhysicsLauncherEnabled = ReadIntegerAttribute(innerNode, "PhysicsLauncherEnabled", 0, 0, 1) = 1
                         bulb.SnippitInfo.PhysicsLauncherFollowPivot = ReadIntegerAttribute(innerNode, "PhysicsLauncherFollowPivot", 0, 0, 1) = 1
                         bulb.SnippitInfo.PhysicsLauncherTriggerType = ReadIntegerAttribute(innerNode, "PhysicsLauncherTriggerType", 1, 1, 5)
@@ -895,6 +918,14 @@ Public Class Save
                                 nodeBulb.SetAttribute("PivotDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotDuration)).ToString())
                                 nodeBulb.SetAttribute("PivotRandomStrength", Math.Max(0.0F, Math.Min(100.0F, .SnippitInfo.PivotRandomStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
                                 If .SnippitInfo.PivotAutomaticOscillation Then nodeBulb.SetAttribute("PivotAutomaticOscillation", "1")
+                                If .SnippitInfo.PivotPhysicsEnabled Then nodeBulb.SetAttribute("PivotPhysicsEnabled", "1")
+                                nodeBulb.SetAttribute("PivotPhysicsWeight", Math.Max(0.1F, Math.Min(100.0F, .SnippitInfo.PivotPhysicsWeight)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                nodeBulb.SetAttribute("PivotPhysicsFriction", Math.Max(0.0F, Math.Min(20.0F, .SnippitInfo.PivotPhysicsFriction)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                nodeBulb.SetAttribute("PivotPhysicsGrip", Math.Max(0.0F, Math.Min(1.0F, .SnippitInfo.PivotPhysicsGrip)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                nodeBulb.SetAttribute("PivotPhysicsResponseMode", Math.Max(0, Math.Min(2, .SnippitInfo.PivotPhysicsResponseMode)).ToString())
+                                nodeBulb.SetAttribute("PivotPhysicsKnockdownAngle", Math.Max(-360.0F, Math.Min(360.0F, .SnippitInfo.PivotPhysicsKnockdownAngle)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                nodeBulb.SetAttribute("PivotPhysicsKnockdownDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotPhysicsKnockdownDuration)).ToString())
+                                nodeBulb.SetAttribute("PivotPhysicsResetDelay", Math.Max(0, Math.Min(30000, .SnippitInfo.PivotPhysicsResetDelay)).ToString())
                                 nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(5, .SnippitInfo.PivotTriggerType)).ToString())
                                 nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())
                                 nodeBulb.SetAttribute("PivotDownTrigger", .SnippitInfo.PivotDownTrigger.Trim())
@@ -902,6 +933,7 @@ Public Class Save
                                 If .SnippitInfo.PhysicsBall OrElse .SnippitInfo.PhysicsFloorPoints.Count >= 2 OrElse .SnippitInfo.PhysicsBoundaryPaths.Count > 0 Then
                                     nodeBulb.SetAttribute("PhysicsBall", If(.SnippitInfo.PhysicsBall, "1", "0"))
                                     nodeBulb.SetAttribute("PhysicsFlipperName", .SnippitInfo.PhysicsFlipperName.Trim())
+                                    If .SnippitInfo.PhysicsPivotTargetNames.Count > 0 Then nodeBulb.SetAttribute("PhysicsPivotTargetNames", String.Join("|", .SnippitInfo.PhysicsPivotTargetNames.Select(Function(name) name.Replace("|", " ").Trim()).Where(Function(name) name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()))
                                     If Not String.IsNullOrWhiteSpace(.SnippitInfo.PhysicsBounds) Then nodeBulb.SetAttribute("PhysicsBounds", .SnippitInfo.PhysicsBounds.Trim())
                                     nodeBulb.SetAttribute("PhysicsGravity", Math.Max(0.0F, Math.Min(10000.0F, .SnippitInfo.PhysicsGravity)).ToString("R", Globalization.CultureInfo.InvariantCulture))
                                     nodeBulb.SetAttribute("PhysicsFlipperStrength", Math.Max(0.0F, Math.Min(5.0F, .SnippitInfo.PhysicsFlipperStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
@@ -919,6 +951,11 @@ Public Class Save
                                     nodeBulb.SetAttribute("PhysicsSwitchZones", SerializePhysicsSwitchZones(.SnippitInfo.PhysicsSwitchZones, .SnippitInfo.PhysicsSwitchIDs))
                                     If .SnippitInfo.PhysicsSwitchAngles.Any(Function(angle) Math.Abs(angle) >= 0.001F) Then
                                         nodeBulb.SetAttribute("PhysicsSwitchAngles", SerializePhysicsSwitchAngles(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchAngles))
+                                    End If
+                                    If .SnippitInfo.PhysicsSwitchSoundNames.Any(Function(name) Not String.IsNullOrWhiteSpace(name)) Then
+                                        nodeBulb.SetAttribute("PhysicsSwitchSoundNames", SerializePhysicsSwitchStrings(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchSoundNames))
+                                        nodeBulb.SetAttribute("PhysicsSwitchSoundData", SerializePhysicsSwitchStrings(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchSoundData))
+                                        nodeBulb.SetAttribute("PhysicsSwitchSoundVolumes", SerializePhysicsSwitchVolumes(.SnippitInfo.PhysicsSwitchZones.Count, .SnippitInfo.PhysicsSwitchSoundVolumes))
                                     End If
                                 End If
                                 If .SnippitInfo.PhysicsLauncherEnabled Then
@@ -1210,7 +1247,7 @@ Public Class Save
             Dim item As RectangleF = zones(index)
             If item.Width <= 0 OrElse item.Height <= 0 Then Continue For
             Dim switchID As Integer = If(index < switchIDs.Count, switchIDs(index), 1)
-            encoded.Add(String.Join(",", {item.X.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Y.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Width.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Height.ToString("R", Globalization.CultureInfo.InvariantCulture), Math.Max(1, Math.Min(255, switchID)).ToString(Globalization.CultureInfo.InvariantCulture)}))
+            encoded.Add(String.Join(",", {item.X.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Y.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Width.ToString("R", Globalization.CultureInfo.InvariantCulture), item.Height.ToString("R", Globalization.CultureInfo.InvariantCulture), Math.Max(0, Math.Min(255, switchID)).ToString(Globalization.CultureInfo.InvariantCulture)}))
         Next
         Return String.Join("|", encoded.ToArray())
     End Function
@@ -1223,10 +1260,40 @@ Public Class Save
             Dim switchID As Integer
             If parts.Length = 5 AndAlso Single.TryParse(parts(0), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, x) AndAlso Single.TryParse(parts(1), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, y) AndAlso Single.TryParse(parts(2), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, width) AndAlso Single.TryParse(parts(3), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, height) AndAlso Integer.TryParse(parts(4), switchID) AndAlso width > 0 AndAlso height > 0 Then
                 zones.Add(New RectangleF(x, y, width, height))
-                switchIDs.Add(Math.Max(1, Math.Min(255, switchID)))
+                switchIDs.Add(Math.Max(0, Math.Min(255, switchID)))
             End If
         Next
     End Sub
+
+    Private Shared Function SerializePhysicsSwitchStrings(ByVal zoneCount As Integer, ByVal values As IList(Of String)) As String
+        Dim encoded As New List(Of String)()
+        For index As Integer = 0 To zoneCount - 1
+            encoded.Add(If(index < values.Count, If(values(index), String.Empty).Replace("|", "_"), String.Empty))
+        Next
+        Return String.Join("|", encoded.ToArray())
+    End Function
+
+    Private Shared Function ParsePhysicsSwitchStrings(ByVal value As String) As List(Of String)
+        Return New List(Of String)(If(value, String.Empty).Split(New Char() {"|"c}, StringSplitOptions.None))
+    End Function
+
+    Private Shared Function SerializePhysicsSwitchVolumes(ByVal zoneCount As Integer, ByVal volumes As IList(Of Integer)) As String
+        Dim encoded As New List(Of String)()
+        For index As Integer = 0 To zoneCount - 1
+            encoded.Add(Math.Max(0, Math.Min(200, If(index < volumes.Count, volumes(index), 100))).ToString(Globalization.CultureInfo.InvariantCulture))
+        Next
+        Return String.Join("|", encoded.ToArray())
+    End Function
+
+    Private Shared Function ParsePhysicsSwitchVolumes(ByVal value As String) As List(Of Integer)
+        Dim result As New List(Of Integer)()
+        For Each item As String In If(value, String.Empty).Split(New Char() {"|"c}, StringSplitOptions.None)
+            Dim volume As Integer
+            result.Add(If(Integer.TryParse(item, Globalization.NumberStyles.Integer, Globalization.CultureInfo.InvariantCulture, volume),
+                          Math.Max(0, Math.Min(200, volume)), 100))
+        Next
+        Return result
+    End Function
 
     Private Shared Function SerializePhysicsSwitchAngles(ByVal zoneCount As Integer, ByVal angles As IList(Of Single)) As String
         Dim encoded As New List(Of String)()

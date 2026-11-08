@@ -118,7 +118,7 @@ Public Class B2SPictureBox
     End Class
     Private ReadOnly lightLayerCache As New Generic.Dictionary(Of Integer, CachedLightLayer)()
     Private lightLayerCacheBytes As Long
-    Private Const MaxLightLayerCacheBytes As Long = 64L * 1024 * 1024
+    Private Const MaxLightLayerCacheBytes As Long = 96L * 1024 * 1024
 
     Private Sub ClearLightLayerCache()
         For Each entry As CachedLightLayer In lightLayerCache.Values
@@ -1242,7 +1242,7 @@ Public Class B2SPictureBox
             If Object.ReferenceEquals(item, target) Then Exit For
             Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
             If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
-               LayerManager.IsVisible(snippet) Then lower.Add(snippet)
+               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) Then lower.Add(snippet)
         Next
         If lower.Count = 0 Then Return Nothing
         Dim result As New Bitmap(background)
@@ -1273,7 +1273,7 @@ Public Class B2SPictureBox
             If Object.ReferenceEquals(item, target) Then Exit For
             Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
             If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
-               LayerManager.IsVisible(snippet) AndAlso IsPictureAnimationReferenceFrame(snippet) Then
+               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) AndAlso IsPictureAnimationReferenceFrame(snippet) Then
                 key.Append(snippet.ID).Append(":"c)
             End If
         Next

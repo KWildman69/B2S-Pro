@@ -1235,12 +1235,10 @@ Public Class Mouse
 
         If clickedBulb Is Nothing OrElse LayerManager.IsLocked(clickedBulb) Then Return
 
-        ' Preserve a selected text or blinker group when opening shared settings.
-        ' The Light editor already applies every control to its selected-bulb
-        ' collection; do not collapse a highlighted blinker group before that
-        ' collection is handed to the editor.
-        If IsSelected(clickedBulb) AndAlso Not clickedBulb.IsImageSnippit AndAlso
-           (Not String.IsNullOrEmpty(clickedBulb.Text) OrElse clickedBulb.BlinkEnabled) Then
+        ' Preserve any highlighted bulb group when opening shared settings.
+        ' The Designer filters that group to the clicked object's compatible type
+        ' before handing it to the light, flasher, text, or snippet editor.
+        If IsSelected(clickedBulb) Then
             SetSelection(New Generic.List(Of InfoBase)(_selectedItems), clickedBulb, True)
         Else
             SelectSingle(clickedBulb)
