@@ -384,7 +384,19 @@ namespace B2SPro.Updates
 
             CancelButton = _laterButton;
             Controls.Add(layout);
+            Load += delegate { FitHeightToContent(layout); };
             Shown += delegate { _laterButton.Select(); };
+        }
+
+        // Long release text must never push the buttons out of the window: grow the window
+        // to the content's preferred height (after DPI scaling), limited to the screen.
+        private void FitHeightToContent(TableLayoutPanel layout)
+        {
+            int needed = layout.GetPreferredSize(new Size(ClientSize.Width, 0)).Height;
+            int maximum = Screen.FromControl(this).WorkingArea.Height - (Height - ClientSize.Height);
+            if (needed <= ClientSize.Height) return;
+            ClientSize = new Size(ClientSize.Width, Math.Min(needed, maximum));
+            CenterToScreen();
         }
 
         public static DialogResult ShowUpdate(UpdateTarget target, Version installedVersion, AvailableUpdate available, bool testOnly)
