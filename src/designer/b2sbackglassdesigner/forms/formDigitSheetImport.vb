@@ -160,12 +160,6 @@ Public Class formDigitSheetImport
         SetSheet(nextSheet)
     End Sub
 
-    Public Sub LoadPdf(path As String, page As Integer)
-        pdfFile = path
-        pdfPage = page
-        SetSheet(RenderPdf(path, page))
-    End Sub
-
     Private Sub SetSheet(nextSheet As Bitmap)
         sheetPreview.Image = Nothing
         If sheet IsNot Nothing Then sheet.Dispose()
@@ -204,42 +198,6 @@ Public Class formDigitSheetImport
             If Not IsDisposed AndAlso version = recognitionVersion Then recognizeButton.Enabled = True
         End Try
     End Sub
-
-    Public Shared Function CropRectangles(size As Size, cols As Integer, rowCount As Integer, left As Integer, top As Integer, right As Integer, bottom As Integer, horizontalGap As Integer, verticalGap As Integer) As Rectangle()
-        If cols < 1 OrElse rowCount < 1 OrElse cols * rowCount < 10 Then Throw New ArgumentException("The grid must contain at least ten cells.")
-        If left < 0 OrElse top < 0 OrElse right < 0 OrElse bottom < 0 OrElse horizontalGap < 0 OrElse verticalGap < 0 Then Throw New ArgumentException("Borders and gaps cannot be negative.")
-        Dim width As Integer = (size.Width - left - right - (cols - 1) * horizontalGap) \ cols
-        Dim height As Integer = (size.Height - top - bottom - (rowCount - 1) * verticalGap) \ rowCount
-        If width < 1 OrElse height < 1 Then Throw New ArgumentException("The borders or gaps leave no room for the digits.")
-        Dim result(9) As Rectangle
-        For i As Integer = 0 To 9
-            result(i) = New Rectangle(left + (i Mod cols) * (width + horizontalGap), top + (i \ cols) * (height + verticalGap), width, height)
-            If Not New Rectangle(Point.Empty, size).Contains(result(i)) Then Throw New ArgumentException("A crop falls outside the sheet.")
-        Next
-        Return result
-    End Function
-
-    Public Shared Function SplitSheet(source As Bitmap, bounds As Rectangle(), digitOrder As String) As Image()
-        If digitOrder Is Nothing OrElse digitOrder.Length <> 10 OrElse digitOrder.OrderBy(Function(c) c).SequenceEqual("0123456789") = False Then Throw New ArgumentException("Digit order must contain each digit 0–9 exactly once.")
-        If bounds Is Nothing OrElse bounds.Length <> 10 Then Throw New ArgumentException("Ten crop rectangles are required.")
-        Dim result(9) As Image
-        Try
-            For i As Integer = 0 To 9
-                If bounds(i).Width < 1 OrElse bounds(i).Height < 1 OrElse Not New Rectangle(Point.Empty, source.Size).Contains(bounds(i)) Then Throw New ArgumentException("A crop falls outside the sheet.")
-                result(AscW(digitOrder(i)) - AscW("0"c)) = source.Clone(bounds(i), PixelFormat.Format32bppArgb)
-            Next
-            Return result
-        Catch
-            For Each image In result
-                If image IsNot Nothing Then image.Dispose()
-            Next
-            Throw
-        End Try
-    End Function
-
-    Private Function CurrentBounds() As Rectangle()
-        Return CropRectangles(sheet.Size, CInt(columns.Value), CInt(rows.Value), CInt(leftMargin.Value), CInt(topMargin.Value), CInt(rightMargin.Value), CInt(bottomMargin.Value), CInt(gapX.Value), CInt(gapY.Value))
-    End Function
 
     Private Sub ClearDigits()
         If creditImages IsNot Nothing Then

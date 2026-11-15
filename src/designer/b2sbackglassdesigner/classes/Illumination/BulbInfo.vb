@@ -56,6 +56,12 @@
         ' Optional explicit snippet target for dynamic front lighting. Zero keeps
         ' the legacy behavior of lighting every eligible snippet below the light.
         Public DynamicFrontTargetSnippetID As Integer = 0
+        ' New files may explicitly select more than one snippet. The singular ID
+        ' remains the fallback for older Designer, Server, and plugin versions.
+        ' False preserves the legacy zero-means-all behavior when the plural XML
+        ' attribute is absent; True makes this list authoritative.
+        Public DynamicFrontTargetSnippetIDs As New List(Of Integer)()
+        Public DynamicFrontTargetSelectionDefined As Boolean = False
 
         Public ReadOnly Property UsesArtworkPixelRenderer As Boolean
             Get
@@ -114,16 +120,16 @@
         ' Enhanced 2.7.6: False = behind global mask, True = in front/bypass mask.
         Public InFrontOfGlobalMask As Boolean = False
         Public GlobalMaskLayerExplicit As Boolean = False
-        ' Render the light physically behind the backglass artwork, visible only
-        ' through transparent or partially transparent canvas pixels.
-        Public LightBehindCanvas As Boolean = False
-
         ' Optional quick-selection mask stored as a PNG encoded in Base64.
         Public SelectionMaskData As String = String.Empty
         Public SelectionTolerance As Integer = 20
         Public SelectionFeather As Integer = 0
 
         Public ZOrder As Integer = 0
+        ' Exact front-to-back position in the unified visual deck.  This is
+        ' independent of the editable Z value so lights, flashers, snippets,
+        ' reels and LEDs can be interleaved without per-type placement flags.
+        Public LayerOrder As Integer = -1
 
 
         Public IsImageSnippit As Boolean = False
@@ -139,9 +145,12 @@
 
         ' Independent image brightness for snippets. 100 preserves the source.
         Public Brightness As Integer = 100
-        ' Draw/export the snippet through transparent areas of the backglass
-        ' artwork so it behaves as an image physically behind the glass.
-        Public BehindCanvas As Boolean = False
+        ' Optional snippet-only refinement of a Quick Selection alpha mask.
+        ' Zero values are an exact no-op so existing snippets retain their
+        ' authored appearance until an author deliberately adjusts a slider.
+        Public MaskEdgeSoftness As Integer = 0
+        Public MaskOutwardDiffusion As Integer = 0
+        Public MaskShiftEdge As Integer = 0
         Public SnippitType As eSnippitType = eSnippitType.StandardImage
         Public SnippitMechID As Integer = 0
         Public SnippitRotatingSteps As Integer = 0
@@ -267,40 +276,6 @@
         ' Empty values preserve every normal and legacy snippet path.
         Public InfinityLightsGroup As String = String.Empty
         Public InfinityLightsSettings As String = String.Empty
-
-        Public Function UpgradeLegacySelfRotation(ByVal triggerID As Integer,
-                                                  ByVal triggerType As eRomIDType) As Boolean
-            If SnippitType <> eSnippitType.SelfRotatingImage OrElse AutomaticRotationEnabled Then Return False
-
-            AutomaticRotationEnabled = True
-            AutomaticRotationContinuous = (triggerID <= 0)
-            AutomaticRotationTriggerID = Math.Max(0, triggerID)
-            AutomaticRotationTriggerType = If(triggerType = eRomIDType.Solenoid,
-                                               eRomIDType.Solenoid,
-                                               eRomIDType.Lamp)
-            AutomaticRotationSteps = Math.Max(4, Math.Min(90, SnippitRotatingSteps))
-            AutomaticRotationInterval = Math.Max(10, Math.Min(500, SnippitRotatingInterval))
-            AutomaticRotationDirection = SnippitRotatingDirection
-            AutomaticRotationStopBehaviour = SnippitRotatingStopBehaviour
-            SnippitType = eSnippitType.StandardImage
-            Return True
-        End Function
-
-        Public Function UpgradeLegacyMechRotation() As Boolean
-            If SnippitType <> eSnippitType.MechRotatingImage OrElse AutomaticRotationEnabled Then Return False
-
-            ' Mechanical snippets are position controlled, not started and
-            ' stopped by an on/off command. Keep their type and Mech ID while
-            ' moving the shared rotation values into the native one-image data.
-            AutomaticRotationEnabled = True
-            AutomaticRotationContinuous = False
-            AutomaticRotationTriggerID = 0
-            AutomaticRotationSteps = Math.Max(2, Math.Min(360, SnippitRotatingSteps))
-            AutomaticRotationInterval = Math.Max(10, Math.Min(500, SnippitRotatingInterval))
-            AutomaticRotationDirection = SnippitRotatingDirection
-            AutomaticRotationStopBehaviour = SnippitRotatingStopBehaviour
-            Return True
-        End Function
 
     End Class
 

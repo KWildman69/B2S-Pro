@@ -34,11 +34,11 @@ Public Class formToolIllumination
         ChangeDodgeColor = 37
         Location = 41
         Size = 42
-        ZOrder = 51
-        SnippitInfo = 52
     End Enum
 
     Public Event DataChanged(ByVal sender As Object, ByVal e As IlluminationEventArgs)
+    ' Asks the Designer to open the same snippet settings dialog as a double-click.
+    Public Event SnippitSettingsRequested(ByVal sender As Object, ByVal e As EventArgs)
     Public Class IlluminationEventArgs
         Inherits EventArgs
 
@@ -298,23 +298,6 @@ Public Class formToolIllumination
             btnSnippitSettings.Enabled = value
         End Set
     End Property
-    Public Property ZOrder() As Integer = 0
-    Public Property SnippitType() As eSnippitType = eSnippitType.StandardImage
-    Public Property SnippitBrightness() As Integer = 100
-    Public Property SnippitBehindCanvas() As Boolean = False
-    Public Property SnippitMechID() As Integer = 0
-    Public Property SnippitRotatingSteps() As Integer = 0
-    Public Property SnippitRotatingInterval() As Integer = 0
-    Public Property SnippitRotatingDirection() As eSnippitRotationDirection = eSnippitRotationDirection.Clockwise
-    Public Property SnippitRotatingStopBehaviour() As eSnippitRotationStopBehaviour = eSnippitRotationStopBehaviour.SpinOff
-    Public Property AutomaticRotationEnabled() As Boolean = False
-    Public Property AutomaticRotationContinuous() As Boolean = True
-    Public Property AutomaticRotationTriggerID() As Integer = 0
-    Public Property AutomaticRotationTriggerType() As eRomIDType = eRomIDType.Lamp
-    Public Property AutomaticRotationSteps() As Integer = 24
-    Public Property AutomaticRotationInterval() As Integer = 50
-    Public Property AutomaticRotationDirection() As eSnippitRotationDirection = eSnippitRotationDirection.Clockwise
-    Public Property AutomaticRotationStopBehaviour() As eSnippitRotationStopBehaviour = eSnippitRotationStopBehaviour.RunAnimationTillEnd
 
     ' These controls are DropDownList selections, not editable text boxes.
     ' SelectionLength queries a native edit selection that does not exist and
@@ -534,30 +517,7 @@ Public Class formToolIllumination
     End Sub
 
     Private Sub SnippitSettings_Click(sender As System.Object, e As System.EventArgs) Handles btnSnippitSettings.Click
-        If IsSnippit Then
-            Dim formSnippit As formSnippitSettings = New formSnippitSettings()
-            If formSnippit.ShowDialog(Me, CInt(txtID.Text), txtName.Text, SnippitType, ZOrder, SnippitBrightness, SnippitBehindCanvas, SnippitMechID, SnippitRotatingSteps, SnippitRotatingInterval, SnippitRotatingDirection, SnippitRotatingStopBehaviour, AutomaticRotationEnabled, AutomaticRotationContinuous, AutomaticRotationTriggerID, AutomaticRotationTriggerType, AutomaticRotationSteps, AutomaticRotationInterval, AutomaticRotationDirection, AutomaticRotationStopBehaviour) = Windows.Forms.DialogResult.OK Then
-                Dim snippitinfo As Illumination.SnippitInfo = New Illumination.SnippitInfo()
-                snippitinfo.Brightness = SnippitBrightness
-                snippitinfo.BehindCanvas = SnippitBehindCanvas
-                snippitinfo.SnippitType = SnippitType
-                snippitinfo.SnippitMechID = SnippitMechID
-                snippitinfo.SnippitRotatingSteps = SnippitRotatingSteps
-                snippitinfo.SnippitRotatingInterval = SnippitRotatingInterval
-                snippitinfo.SnippitRotatingDirection = SnippitRotatingDirection
-                snippitinfo.SnippitRotatingStopBehaviour = SnippitRotatingStopBehaviour
-                snippitinfo.AutomaticRotationEnabled = AutomaticRotationEnabled
-                snippitinfo.AutomaticRotationContinuous = AutomaticRotationContinuous
-                snippitinfo.AutomaticRotationTriggerID = AutomaticRotationTriggerID
-                snippitinfo.AutomaticRotationTriggerType = AutomaticRotationTriggerType
-                snippitinfo.AutomaticRotationSteps = AutomaticRotationSteps
-                snippitinfo.AutomaticRotationInterval = AutomaticRotationInterval
-                snippitinfo.AutomaticRotationDirection = AutomaticRotationDirection
-                snippitinfo.AutomaticRotationStopBehaviour = AutomaticRotationStopBehaviour
-                RaiseEvent DataChanged(Me, New IlluminationEventArgs(eIlluminationDataType.ZOrder, ZOrder))
-                RaiseEvent DataChanged(Me, New IlluminationEventArgs(eIlluminationDataType.SnippitInfo, snippitinfo))
-            End If
-        End If
+        If IsSnippit Then RaiseEvent SnippitSettingsRequested(Me, EventArgs.Empty)
     End Sub
 
 End Class

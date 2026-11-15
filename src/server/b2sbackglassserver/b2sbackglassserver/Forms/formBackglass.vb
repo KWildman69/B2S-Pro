@@ -10,7 +10,6 @@ Public Class formBackglass
     Private Declare Function SetForegroundWindow Lib "user32.dll" (ByVal hwnd As IntPtr) As Integer
     Private Declare Function IsWindow Lib "user32.dll" (ByVal hwnd As IntPtr) As Boolean
 
-    Private Const minSize4Image As Integer = 300000
 
     Private B2SScreen As B2SScreen = Nothing  '  was New B2SScreen(), delayed to do later  - Westworld, 2016-11-18
     Private B2SLED As B2SLED = New B2SLED()
@@ -112,6 +111,7 @@ Public Class formBackglass
         Next
 #If B2S = "EXE" Then
         If switchIDs.Count > 0 Then B2SData.AnnounceTesterSwitches()
+        B2SData.AnnouncePhysicsLaunchers()
         ' The DLL suppresses initial OFF tester messages in EXE mode.
         ' Initialize new switch animation routes here so inverted joins start OFF.
         For Each id As Integer In switchIDs
@@ -173,7 +173,6 @@ Public Class formBackglass
     Private formMode As formMode = Nothing
 
     Private startupTimer As Timer = Nothing
-    Private startupCoreCompleted As Boolean = False
 
 #If B2S = "DLL" Then
 
@@ -193,7 +192,6 @@ Public Class formBackglass
     Private rotateSlowDownSteps As Integer = 0
     Private rotateRunTillEnd As Boolean = False
     Private rotateRunToFirstStep As Boolean = False
-    Private rotateSteps As Integer = 0
     Private rotateAngle As Single = 0
     Private rotateTimerInterval As Integer = 0
 
@@ -208,11 +206,6 @@ Public Class formBackglass
     Private sparseImageTiles As New Generic.Dictionary(Of Image, Generic.List(Of SparseImageTile))()
     Private denseImages As New Generic.HashSet(Of Image)()
     Private ReadOnly staticPhysicsImages As New StaticPhysicsImageCache()
-    Private behindCanvasCacheImage As Bitmap = Nothing
-    Private behindCanvasCachePictureBox As B2SPictureBox = Nothing
-    Private behindCanvasCacheBackground As Image = Nothing
-    Private behindCanvasCacheBounds As Rectangle = Rectangle.Empty
-    Private behindCanvasCacheAngle As Single = Single.NaN
     Private ReadOnly nativeRotationDynamicLightingWorkspace As New DynamicArtworkLighting.Workspace()
     Private b2sProTransparentCanvasBacking As Nullable(Of Color) = Nothing
 
@@ -240,13 +233,51 @@ Public Class formBackglass
     Private Const WM_MOUSEACTIVATE As Integer = &H21
 
 #Region " Properties "
+    <Runtime.InteropServices.DllImport("user32.dll")>
+    Private Shared Function GetUpdateRgn(ByVal hWnd As IntPtr, ByVal hRgn As IntPtr, ByVal bErase As Boolean) As Integer
+    End Function
+    <Runtime.InteropServices.DllImport("gdi32.dll")>
+    Private Shared Function CreateRectRgn(ByVal left As Integer, ByVal top As Integer, ByVal right As Integer, ByVal bottom As Integer) As IntPtr
+    End Function
+    <Runtime.InteropServices.DllImport("gdi32.dll")>
+    Private Shared Function DeleteObject(ByVal handle As IntPtr) As Boolean
+    End Function
+    Private Const WM_PAINT As Integer = &HF
+    ' B2S Pro files: the exact area Windows asked to repaint. Windows merges
+    ' separate dirty areas (a rotating snippet and a flashing light) into one
+    ' bounding rectangle for the paint event; painting only the real areas
+    ' keeps a native rotation from stalling while lights flash.
+    Private pendingUpdateRegion As Region
+    Private currentPaintRegion As Region
+
     Protected Overrides Sub WndProc(ByRef m As Message)
+        If m.Msg = WM_PAINT AndAlso B2SData.UnifiedLayerDeck Then CaptureUpdateRegion()
         'Don't allow the window to be activated by swallowing the mouse event.
         If B2SSettings.FormNoFocus And m.Msg = WM_MOUSEACTIVATE Then
             m.Result = New IntPtr(MA_NOACTIVATE)
             Return
         End If
         MyBase.WndProc(m)
+    End Sub
+
+    Private Sub CaptureUpdateRegion()
+        Dim hrgn As IntPtr = CreateRectRgn(0, 0, 0, 0)
+        If hrgn = IntPtr.Zero Then Return
+        Try
+            If GetUpdateRgn(Me.Handle, hrgn, False) > 1 Then
+                If pendingUpdateRegion IsNot Nothing Then pendingUpdateRegion.Dispose()
+                pendingUpdateRegion = Region.FromHrgn(hrgn)
+            End If
+        Finally
+            DeleteObject(hrgn)
+        End Try
+    End Sub
+
+    Private Sub ReleasePaintRegion()
+        If currentPaintRegion IsNot Nothing Then
+            currentPaintRegion.Dispose()
+            currentPaintRegion = Nothing
+        End If
     End Sub
 #End Region 'Properties
 
@@ -325,12 +356,14 @@ Public Class formBackglass
             LoadB2SData()
             B2SScreen.ReadB2SSettingsFromFile()
         Catch ex As Exception
+#If B2S = "DLL" Then
+            ' Server.vb catches this, shows the same startup error and closes the
+            ' backglass cleanly (a Stop statement here breaks into a debugger).
+            Throw
+#Else
             If B2SSettings.ShowStartupError Then
                 MessageBox.Show(ex.Message, My.Resources.AppTitle, Windows.Forms.MessageBoxButtons.OK, Windows.Forms.MessageBoxIcon.Error)
             End If
-#If B2S = "DLL" Then
-            Stop
-#Else
             End
 #End If
         End Try
@@ -559,12 +592,9 @@ Public Class formBackglass
             Next
         Next
         staticPhysicsImages.Dispose()
+        ReleaseRenderCaches()
         sparseImageTiles.Clear()
         denseImages.Clear()
-        If behindCanvasCacheImage IsNot Nothing Then
-            behindCanvasCacheImage.Dispose()
-            behindCanvasCacheImage = Nothing
-        End If
 
         ' stop all animations
         StopAllAnimations()
@@ -631,7 +661,17 @@ Public Class formBackglass
 
             Try
             ' A repaint owns its clip region; release its native handle promptly.
-            Using clip As New Region(e.ClipRectangle)
+            ReleasePaintRegion()
+            If pendingUpdateRegion IsNot Nothing Then
+                If B2SData.UnifiedLayerDeck Then
+                    currentPaintRegion = pendingUpdateRegion
+                    currentPaintRegion.Intersect(e.ClipRectangle)
+                Else
+                    pendingUpdateRegion.Dispose()
+                End If
+                pendingUpdateRegion = Nothing
+            End If
+            Using clip As Region = If(currentPaintRegion IsNot Nothing, currentPaintRegion.Clone(), New Region(e.ClipRectangle))
             For Each ledarea As KeyValuePair(Of String, B2SData.LEDAreaInfo) In B2SData.LEDAreas
                 If Not ledarea.Value.IsOnDMD Then
                     clip.Exclude(ledarea.Value.Rect)
@@ -640,93 +680,29 @@ Public Class formBackglass
             e.Graphics.SetClip(clip, If(b2sProTransparentCanvasBacking.HasValue, Drawing2D.CombineMode.Intersect, Drawing2D.CombineMode.Replace))
             End Using
 
-            ' Draw behind-canvas snippets first. The stationary backglass is then
-            ' composited over them, so its alpha masks the already-rotated artwork
-            ' instead of a baked mask rotating with the artwork.
-            If B2SData.Illuminations.Count > 0 Then
-                For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                    If illu.Value.BehindCanvas Then DrawImage(e, illu.Value, True)
-                Next
-            End If
+            Dim deck As Generic.List(Of B2SPictureBox) = OrderedIlluminationDeck()
+            Dim canvasPosition As Integer = Math.Max(0, Math.Min(deck.Count, B2SData.CanvasLayerPosition))
 
-            ' draw background image
+            ' The same normal image stack is used on both sides. The canvas is
+            ' only the fixed card inserted at the saved position.
+            If B2SData.UnifiedLayerDeck Then
+                DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder <= B2SData.CanvasLayerPosition))
+            Else
+                DrawIlluminationDeckSegment(e, deck.Take(canvasPosition))
+            End If
             e.Graphics.DrawImage(Me.BackgroundImage, 0, 0)
-
-            ' A visible Dynamic Front light belongs on the stationary backglass,
-            ' below the moving snippet that it illuminates. Draw only that masked
-            ' light base here; the later Z-order pass applies the dynamic lighting
-            ' to the current snippet pixels without repainting the mask over them.
-            If B2SData.Illuminations.Count > 0 Then
-                If Not B2SData.UseZOrder Then
-                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                        If illu.Value.DynamicFrontLighting AndAlso illu.Value.DynamicFrontShowLight AndAlso
-                           Not illu.Value.SeparateLightLayer AndAlso Not illu.Value.IsImageSnippit Then
-                            DrawImage(e, illu.Value, False, True)
-                        End If
-                    Next
-                Else
-                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                        If illu.Value.ZOrder = 0 AndAlso illu.Value.DynamicFrontLighting AndAlso
-                           illu.Value.DynamicFrontShowLight AndAlso Not illu.Value.SeparateLightLayer AndAlso
-                           Not illu.Value.IsImageSnippit Then
-                            DrawImage(e, illu.Value, False, True)
-                        End If
-                    Next
-                    For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderImages
-                        For i As Integer = 0 To illus.Value.Length - 1
-                            Dim visibleLight As B2SPictureBox = illus.Value(i)
-                            If visibleLight.DynamicFrontLighting AndAlso visibleLight.DynamicFrontShowLight AndAlso
-                               Not visibleLight.SeparateLightLayer AndAlso Not visibleLight.IsImageSnippit Then
-                                DrawImage(e, visibleLight, False, True)
-                            End If
-                        Next
-                    Next
-                End If
-            End If
-
-            ' draw all visible and necessary images
-            If B2SData.Illuminations.Count > 0 Then
-
-                If Not B2SData.UseZOrder Then
-
-                    ' draw all standard images
-                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                        DrawImage(e, illu.Value)
-                    Next
-
-                Else
-
-                    ' first of all draw all standard images
-                    For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                        If illu.Value.ZOrder = 0 Then
-                            DrawImage(e, illu.Value)
-                        End If
-                    Next
-                    ' now draw zorderd images
-                    For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderImages
-                        'For Each illu As B2SPictureBox In illus.Value
-                        '    DrawImage(e, illu)
-                        'Next
-                        For i As Integer = 0 To illus.Value.Length - 1
-                            DrawImage(e, illus.Value(i))
-                        Next
-                    Next
-
-                End If
-
+            If B2SData.UnifiedLayerDeck Then
+                DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder > B2SData.CanvasLayerPosition))
+            Else
+                DrawIlluminationDeckSegment(e, deck.Skip(canvasPosition))
             End If
 
             ' Score displays are child controls over the custom-painted canvas.
             ' Repaint them immediately after a full-screen animation frame so a
             ' pending parent redraw cannot temporarily erase their segments.
-            For Each leddisplay As KeyValuePair(Of String, Dream7Display) In B2SData.LEDDisplays
-                If leddisplay.Value.Parent Is Me AndAlso leddisplay.Value.Visible AndAlso
-                   e.ClipRectangle.IntersectsWith(leddisplay.Value.Bounds) Then
-                    leddisplay.Value.BringToFront()
-                    leddisplay.Value.Invalidate()
-                    leddisplay.Value.Update()
-                End If
-            Next
+            ' B2S Pro files only; legacy files keep the original 3.0.11 paint.
+            ReleasePaintRegion()
+            If B2SData.UnifiedLayerDeck Then RepaintScoreControls(e.ClipRectangle)
 
             lastPaintError = Nothing
             Catch ex As Exception
@@ -734,75 +710,285 @@ Public Class formBackglass
                     lastPaintError = ex.Message
                     Diagnostics.Trace.TraceError("B2S backglass paint failed: " & ex.ToString())
                 End If
+            Finally
+                ' Never leave a paint's update region behind after an exception.
+                ReleasePaintRegion()
             End Try
 
         End If
     End Sub
 
-    Private Sub DrawCachedBehindCanvasImage(e As PaintEventArgs, picbox As B2SPictureBox)
-        If picbox Is Nothing OrElse picbox.IsDisposed OrElse Not picbox.Visible OrElse
-           picbox.BackgroundImage Is Nothing OrElse
-           Not e.ClipRectangle.IntersectsWith(Rectangle.Round(picbox.RectangleF)) Then Return
+    Private Function OrderedIlluminationDeck() As Generic.List(Of B2SPictureBox)
+        Dim result As New Generic.List(Of B2SPictureBox)()
+        Dim added As New Generic.HashSet(Of B2SPictureBox)()
 
-        Dim bounds As Rectangle = Rectangle.Round(picbox.RectangleF)
-        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
+        If Not B2SData.UseZOrder Then
+            For Each entry As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+                If entry.Value IsNot Nothing AndAlso added.Add(entry.Value) Then result.Add(entry.Value)
+            Next
+            Return result
+        End If
 
-        If picbox.NativeRotation Then
-            ' Native one-image rotation already has a persistent source bitmap.
-            ' Draw it directly behind the canvas instead of allocating another
-            ' full-size bitmap for every angle change.
-            Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
-            Try
-                e.Graphics.SetClip(bounds, Drawing2D.CombineMode.Intersect)
-                e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
-                e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
-                e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
-                Dim destination As PointF() = NativeRotationDestinationPoints(picbox, picbox.VisualArtworkBounds)
-                e.Graphics.DrawImage(picbox.BackgroundImage, destination,
-                                     New RectangleF(0, 0, picbox.BackgroundImage.Width, picbox.BackgroundImage.Height),
-                                     GraphicsUnit.Pixel)
-            Finally
-                e.Graphics.Restore(state)
-            End Try
+        For Each entry As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+            If entry.Value IsNot Nothing AndAlso entry.Value.ZOrder = 0 AndAlso added.Add(entry.Value) Then result.Add(entry.Value)
+        Next
+        For Each ordered As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderImages
+            For Each image As B2SPictureBox In ordered.Value
+                If image IsNot Nothing AndAlso added.Add(image) Then result.Add(image)
+            Next
+        Next
+        Return result
+    End Function
+
+    Private Sub RepaintScoreControls(ByVal clipRectangle As Rectangle)
+        For Each display As KeyValuePair(Of String, Dream7Display) In B2SData.LEDDisplays
+            If display.Value.Parent Is Me AndAlso display.Value.Visible AndAlso clipRectangle.IntersectsWith(display.Value.Bounds) Then
+                display.Value.Invalidate()
+                display.Value.Update()
+            End If
+        Next
+        For Each led As KeyValuePair(Of String, B2SLEDBox) In B2SData.LEDs
+            If led.Value.Parent Is Me AndAlso led.Value.Visible AndAlso clipRectangle.IntersectsWith(led.Value.Bounds) Then
+                led.Value.Invalidate()
+                led.Value.Update()
+            End If
+        Next
+        For Each reel As KeyValuePair(Of String, B2SReelBox) In B2SData.Reels
+            If reel.Value.Parent Is Me AndAlso reel.Value.Visible AndAlso clipRectangle.IntersectsWith(reel.Value.Bounds) Then
+                reel.Value.Invalidate()
+                reel.Value.Update()
+            End If
+        Next
+    End Sub
+
+    Private Sub DrawUnifiedLayersAboveScore(ByVal scoreControl As Control, ByVal scoreZOrder As Integer, ByVal e As PaintEventArgs)
+        ' Scores on the DMD window use the DMD deck and the DMD image.
+        If formDMD IsNot Nothing AndAlso scoreControl IsNot Nothing AndAlso scoreControl.Parent Is formDMD Then
+            formDMD.DrawUnifiedLayersAboveScore(scoreControl, scoreZOrder, e)
+            Return
+        End If
+        If Not B2SData.UnifiedLayerDeck OrElse scoreControl Is Nothing OrElse scoreControl.Parent IsNot Me OrElse Me.BackgroundImage Is Nothing Then Return
+        Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+        Try
+            e.Graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+            e.Graphics.ResetTransform()
+            e.Graphics.TranslateTransform(-scoreControl.Left, -scoreControl.Top)
+            e.Graphics.SetClip(scoreControl.Bounds, Drawing2D.CombineMode.Replace)
+            Using overlayArgs As New PaintEventArgs(e.Graphics, scoreControl.Bounds)
+                Dim deck As Generic.List(Of B2SPictureBox) = OrderedIlluminationDeck()
+                Dim canvasRank As Integer = Math.Max(0, B2SData.CanvasLayerPosition)
+                DrawIlluminationDeckSegment(overlayArgs, deck.Where(Function(image) image.ZOrder > scoreZOrder AndAlso image.ZOrder <= canvasRank))
+                If scoreZOrder <= canvasRank Then e.Graphics.DrawImage(Me.BackgroundImage, 0, 0)
+                DrawIlluminationDeckSegment(overlayArgs, deck.Where(Function(image) image.ZOrder > Math.Max(scoreZOrder, canvasRank)))
+            End Using
+        Finally
+            e.Graphics.Restore(state)
+        End Try
+    End Sub
+
+    Private Sub ApplyUnifiedScoreControlOrder()
+        If Not B2SData.UnifiedLayerDeck Then Return
+        Dim controls As New Generic.List(Of Control)()
+        For Each display As Dream7Display In B2SData.LEDDisplays.Values
+            If display.Parent Is Me Then controls.Add(display)
+        Next
+        For Each led As B2SLEDBox In B2SData.LEDs.Values
+            If led.Parent Is Me Then controls.Add(led)
+        Next
+        For Each reel As B2SReelBox In B2SData.Reels.Values
+            If reel.Parent Is Me Then controls.Add(reel)
+        Next
+        controls.Sort(Function(left, right) UnifiedScoreZOrder(left).CompareTo(UnifiedScoreZOrder(right)))
+        For Each control As Control In controls
+            control.BringToFront()
+        Next
+    End Sub
+
+    Private Function UnifiedScoreZOrder(ByVal control As Control) As Integer
+        If TypeOf control Is Dream7Display Then Return DirectCast(control, Dream7Display).UnifiedLayerZOrder
+        If TypeOf control Is B2SLEDBox Then Return DirectCast(control, B2SLEDBox).UnifiedLayerZOrder
+        If TypeOf control Is B2SReelBox Then Return DirectCast(control, B2SReelBox).UnifiedLayerZOrder
+        Return 0
+    End Function
+
+    Private Sub DrawIlluminationDeckSegment(ByVal e As PaintEventArgs,
+                                            ByVal items As IEnumerable(Of B2SPictureBox))
+        ' Preserve the proven front renderer exactly on both sides of the canvas.
+        For Each image As B2SPictureBox In items
+            If image.DynamicFrontLighting AndAlso image.DynamicFrontShowLight AndAlso
+               Not image.SeparateLightLayer AndAlso Not image.IsImageSnippit Then
+                DrawImage(e, image, True)
+            End If
+        Next
+        For Each image As B2SPictureBox In items
+            DrawImage(e, image)
+        Next
+    End Sub
+
+    ' B2S Pro files: consecutive still snippets are composed once into one
+    ' picture and reused, so a rotating snippet below them does not redraw each
+    ' one every frame. The picture is rebuilt whenever any of them changes
+    ' (visibility, image, position, ROM state); a run that keeps changing is
+    ' drawn directly instead.
+    Private NotInheritable Class StaticRunCache
+        Public Key As Object()
+        Public Image As Bitmap
+        Public Bounds As Rectangle
+    End Class
+    Private NotInheritable Class StaticRunState
+        Public ReadOnly Variants As New Generic.List(Of StaticRunCache)()
+        Public ReadOnly BuildTimes As New Generic.Queue(Of Long)()
+        Public BypassUntil As Long
+    End Class
+    Private ReadOnly staticRunStates As New Generic.Dictionary(Of String, StaticRunState)()
+    Private ReadOnly staticRunClock As Diagnostics.Stopwatch = Diagnostics.Stopwatch.StartNew()
+
+    Private Shared Function IsStaticRunCandidate(ByVal picbox As B2SPictureBox) As Boolean
+        Return picbox IsNot Nothing AndAlso picbox.IsImageSnippit AndAlso Not picbox.NativeRotation AndAlso
+               Not picbox.MotionPathRollEnabled AndAlso Not picbox.IsMotionPathSourceSeparate AndAlso
+               Not picbox.HasSparseAnimationFrame AndAlso picbox.PhysicsSelectionMaskAlpha Is Nothing AndAlso
+               Not picbox.DynamicFrontLighting AndAlso Not B2SData.HasPhysicsBalls
+    End Function
+
+    ' The same visibility rules DrawImage applies, without the repaint-area test.
+    Private Function WouldDrawIgnoringClip(ByVal picbox As B2SPictureBox) As Boolean
+        Dim drawme As Boolean = Not B2SSettings.AllOut AndAlso Not picbox.IsDisposed AndAlso picbox.Visible AndAlso
+                                Not PicturePaintBounds(picbox).IsEmpty
+        If drawme AndAlso picbox.RomID <> 0 AndAlso Not picbox.SetThruAnimation Then
+            drawme = (picbox.RomID <> TopRomID OrElse picbox.RomIDType <> TopRomIDType OrElse picbox.RomInverted <> TopRomInverted) AndAlso (picbox.RomID <> SecondRomID OrElse picbox.RomIDType <> SecondRomIDType OrElse picbox.RomInverted <> SecondRomInverted)
+        End If
+        If drawme AndAlso B2SData.DualBackglass Then
+            drawme = (picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = B2SSettings.CurrentDualMode)
+        End If
+        Return drawme
+    End Function
+
+    Private Sub DrawIlluminationDeckSegmentCached(ByVal e As PaintEventArgs,
+                                                  ByVal items As IEnumerable(Of B2SPictureBox))
+        Dim list As New Generic.List(Of B2SPictureBox)(items)
+        For Each image As B2SPictureBox In list
+            If image.DynamicFrontLighting AndAlso image.DynamicFrontShowLight AndAlso
+               Not image.SeparateLightLayer AndAlso Not image.IsImageSnippit Then
+                DrawImage(e, image, True)
+            End If
+        Next
+        Dim index As Integer = 0
+        While index < list.Count
+            Dim runEnd As Integer = index
+            While runEnd < list.Count AndAlso IsStaticRunCandidate(list(runEnd))
+                runEnd += 1
+            End While
+            If runEnd - index >= 2 Then
+                DrawStaticRun(e, list.GetRange(index, runEnd - index))
+                index = runEnd
+            Else
+                DrawImage(e, list(index))
+                index += 1
+            End If
+        End While
+    End Sub
+
+    Private Sub DrawStaticRun(ByVal e As PaintEventArgs, ByVal run As Generic.List(Of B2SPictureBox))
+        Dim runId As String = run(0).Name & "+" & run.Count.ToString()
+        Dim state As StaticRunState = Nothing
+        If Not staticRunStates.TryGetValue(runId, state) Then
+            state = New StaticRunState()
+            staticRunStates(runId) = state
+        End If
+        Dim now As Long = staticRunClock.ElapsedMilliseconds
+        If now < state.BypassUntil Then
+            For Each picbox As B2SPictureBox In run
+                DrawImage(e, picbox)
+            Next
             Return
         End If
 
-        ' Compose the rotating artwork with the canvas patch first. Drawing the
-        ' result at its real Z-order keeps lower animation layers underneath it,
-        ' while the canvas alpha still masks artwork that is behind the glass.
-        Dim cacheIsCurrent As Boolean = (behindCanvasCacheImage IsNot Nothing AndAlso
-                                         behindCanvasCachePictureBox Is picbox AndAlso
-                                         behindCanvasCacheBackground Is picbox.BackgroundImage AndAlso
-                                         behindCanvasCacheBounds = bounds AndAlso
-                                         behindCanvasCacheAngle = picbox.VisualRotationAngle)
-        If Not cacheIsCurrent Then
-            If behindCanvasCacheImage IsNot Nothing Then behindCanvasCacheImage.Dispose()
-            behindCanvasCacheImage = New Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb)
-            behindCanvasCachePictureBox = picbox
-            behindCanvasCacheBackground = picbox.BackgroundImage
-            behindCanvasCacheBounds = bounds
-            behindCanvasCacheAngle = picbox.VisualRotationAngle
+        Dim key As New Generic.List(Of Object)()
+        key.Add(Me.ClientSize) : key.Add(B2SData.IsOffImageVisible) : key.Add(B2SScreen.BackglassCutOff) : key.Add(e.Graphics.DpiX)
+        Dim bounds As Rectangle = Rectangle.Empty
+        For Each picbox As B2SPictureBox In run
+            Dim drawme As Boolean = WouldDrawIgnoringClip(picbox)
+            key.Add(picbox) : key.Add(drawme) : key.Add(picbox.BackgroundImage) : key.Add(picbox.OffImage)
+            key.Add(picbox.RectangleF) : key.Add(picbox.VisualArtworkBounds)
+            If drawme Then bounds = If(bounds.IsEmpty, PicturePaintBounds(picbox), Rectangle.Union(bounds, PicturePaintBounds(picbox)))
+        Next
+        Dim keyArray As Object() = key.ToArray()
 
-            Using graphics As Graphics = Graphics.FromImage(behindCanvasCacheImage)
-                graphics.Clear(Color.Transparent)
-                graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
-                graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
-                graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
-
-                If picbox.NativeRotation OrElse picbox.MotionPathRollEnabled Then
-                    Dim localRect As New RectangleF(0, 0, bounds.Width, bounds.Height)
-                    Dim destination As PointF() = If(picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation,
-                                                     BallRollDestinationPoints(localRect, picbox.VisualRotationAngle),
-                                                     RotationDestinationPoints(localRect, picbox.VisualRotationAngle))
-                    graphics.DrawImage(picbox.BackgroundImage, destination,
-                                       New RectangleF(0, 0, picbox.BackgroundImage.Width, picbox.BackgroundImage.Height),
-                                       GraphicsUnit.Pixel)
-                Else
-                    graphics.DrawImage(picbox.BackgroundImage, New Rectangle(0, 0, bounds.Width, bounds.Height))
+        Dim hit As StaticRunCache = Nothing
+        For Each cached As StaticRunCache In state.Variants
+            If cached.Key.Length <> keyArray.Length Then Continue For
+            Dim same As Boolean = True
+            For k As Integer = 0 To keyArray.Length - 1
+                If Not Object.Equals(cached.Key(k), keyArray(k)) Then
+                    same = False
+                    Exit For
                 End If
-            End Using
+            Next
+            If same Then
+                hit = cached
+                Exit For
+            End If
+        Next
+
+        If hit Is Nothing Then
+            ' A run that keeps changing (moving or rapidly switching snippets)
+            ' gains nothing from a cache; draw it directly for a while.
+            state.BuildTimes.Enqueue(now)
+            While state.BuildTimes.Count > 0 AndAlso now - state.BuildTimes.Peek() > 2000
+                state.BuildTimes.Dequeue()
+            End While
+            If state.BuildTimes.Count > 6 Then
+                state.BypassUntil = now + 5000
+                state.BuildTimes.Clear()
+                For Each cached As StaticRunCache In state.Variants
+                    If cached.Image IsNot Nothing Then cached.Image.Dispose()
+                Next
+                state.Variants.Clear()
+                For Each picbox As B2SPictureBox In run
+                    DrawImage(e, picbox)
+                Next
+                Return
+            End If
+
+            hit = New StaticRunCache() With {.Key = keyArray, .Bounds = bounds}
+            If Not bounds.IsEmpty Then
+                hit.Image = New Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb)
+                hit.Image.SetResolution(e.Graphics.DpiX, e.Graphics.DpiY)
+                Dim savedRegion As Region = currentPaintRegion
+                currentPaintRegion = Nothing
+                Try
+                    Using g As Graphics = Graphics.FromImage(hit.Image)
+                        g.Clear(Color.Transparent)
+                        g.PageUnit = GraphicsUnit.Pixel
+                        g.SmoothingMode = e.Graphics.SmoothingMode
+                        g.TranslateTransform(-bounds.X, -bounds.Y)
+                        Using runArgs As New PaintEventArgs(g, bounds)
+                            For Each picbox As B2SPictureBox In run
+                                DrawImage(runArgs, picbox)
+                            Next
+                        End Using
+                    End Using
+                Finally
+                    currentPaintRegion = savedRegion
+                End Try
+            End If
+            state.Variants.Insert(0, hit)
+            While state.Variants.Count > 4
+                Dim oldest As StaticRunCache = state.Variants(state.Variants.Count - 1)
+                If oldest.Image IsNot Nothing Then oldest.Image.Dispose()
+                state.Variants.RemoveAt(state.Variants.Count - 1)
+            End While
         End If
-        e.Graphics.DrawImageUnscaled(behindCanvasCacheImage, bounds.Location)
+
+        If hit.Image Is Nothing Then Return
+        Dim area As Rectangle = Rectangle.Intersect(hit.Bounds, e.ClipRectangle)
+        If area.IsEmpty OrElse (currentPaintRegion IsNot Nothing AndAlso Not currentPaintRegion.IsVisible(area)) Then Return
+        Dim graphicsState As Drawing2D.GraphicsState = e.Graphics.Save()
+        e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
+        e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.Half
+        e.Graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+        e.Graphics.DrawImage(hit.Image, area, area.X - hit.Bounds.X, area.Y - hit.Bounds.Y, area.Width, area.Height, GraphicsUnit.Pixel)
+        e.Graphics.Restore(graphicsState)
     End Sub
 
     Protected Overrides Sub OnPaintBackground(e As System.Windows.Forms.PaintEventArgs)
@@ -815,17 +1001,27 @@ Public Class formBackglass
     End Sub
 
     Private Sub DrawImage(e As System.Windows.Forms.PaintEventArgs, picbox As B2SPictureBox,
-                          Optional ByVal drawingBehindCanvas As Boolean = False,
                           Optional ByVal drawingDynamicFrontBase As Boolean = False)
 
         If picbox IsNot Nothing Then
 
-            DrawPersistentMotionPathSource(e, picbox, drawingBehindCanvas)
+            DrawPersistentMotionPathSource(e, picbox)
 
             Dim paintBounds As Rectangle = PicturePaintBounds(picbox)
-            Dim drawme As Boolean = (picbox.BehindCanvas = drawingBehindCanvas AndAlso Not B2SSettings.AllOut AndAlso picbox IsNot Nothing AndAlso Not picbox.IsDisposed AndAlso picbox.Visible AndAlso e.ClipRectangle.IntersectsWith(paintBounds))
+            Dim drawme As Boolean = (Not B2SSettings.AllOut AndAlso picbox IsNot Nothing AndAlso Not picbox.IsDisposed AndAlso picbox.Visible AndAlso e.ClipRectangle.IntersectsWith(paintBounds) AndAlso (currentPaintRegion Is Nothing OrElse currentPaintRegion.IsVisible(paintBounds)))
+            Dim snippetCutOffState As Drawing2D.GraphicsState = Nothing
             If drawme AndAlso B2SScreen.BackglassCutOff <> Nothing Then
-                drawme = Not B2SScreen.BackglassCutOff.IntersectsWith(paintBounds)
+                ' Only backglasses from the current Designer (UnifiedLayerDeck) clip
+                ' snippets at the grill; legacy files keep the 3.0.11 all-or-nothing check.
+                If picbox.IsImageSnippit AndAlso B2SData.UnifiedLayerDeck Then
+                    ' A transparent snippet margin may overlap the grill even when
+                    ' its artwork does not. Clip that margin at the grill boundary;
+                    ' do not suppress the complete snippet.
+                    snippetCutOffState = e.Graphics.Save()
+                    e.Graphics.ExcludeClip(B2SScreen.BackglassCutOff)
+                Else
+                    drawme = Not B2SScreen.BackglassCutOff.IntersectsWith(paintBounds)
+                End If
             End If
             If drawme AndAlso picbox.RomID <> 0 AndAlso Not picbox.SetThruAnimation Then
                 drawme = (picbox.RomID <> TopRomID OrElse picbox.RomIDType <> TopRomIDType OrElse picbox.RomInverted <> TopRomInverted) AndAlso (picbox.RomID <> SecondRomID OrElse picbox.RomIDType <> SecondRomIDType OrElse picbox.RomInverted <> SecondRomInverted)
@@ -858,6 +1054,7 @@ Public Class formBackglass
                             Next
                         End If
                     End If
+                    If snippetCutOffState IsNot Nothing Then e.Graphics.Restore(snippetCutOffState)
                     Return
                 End If
                 If picbox.DynamicFrontLighting AndAlso picbox.DynamicFrontLightField IsNot Nothing AndAlso Not picbox.IsImageSnippit Then
@@ -878,6 +1075,7 @@ Public Class formBackglass
                 End If
                 If picbox.HasSparseAnimationFrame Then
                     DrawSparseInfinityFrame(e.Graphics, picbox, e.ClipRectangle)
+                    If snippetCutOffState IsNot Nothing Then e.Graphics.Restore(snippetCutOffState)
                     Return
                 End If
                 Dim drawImage As Image = picbox.BackgroundImage
@@ -891,23 +1089,21 @@ Public Class formBackglass
                     Using frame As Bitmap = CreatePhysicsMaskedFrame(picbox, drawImage, frameBounds)
                         e.Graphics.DrawImageUnscaled(frame, frameBounds.Location)
                     End Using
+                ElseIf drawImage IsNot Nothing AndAlso picbox.NativeRotation AndAlso UsesSharedRotationFrame(picbox) Then
+                    DrawSharedRotationFrame(e, picbox, drawImage)
                 ElseIf drawImage IsNot Nothing AndAlso (picbox.NativeRotation OrElse picbox.MotionPathRollEnabled) Then
-                    If drawingBehindCanvas Then
-                        DrawCachedBehindCanvasImage(e, picbox)
-                    Else
-                        Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
-                        e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
-                        e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
-                        e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
-                        Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
-                        Dim destination As PointF() = If(picbox.NativeRotation,
-                                                         NativeRotationDestinationPoints(picbox, visualBounds),
-                                                         BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle))
-                        e.Graphics.DrawImage(drawImage, destination,
-                                             New RectangleF(0, 0, drawImage.Width, drawImage.Height),
-                                             GraphicsUnit.Pixel)
-                        e.Graphics.Restore(state)
-                    End If
+                    Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+                    e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
+                    e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+                    e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+                    Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
+                    Dim destination As PointF() = If(picbox.NativeRotation,
+                                                     NativeRotationDestinationPoints(picbox, visualBounds),
+                                                     BallRollDestinationPoints(visualBounds, picbox.VisualRotationAngle))
+                    e.Graphics.DrawImage(drawImage, destination,
+                                         New RectangleF(0, 0, drawImage.Width, drawImage.Height),
+                                         GraphicsUnit.Pixel)
+                    e.Graphics.Restore(state)
                 ElseIf drawImage IsNot Nothing AndAlso picbox.HasFullResolutionSnippet Then
                     Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
                     e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
@@ -917,7 +1113,10 @@ Public Class formBackglass
                 ElseIf drawImage IsNot Nothing AndAlso picbox.PreservePhysicsArtworkAspect Then
                     e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
                 ElseIf drawImage IsNot Nothing Then
-                    If B2SData.HasPhysicsBalls AndAlso staticPhysicsImages.Draw(e.Graphics, drawImage, picbox.RectangleF.Location) Then Return
+                    If B2SData.HasPhysicsBalls AndAlso staticPhysicsImages.Draw(e.Graphics, drawImage, picbox.RectangleF.Location) Then
+                        If snippetCutOffState IsNot Nothing Then e.Graphics.Restore(snippetCutOffState)
+                        Return
+                    End If
                     Dim tiles As Generic.List(Of SparseImageTile) = GetSparseImageTiles(drawImage)
                     If tiles Is Nothing Then
                         e.Graphics.DrawImage(drawImage, picbox.RectangleF.Location)
@@ -930,6 +1129,7 @@ Public Class formBackglass
                     End If
                 End If
             End If
+            If snippetCutOffState IsNot Nothing Then e.Graphics.Restore(snippetCutOffState)
 
         End If
 
@@ -945,8 +1145,13 @@ Public Class formBackglass
             If snippet Is Nothing OrElse snippet.IsDisposed OrElse Not snippet.IsImageSnippit OrElse
                Not snippet.Visible OrElse snippet.BackgroundImage Is Nothing OrElse
                snippet.ZOrder >= light.ZOrder Then Continue For
-            If light.DynamicFrontTargetSnippetID > 0 AndAlso
-               Not String.Equals(snippet.Name, "PictureBox" & light.DynamicFrontTargetSnippetID.ToString(), StringComparison.Ordinal) Then Continue For
+            If light.DynamicFrontTargetSelectionDefined Then
+                If Not light.DynamicFrontTargetSnippetIDs.Any(
+                    Function(targetID) String.Equals(snippet.Name, "PictureBox" & targetID.ToString(), StringComparison.Ordinal)) Then Continue For
+            ElseIf light.DynamicFrontTargetSnippetID > 0 AndAlso
+                   Not String.Equals(snippet.Name, "PictureBox" & light.DynamicFrontTargetSnippetID.ToString(), StringComparison.Ordinal) Then
+                Continue For
+            End If
             If B2SData.DualBackglass AndAlso snippet.DualMode <> B2SData.eDualMode.Both AndAlso
                snippet.DualMode <> B2SSettings.CurrentDualMode Then Continue For
 
@@ -956,17 +1161,7 @@ Public Class formBackglass
 
             Using sourceCrop As Bitmap = CreateCurrentSnippetCrop(snippet, snippetBounds, overlap)
                 If sourceCrop Is Nothing Then Continue For
-                Using fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
-                    Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
-                        fieldGraphics.Clear(Color.Transparent)
-                        fieldGraphics.DrawImage(light.DynamicFrontLightField,
-                                                New Rectangle(Point.Empty, fieldCrop.Size),
-                                                New RectangleF((overlap.X - lightBounds.X) * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
-                                                               (overlap.Y - lightBounds.Y) * light.DynamicFrontLightField.Height / CSng(lightBounds.Height),
-                                                               overlap.Width * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
-                                                               overlap.Height * light.DynamicFrontLightField.Height / CSng(lightBounds.Height)),
-                                                GraphicsUnit.Pixel)
-                    End Using
+                Using fieldCrop As Bitmap = GetDynamicFieldCrop(light, snippet, lightBounds, overlap)
                     Dim illuminatedImage As Bitmap
                     If snippet.NativeRotation Then
                         illuminatedImage = DynamicArtworkLighting.RenderWithWorkspace(
@@ -988,6 +1183,179 @@ Public Class formBackglass
                 End Using
             End Using
         Next
+    End Sub
+
+    ' B2S Pro files: a light's glow shape over a native-rotation snippet depends
+    ' only on the light's field image, its bounds and the overlap, none of which
+    ' change while the snippet turns. Build it once and hand out copies.
+    Private NotInheritable Class DynamicFieldCropCache
+        Public Field As Image
+        Public LightBounds As Rectangle
+        Public Overlap As Rectangle
+        Public Crop As Bitmap
+    End Class
+    Private ReadOnly dynamicFieldCrops As New Generic.Dictionary(Of String, DynamicFieldCropCache)()
+
+    Private Shared Function BuildDynamicFieldCrop(ByVal light As B2SPictureBox, ByVal lightBounds As Rectangle,
+                                                  ByVal overlap As Rectangle) As Bitmap
+        Dim fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+        Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
+            fieldGraphics.Clear(Color.Transparent)
+            fieldGraphics.DrawImage(light.DynamicFrontLightField,
+                                    New Rectangle(Point.Empty, fieldCrop.Size),
+                                    New RectangleF((overlap.X - lightBounds.X) * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                   (overlap.Y - lightBounds.Y) * light.DynamicFrontLightField.Height / CSng(lightBounds.Height),
+                                                   overlap.Width * light.DynamicFrontLightField.Width / CSng(lightBounds.Width),
+                                                   overlap.Height * light.DynamicFrontLightField.Height / CSng(lightBounds.Height)),
+                                    GraphicsUnit.Pixel)
+        End Using
+        Return fieldCrop
+    End Function
+
+    ' Returns a bitmap the caller owns and disposes.
+    Private Function GetDynamicFieldCrop(ByVal light As B2SPictureBox, ByVal snippet As B2SPictureBox,
+                                         ByVal lightBounds As Rectangle, ByVal overlap As Rectangle) As Bitmap
+        If Not (B2SData.UnifiedLayerDeck AndAlso snippet.NativeRotation) Then Return BuildDynamicFieldCrop(light, lightBounds, overlap)
+        Dim key As String = light.Name & "|" & snippet.Name
+        Dim entry As DynamicFieldCropCache = Nothing
+        If Not dynamicFieldCrops.TryGetValue(key, entry) OrElse entry.Field IsNot light.DynamicFrontLightField OrElse
+           entry.LightBounds <> lightBounds OrElse entry.Overlap <> overlap Then
+            If entry IsNot Nothing AndAlso entry.Crop IsNot Nothing Then entry.Crop.Dispose()
+            entry = New DynamicFieldCropCache() With {.Field = light.DynamicFrontLightField, .LightBounds = lightBounds,
+                                                      .Overlap = overlap, .Crop = BuildDynamicFieldCrop(light, lightBounds, overlap)}
+            dynamicFieldCrops(key) = entry
+        End If
+        Return entry.Crop.Clone(New Rectangle(0, 0, entry.Crop.Width, entry.Crop.Height), PixelFormat.Format32bppArgb)
+    End Function
+
+    ' B2S Pro files: a native-rotation snippet that dynamic lights target is
+    ' rotated once per position into a shared frame. The frame is drawn to the
+    ' screen and each light cuts its part from it, instead of every light
+    ' rotating the whole snippet again. A light whose frame does not match the
+    ' snippet's current position uses the original per-light crop.
+    Private NotInheritable Class SharedRotationFrame
+        Public Source As Image
+        Public Destination As PointF()
+        Public Bounds As Rectangle
+        Public Frame As Bitmap
+    End Class
+    Private ReadOnly sharedRotationFrames As New Generic.Dictionary(Of B2SPictureBox, SharedRotationFrame)()
+    Private ReadOnly sharedRotationTargets As New Generic.Dictionary(Of B2SPictureBox, Boolean)()
+
+    ' B2S Pro only: a native-rotation snippet that at least one dynamic light targets.
+    Private Function UsesSharedRotationFrame(ByVal snippet As B2SPictureBox) As Boolean
+        If Not B2SData.UnifiedLayerDeck OrElse Not snippet.IsImageSnippit Then Return False
+        Dim result As Boolean
+        If sharedRotationTargets.TryGetValue(snippet, result) Then Return result
+        For Each pair As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+            Dim light As B2SPictureBox = pair.Value
+            If light Is Nothing OrElse Not light.DynamicFrontLighting OrElse light.IsImageSnippit OrElse light.ZOrder <= snippet.ZOrder Then Continue For
+            If light.DynamicFrontTargetSelectionDefined Then
+                If light.DynamicFrontTargetSnippetIDs.Any(Function(id) String.Equals(snippet.Name, "PictureBox" & id.ToString(), StringComparison.Ordinal)) Then result = True
+            ElseIf light.DynamicFrontTargetSnippetID > 0 Then
+                If String.Equals(snippet.Name, "PictureBox" & light.DynamicFrontTargetSnippetID.ToString(), StringComparison.Ordinal) Then result = True
+            Else
+                result = True
+            End If
+            If result Then Exit For
+        Next
+        sharedRotationTargets(snippet) = result
+        Return result
+    End Function
+
+    Private Shared Function SamePoints(ByVal a As PointF(), ByVal b As PointF()) As Boolean
+        If a Is Nothing OrElse b Is Nothing OrElse a.Length <> b.Length Then Return False
+        For i As Integer = 0 To a.Length - 1
+            If a(i) <> b(i) Then Return False
+        Next
+        Return True
+    End Function
+
+    Private Sub DrawSharedRotationFrame(ByVal e As PaintEventArgs, ByVal picbox As B2SPictureBox, ByVal drawImage As Image)
+        Dim destination As PointF() = NativeRotationDestinationPoints(picbox, picbox.VisualArtworkBounds)
+        Dim bounds As Rectangle = PicturePaintBounds(picbox)
+        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
+        Dim entry As SharedRotationFrame = Nothing
+        sharedRotationFrames.TryGetValue(picbox, entry)
+        If entry Is Nothing OrElse entry.Source IsNot drawImage OrElse entry.Bounds <> bounds OrElse Not SamePoints(entry.Destination, destination) Then
+            If entry Is Nothing Then
+                entry = New SharedRotationFrame()
+                sharedRotationFrames(picbox) = entry
+            End If
+            If entry.Frame Is Nothing OrElse entry.Frame.Width <> bounds.Width OrElse entry.Frame.Height <> bounds.Height Then
+                If entry.Frame IsNot Nothing Then entry.Frame.Dispose()
+                entry.Frame = New Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb)
+            End If
+            entry.Frame.SetResolution(e.Graphics.DpiX, e.Graphics.DpiY)
+            Using g As Graphics = Graphics.FromImage(entry.Frame)
+                g.Clear(Color.Transparent)
+                g.PageUnit = GraphicsUnit.Pixel
+                g.SmoothingMode = Drawing2D.SmoothingMode.HighSpeed
+                g.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+                g.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighSpeed
+                g.TranslateTransform(-bounds.X, -bounds.Y)
+                g.DrawImage(drawImage, destination, New RectangleF(0, 0, drawImage.Width, drawImage.Height), GraphicsUnit.Pixel)
+            End Using
+            entry.Source = drawImage
+            entry.Destination = destination
+            entry.Bounds = bounds
+        End If
+        Dim area As Rectangle = Rectangle.Intersect(bounds, e.ClipRectangle)
+        If area.IsEmpty Then Return
+        Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+        e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
+        e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.Half
+        e.Graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+        e.Graphics.DrawImage(entry.Frame, area, area.X - bounds.X, area.Y - bounds.Y, area.Width, area.Height, GraphicsUnit.Pixel)
+        e.Graphics.Restore(state)
+    End Sub
+
+    ' Returns Nothing unless the shared frame shows the snippet's current position.
+    Private Function CropFromSharedRotationFrame(ByVal snippet As B2SPictureBox, ByVal overlap As Rectangle) As Bitmap
+        Dim entry As SharedRotationFrame = Nothing
+        If Not B2SData.UnifiedLayerDeck OrElse Not sharedRotationFrames.TryGetValue(snippet, entry) OrElse entry.Frame Is Nothing Then Return Nothing
+        If entry.Source IsNot snippet.BackgroundImage Then Return Nothing
+        If Not SamePoints(entry.Destination, NativeRotationDestinationPoints(snippet, snippet.VisualArtworkBounds)) Then Return Nothing
+        Dim crop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+        Using g As Graphics = Graphics.FromImage(crop)
+            g.Clear(Color.Transparent)
+            Dim source As Rectangle = Rectangle.Intersect(New Rectangle(overlap.X - entry.Bounds.X, overlap.Y - entry.Bounds.Y, overlap.Width, overlap.Height),
+                                                          New Rectangle(Point.Empty, entry.Frame.Size))
+            If source.Width > 0 AndAlso source.Height > 0 Then
+                g.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+                g.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
+                g.PixelOffsetMode = Drawing2D.PixelOffsetMode.Half
+                g.DrawImage(entry.Frame, New Rectangle(source.X + entry.Bounds.X - overlap.X, source.Y + entry.Bounds.Y - overlap.Y, source.Width, source.Height),
+                            source.X, source.Y, source.Width, source.Height, GraphicsUnit.Pixel)
+            End If
+        End Using
+        Return crop
+    End Function
+
+    ' Releases the B2S Pro paint caches (still-snippet runs, glow-shape crops,
+    ' shared rotation frames and the pending paint regions) when the backglass closes.
+    Private Sub ReleaseRenderCaches()
+        For Each state As StaticRunState In staticRunStates.Values
+            For Each cached As StaticRunCache In state.Variants
+                If cached.Image IsNot Nothing Then cached.Image.Dispose()
+            Next
+            state.Variants.Clear()
+        Next
+        staticRunStates.Clear()
+        For Each entry As DynamicFieldCropCache In dynamicFieldCrops.Values
+            If entry.Crop IsNot Nothing Then entry.Crop.Dispose()
+        Next
+        dynamicFieldCrops.Clear()
+        For Each entry As SharedRotationFrame In sharedRotationFrames.Values
+            If entry.Frame IsNot Nothing Then entry.Frame.Dispose()
+        Next
+        sharedRotationFrames.Clear()
+        sharedRotationTargets.Clear()
+        ReleasePaintRegion()
+        If pendingUpdateRegion IsNot Nothing Then
+            pendingUpdateRegion.Dispose()
+            pendingUpdateRegion = Nothing
+        End If
     End Sub
 
     Private Function CreateCurrentSnippetCrop(ByVal snippet As B2SPictureBox,
@@ -1014,6 +1382,8 @@ Public Class formBackglass
             End Using
         End If
 
+        Dim fromFrame As Bitmap = CropFromSharedRotationFrame(snippet, overlap)
+        If fromFrame IsNot Nothing Then Return fromFrame
         Dim nativeCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
         Using graphics As Graphics = Graphics.FromImage(nativeCrop)
             graphics.Clear(Color.Transparent)
@@ -1115,10 +1485,9 @@ Public Class formBackglass
         End Try
     End Function
 
-    Private Sub DrawPersistentMotionPathSource(e As PaintEventArgs, picbox As B2SPictureBox, drawingBehindCanvas As Boolean)
+    Private Sub DrawPersistentMotionPathSource(e As PaintEventArgs, picbox As B2SPictureBox)
         If picbox Is Nothing OrElse Not picbox.IsMotionPathSourceSeparate OrElse
-           picbox.BehindCanvas <> drawingBehindCanvas OrElse B2SSettings.AllOut OrElse
-           picbox.MotionPathSourceImage Is Nothing Then Return
+           B2SSettings.AllOut OrElse picbox.MotionPathSourceImage Is Nothing Then Return
 
         Dim sourceBounds As Rectangle = Rectangle.Round(picbox.MotionPathSourceRectangle)
         If sourceBounds.IsEmpty OrElse Not e.ClipRectangle.IntersectsWith(sourceBounds) Then Return
@@ -1425,12 +1794,6 @@ Public Class formBackglass
 
         startupTimer.Stop()
 
-        ' Start continuous native rotations directly from their one source image.
-        If startupCoreCompleted Then
-            If Not TryStartContinuousNativeRotations() Then startupTimer.Start()
-            Return
-        End If
-
         ' set focus to the VP player
         SetFocusToVPPlayer()
 
@@ -1440,9 +1803,8 @@ Public Class formBackglass
         ' start autostarted animations
         B2SAnimation.AutoStart()
 
-        startupCoreCompleted = True
-        startupTimer.Interval = 25
-        If Not TryStartContinuousNativeRotations() Then startupTimer.Start()
+        ' Start continuous native rotations directly from their one source image.
+        StartContinuousNativeRotations()
         If B2SData.RotatingPictureBox.ContainsKey(0) AndAlso B2SData.RotatingPictureBox(0).AutoStartRotation Then StartRotation()
 
         ' set focus to the VP player
@@ -1457,7 +1819,7 @@ Public Class formBackglass
 #End If
     End Sub
 
-    Private Function TryStartContinuousNativeRotations() As Boolean
+    Private Sub StartContinuousNativeRotations()
         For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
             If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation Then
                 illumination.Value.StartNativeRotation()
@@ -1468,8 +1830,7 @@ Public Class formBackglass
                 illumination.Value.StartNativeRotation()
             End If
         Next
-        Return True
-    End Function
+    End Sub
 
 #If B2S = "EXE" Then
     Private Sub TableTimer_Tick(ByVal sender As Object, ByVal e As EventArgs)
@@ -1486,6 +1847,7 @@ Public Class formBackglass
 
         ' poll registry data
         PollingData()
+        B2SData.FireQueuedPhysicsLaunchers()
         Dim testerSwitchID As Integer = 0
         Dim testerSwitchState As Boolean = False
         While B2SData.TryDequeueTesterSwitchState(testerSwitchID, testerSwitchState)
@@ -1722,7 +2084,7 @@ Public Class formBackglass
 
         Dim solenoidsData As String = String.Empty
 
-        If B2SData.UseRomSolenoids OrElse B2SData.UseAnimationSolenoids OrElse B2SData.UsedMotionPathSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathStopSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse B2SData.PivotSolenoidIDs.Count > 0 Then
+        If B2SData.UseRomSolenoids OrElse B2SData.UseAnimationSolenoids OrElse B2SData.UsedMotionPathSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathStopSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(1).Length > 0 OrElse B2SData.PivotSolenoidIDs.Count > 0 Then
             solenoidsData = regkey.GetValue("B2SSolenoids", New String("0", 251))
             If B2SSettings.IsROMControlled AndAlso solenoidsData.Contains("2") Then
                 regkey.SetValue("B2SSolenoids", solenoidsData.Replace("2", "0"))
@@ -1747,7 +2109,7 @@ Public Class formBackglass
 
         Dim b2sSetsData As String = String.Empty
 
-        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathStopB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveB2SIDs.Count > 0 OrElse B2SData.PivotB2SIDs.Count > 0 Then
+        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathStopB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveB2SIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(3).Length > 0 OrElse B2SData.PivotB2SIDs.Count > 0 Then
             b2sSetsData = regkey.GetValue("B2SSetData", New String(Chr(0), 251))
             'If B2SSettings.IsROMControlled AndAlso b2sSetsData.Contains("2") Then
             '    regkey.SetValue("B2SSetData", b2sSetsData.Replace("2", "0"))
@@ -3068,9 +3430,21 @@ Public Class formBackglass
                 End If
 
                 ' get all illumination infos
-                Dim roms4Authentic As Generic.Dictionary(Of String, Integer) = New Generic.Dictionary(Of String, Integer)
-                Dim roms4Fantasy As Generic.Dictionary(Of String, Integer) = New Generic.Dictionary(Of String, Integer)
-                If topnode.SelectSingleNode("Illumination") IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
+                Dim illuminationNode As Xml.XmlElement = TryCast(topnode.SelectSingleNode("Illumination"), Xml.XmlElement)
+                B2SData.UnifiedLayerDeck = (illuminationNode IsNot Nothing AndAlso
+                                            illuminationNode.Attributes("UnifiedLayerDeck") IsNot Nothing AndAlso
+                                            illuminationNode.Attributes("UnifiedLayerDeck").InnerText = "1")
+                If illuminationNode IsNot Nothing AndAlso illuminationNode.Attributes("CanvasLayerPosition") IsNot Nothing Then
+                    B2SData.CanvasLayerPosition = Math.Max(0, CInt(illuminationNode.Attributes("CanvasLayerPosition").InnerText))
+                Else
+                    B2SData.CanvasLayerPosition = 0
+                End If
+                Dim dmdCanvasLayerPosition As Integer = 0
+                If illuminationNode IsNot Nothing AndAlso illuminationNode.Attributes("DMDCanvasLayerPosition") IsNot Nothing Then
+                    Integer.TryParse(illuminationNode.Attributes("DMDCanvasLayerPosition").InnerText, dmdCanvasLayerPosition)
+                End If
+                B2SData.DMDCanvasLayerPosition = Math.Max(0, dmdCanvasLayerPosition)
+                If illuminationNode IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
                     For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Illumination/Bulb")
                         Dim parent As String = innerNode.Attributes("Parent").InnerText
                         Dim id As Integer = CInt(innerNode.Attributes("ID").InnerText)
@@ -3111,8 +3485,6 @@ Public Class formBackglass
                                                                innerNode.Attributes("ArtworkPixelLighting").InnerText = "1")
                         Dim separateLightLayer As Boolean = (innerNode.Attributes("SeparateLightLayer") IsNot Nothing AndAlso
                                                             innerNode.Attributes("SeparateLightLayer").InnerText = "1")
-                        Dim lightBehindCanvas As Boolean = (innerNode.Attributes("LightBehindCanvas") IsNot Nothing AndAlso
-                                                            innerNode.Attributes("LightBehindCanvas").InnerText = "1")
                         Dim dynamicFrontLighting As Boolean = (innerNode.Attributes("DynamicFrontLighting") IsNot Nothing AndAlso
                                                                innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
                         Dim dynamicFrontShowLight As Boolean = (innerNode.Attributes("DynamicFrontShowLight") IsNot Nothing AndAlso
@@ -3121,6 +3493,14 @@ Public Class formBackglass
                         If innerNode.Attributes("DynamicFrontTargetSnippetID") IsNot Nothing Then
                             Integer.TryParse(innerNode.Attributes("DynamicFrontTargetSnippetID").InnerText, dynamicFrontTargetSnippetID)
                             dynamicFrontTargetSnippetID = Math.Max(0, dynamicFrontTargetSnippetID)
+                        End If
+                        Dim dynamicFrontTargetSelectionDefined As Boolean = (innerNode.Attributes("DynamicFrontTargetSnippetIDs") IsNot Nothing)
+                        Dim dynamicFrontTargetSnippetIDs As New Generic.HashSet(Of Integer)()
+                        If dynamicFrontTargetSelectionDefined Then
+                            For Each token As String In innerNode.Attributes("DynamicFrontTargetSnippetIDs").InnerText.Split("|"c)
+                                Dim targetID As Integer = 0
+                                If Integer.TryParse(token.Trim(), targetID) AndAlso targetID > 0 Then dynamicFrontTargetSnippetIDs.Add(targetID)
+                            Next
                         End If
                         Dim zorder As Integer = 0
                         If innerNode.Attributes("ZOrder") IsNot Nothing Then
@@ -3133,7 +3513,6 @@ Public Class formBackglass
                         Dim picboxrotationstopbehaviour As B2SPictureBox.eSnippitRotationStopBehaviour = B2SPictureBox.eSnippitRotationStopBehaviour.SpinOff
                         Dim automaticrotationcontinuous As Boolean = False
                         Dim nativerotation As Boolean = False
-                        Dim snippitbehindcanvas As Boolean = False
                         If innerNode.Attributes("SnippitType") IsNot Nothing Then
                             picboxtype = CInt(innerNode.Attributes("SnippitType").InnerText)
                             If innerNode.Attributes("SnippitRotatingSteps") IsNot Nothing Then
@@ -3187,9 +3566,6 @@ Public Class formBackglass
                             If innerNode.Attributes("AutomaticRotationStopBehaviour") IsNot Nothing Then
                                 picboxrotationstopbehaviour = CInt(innerNode.Attributes("AutomaticRotationStopBehaviour").InnerText)
                             End If
-                        End If
-                        If innerNode.Attributes("SnippitBehindCanvas") IsNot Nothing Then
-                            snippitbehindcanvas = (innerNode.Attributes("SnippitBehindCanvas").InnerText = "1")
                         End If
                         Dim motionPathDuration As Integer = 3000
                         Dim motionPathLoop As Boolean = False
@@ -3480,10 +3856,12 @@ Public Class formBackglass
                         picbox.IsImageSnippit = isimagesnippit
                         picbox.ArtworkPixelLighting = artworkPixelLighting
                         picbox.SeparateLightLayer = separateLightLayer
-                        picbox.LightBehindCanvas = lightBehindCanvas
                         picbox.DynamicFrontLighting = dynamicFrontLighting AndAlso dynamicFrontLightField IsNot Nothing
                         picbox.DynamicFrontShowLight = picbox.DynamicFrontLighting AndAlso dynamicFrontShowLight
                         picbox.DynamicFrontTargetSnippetID = dynamicFrontTargetSnippetID
+                        picbox.DynamicFrontTargetSelectionDefined = dynamicFrontTargetSelectionDefined
+                        picbox.DynamicFrontTargetSnippetIDs.Clear()
+                        picbox.DynamicFrontTargetSnippetIDs.UnionWith(dynamicFrontTargetSnippetIDs)
                         picbox.DynamicFrontLightField = dynamicFrontLightField
                         If picbox.DynamicFrontLighting Then
                             If innerNode.Attributes("DynamicLightExposure") IsNot Nothing Then picbox.DynamicLightExposure = Math.Max(0, Math.Min(1600, CInt(innerNode.Attributes("DynamicLightExposure").InnerText)))
@@ -3527,7 +3905,6 @@ Public Class formBackglass
                         picbox.PivotPhysicsKnockdownDuration = Math.Max(10, Math.Min(5000, pivotPhysicsKnockdownDuration))
                         picbox.PivotPhysicsResetDelay = Math.Max(0, Math.Min(30000, pivotPhysicsResetDelay))
                         If pivotAnimation AndAlso image IsNot Nothing Then picbox.ConfigurePhysicsCollisionOutline(image)
-                        picbox.BehindCanvas = snippitbehindcanvas
                         picbox.MotionPathDuration = motionPathDuration
                         picbox.MotionPathLoop = motionPathLoop
                         If innerNode.Attributes("MotionPathSwitchID") IsNot Nothing Then picbox.MotionPathSwitchID = Math.Max(0, Math.Min(255, CInt(innerNode.Attributes("MotionPathSwitchID").InnerText)))
@@ -3572,16 +3949,6 @@ Public Class formBackglass
                             If zorder > 0 Then
                                 B2SData.UseZOrder = True
                                 B2SData.ZOrderImages.Add(picbox)
-                            End If
-                            ' add info to rom collection
-                            If Not pivotAnimation AndAlso romid > 0 AndAlso picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso romidtype <> B2SBaseBox.eRomIDType.Mech AndAlso romidtype <> B2SBaseBox.eRomIDType.Switch Then
-                                Dim key As String = If(rominverted, "I", "") & Choose(romidtype, "L", "S", "GI") & romid.ToString() & "|" & romidvalue.ToString()
-                                If picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = B2SData.eDualMode.Authentic Then
-                                    If roms4Authentic.ContainsKey(key) Then roms4Authentic(key) += size.Width * size.Height Else roms4Authentic.Add(key, size.Width * size.Height)
-                                End If
-                                If picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = B2SData.eDualMode.Fantasy Then
-                                    If roms4Fantasy.ContainsKey(key) Then roms4Fantasy(key) += size.Width * size.Height Else roms4Fantasy.Add(key, size.Width * size.Height)
-                                End If
                             End If
                         Else
                             If Not B2SSettings.HideB2SDMD Then
@@ -3684,11 +4051,9 @@ Public Class formBackglass
                             picbox.SetNativeMechPosition(0)
                         ElseIf picboxrotatesteps > 0 AndAlso Not nativerotation Then
                             If picboxtype = B2SPictureBox.ePictureBoxType.SelfRotatingImage AndAlso B2SData.RotatingImages.Count = 0 Then
-                                Me.rotateSteps = picboxrotatesteps
                                 Me.rotateTimerInterval = picboxrotateinterval
                                 RotateImage(picbox, picboxrotatesteps, picboxrotationdirection, B2SPictureBox.ePictureBoxType.SelfRotatingImage)
                             ElseIf picboxtype = B2SPictureBox.ePictureBoxType.MechRotatingImage AndAlso B2SData.RotatingImages.Count = 0 Then
-                                Me.rotateSteps = picboxrotatesteps
                                 RotateImage(picbox, picboxrotatesteps, picboxrotationdirection, B2SPictureBox.ePictureBoxType.MechRotatingImage, romidtype, romid)
                             End If
                         End If
@@ -3709,6 +4074,8 @@ Public Class formBackglass
 
                         Dim parent As String = innerNode.Attributes("Parent").InnerText
                         Dim id As Integer = CInt(innerNode.Attributes("ID").InnerText)
+                        Dim scoreZOrder As Integer = 0
+                        If innerNode.Attributes("ZOrder") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("ZOrder").InnerText, scoreZOrder)
                         Dim setid As Integer = 0
                         If innerNode.Attributes("ReelIlluImageSet") IsNot Nothing Then
                             setid = CInt(innerNode.Attributes("ReelIlluImageSet").InnerText)
@@ -3728,10 +4095,6 @@ Public Class formBackglass
                         Dim hidden As Boolean = False
                         If innerNode.Attributes("DisplayState") IsNot Nothing Then
                             hidden = (CInt(innerNode.Attributes("DisplayState").InnerText) = 1)
-                        End If
-                        Dim behindCanvas As Boolean = False
-                        If innerNode.Attributes("BehindCanvas") IsNot Nothing Then
-                            behindCanvas = (innerNode.Attributes("BehindCanvas").InnerText = "1")
                         End If
                         Dim reel3DEnabled As Boolean = False
                         Dim reel3DBrightness As Integer = 100
@@ -3812,6 +4175,10 @@ Public Class formBackglass
                             ' add some self rendered Dream7 LED segments
                             Dim led As Dream7Display = New Dream7Display()
                             led.Name = "LEDDisplay" & id.ToString()
+                            led.UnifiedLayerZOrder = scoreZOrder
+                            If B2SData.UnifiedLayerDeck Then
+                                led.UnifiedLayerOverlay = Sub(control As Control, args As PaintEventArgs) DrawUnifiedLayersAboveScore(control, DirectCast(control, Dream7Display).UnifiedLayerZOrder, args)
+                            End If
                             led.Location = loc
                             led.Size = size
                             Select Case ledtype
@@ -3877,6 +4244,12 @@ Public Class formBackglass
 
 
 
+                            ' B2S Pro: rotation and perspective set in the Designer (Nothing = straight on).
+                            Dim dream7Transform As ScoreTransform = If(B2SData.UnifiedLayerDeck, ScoreTransform.Read(innerNode), Nothing)
+                            If dream7Transform IsNot Nothing Then
+                                led.ApplyScoreTransform(dream7Transform.DisplayQuad(New RectangleF(loc.X + 1, loc.Y, size.Width, size.Height)))
+                            End If
+
                             ' add control to parent
                             If isOnBackglass Then
                                 'led.Type = B2SBaseBox.eType.OnBackglass
@@ -3891,7 +4264,7 @@ Public Class formBackglass
                                     B2SData.LEDDisplays.Add(led.Name, led)
                                 End If
                             End If
-                            led.BringToFront()
+                            If Not B2SData.UnifiedLayerDeck Then led.BringToFront()
                             led.Visible = isDream7LEDs AndAlso Not hidden
                             ' add digit location info
                             For i = 0 To digits - 1
@@ -3903,8 +4276,12 @@ Public Class formBackglass
                                 dream7index += 1
                                 If dream7b2sstartdigit > 0 Then dream7b2sstartdigit += 1
                             Next
-                            ' add LED area
-                            B2SData.LEDAreas.Add("LEDArea" & id.ToString(), New B2SData.LEDAreaInfo(New Rectangle(loc, size), Not isOnBackglass))
+                            ' add LED area (the backglass skips painting under it). A rotated or
+                            ' perspective display no longer covers its flat rectangle; its control
+                            ' region covers only the display, so no area is excluded for it.
+                            If dream7Transform Is Nothing Then
+                                B2SData.LEDAreas.Add("LEDArea" & id.ToString(), New B2SData.LEDAreaInfo(New Rectangle(loc, size), Not isOnBackglass))
+                            End If
                             ' add or update player info collection
                             If b2splayerno > 0 Then
                                 B2SData.IsAPlayerAdded = True
@@ -3925,11 +4302,25 @@ Public Class formBackglass
                                 led.ID = If(b2sstartdigit > 0, b2sstartdigit, renderedandreelindex)
                                 led.DisplayID = id
                                 led.Name = "LEDBox" & led.ID.ToString()
+                                led.UnifiedLayerZOrder = scoreZOrder
+                                If B2SData.UnifiedLayerDeck Then
+                                    led.UnifiedLayerOverlay = Sub(control As Control, args As PaintEventArgs) DrawUnifiedLayersAboveScore(control, DirectCast(control, B2SLEDBox).UnifiedLayerZOrder, args)
+                                End If
                                 led.StartDigit = startdigit
                                 led.Digits = digits
                                 led.Hidden = hidden
                                 led.Location = New Point(x, loc.Y)
                                 led.Size = New Size(width, size.Height)
+                                ' B2S Pro: rotation and perspective set in the Designer (Nothing = straight on).
+                                Dim ledTransform As ScoreTransform = If(B2SData.UnifiedLayerDeck, ScoreTransform.Read(innerNode), Nothing)
+                                If ledTransform IsNot Nothing Then
+                                    ' Same digit slices as the reels (see the reel branch below).
+                                    Dim displayQuad As PointF() = ledTransform.DisplayQuad(New RectangleF(loc.X + 1, loc.Y, size.Width, size.Height))
+                                    Dim u0 As Single = (1.0F + (i - 1) * (width + spacing / 2.0F)) / size.Width
+                                    Dim u1 As Single = Math.Min(1.0F, u0 + width / CSng(size.Width))
+                                    Dim v0 As Single = 1.0F / size.Height
+                                    led.ApplyScoreTransform(ScoreTransform.SubQuad(displayQuad, u0, u1, v0, 1.0F))
+                                End If
                                 Select Case ledtype
                                     Case "7", "8"
                                         led.LEDType = B2SLED.eLEDType.LED8
@@ -3958,7 +4349,7 @@ Public Class formBackglass
                                     End If
                                 End If
                                 B2SData.ScoreMaxDigit = led.ID
-                                led.BringToFront()
+                                If Not B2SData.UnifiedLayerDeck Then led.BringToFront()
                                 led.Visible = isRenderedLEDs AndAlso Not hidden
                                 ' add LED area
                                 'B2SData.LEDAreas.Add("LEDArea" & id.ToString(), New B2SData.LEDAreaInfo(New Rectangle(loc, size), Not isOnBackglass))
@@ -3984,12 +4375,15 @@ Public Class formBackglass
                                 reel.DisplayID = id
                                 reel.SetID = setid
                                 reel.Name = "ReelBox" & reel.ID.ToString()
+                                reel.UnifiedLayerZOrder = scoreZOrder
+                                If B2SData.UnifiedLayerDeck Then
+                                    reel.UnifiedLayerOverlay = Sub(control As Control, args As PaintEventArgs) DrawUnifiedLayersAboveScore(control, DirectCast(control, B2SReelBox).UnifiedLayerZOrder, args)
+                                End If
                                 reel.StartDigit = startdigit
                                 reel.Digits = digits
                                 reel.RomID = romid
                                 reel.RomIDType = romidtype
                                 reel.RomIDValue = romidvalue
-                                reel.BehindCanvas = behindCanvas
                                 reel.KeepDigitAspect = keepDigitAspect
                                 reel.ReelDigitWidth = reelDigitWidth
                                 reel.Reel3DEnabled = reel3DEnabled
@@ -3999,8 +4393,20 @@ Public Class formBackglass
                                 reel.Reel3DGlass = reel3DGlass
                                 reel.Reel3DDisplayWidth = size.Width
                                 reel.Reel3DDisplayOffsetX = x - loc.X
+                                reel.ReelDesignSize = New Size(width, size.Height)
                                 reel.Location = New Point(x, loc.Y)
                                 reel.Size = New Size(width, size.Height)
+                                ' B2S Pro: rotation and perspective set in the Designer (Nothing = straight on).
+                                Dim scoreTransform As ScoreTransform = If(B2SData.UnifiedLayerDeck, ScoreTransform.Read(innerNode), Nothing)
+                                If scoreTransform IsNot Nothing Then
+                                    ' Same layout as the Designer: each digit is a slice of the
+                                    ' score rectangle (drawn from x = 1, y = 1) mapped onto its quad.
+                                    Dim displayQuad As PointF() = scoreTransform.DisplayQuad(New RectangleF(loc.X + 1, loc.Y, size.Width, size.Height))
+                                    Dim u0 As Single = (1.0F + (i - 1) * (width + spacing / 2.0F)) / size.Width
+                                    Dim u1 As Single = Math.Min(1.0F, u0 + width / CSng(size.Width))
+                                    Dim v0 As Single = 1.0F / size.Height
+                                    reel.ApplyScoreTransform(ScoreTransform.SubQuad(displayQuad, u0, u1, v0, 1.0F))
+                                End If
                                 reel.ReelType = reeltype.Substring(0, reeltype.Length - 2)
                                 reel.ScoreType = b2sscoretype
                                 reel.SoundName = soundName
@@ -4021,7 +4427,7 @@ Public Class formBackglass
                                     End If
                                 End If
                                 B2SData.ScoreMaxDigit = reel.ID
-                                reel.BringToFront()
+                                If Not B2SData.UnifiedLayerDeck Then reel.BringToFront()
                                 reel.Visible = Not hidden
                                 ' add or update reel display
                                 If Not B2SData.ReelDisplays.ContainsKey(id) Then
@@ -4056,6 +4462,7 @@ Public Class formBackglass
                         dream7index = renderedandreelindex
 
                     Next
+                    ApplyUnifiedScoreControlOrder()
 #If B2S = "EXE" Then
                     ' write player info into registry
                     For Each controls As KeyValuePair(Of Integer, B2SPlayer.ControlCollection) In B2SData.Players
@@ -4259,85 +4666,6 @@ Public Class formBackglass
                         End If
                     End If
 
-#If mergeBulbs Then
-                    ' look for the largest bulb amount
-                        Dim topSize4Authentic As Integer = 0
-                    Dim topkey4Authentic As String = String.Empty
-                        Dim secondSize4Authentic As Integer = 0
-                    Dim secondkey4Authentic As String = String.Empty
-                    For Each romsize As KeyValuePair(Of String, Integer) In roms4Authentic
-                            If romsize.Value > secondSize4Authentic Then
-                                secondSize4Authentic = romsize.Value
-                                secondkey4Authentic = romsize.Key.Split("|")(0)
-                        End If
-                            If romsize.Value > topSize4Authentic Then
-                                secondSize4Authentic = topSize4Authentic
-                            secondkey4Authentic = topkey4Authentic
-                                topSize4Authentic = romsize.Value
-                                topkey4Authentic = romsize.Key.Split("|")(0)
-                        End If
-                    Next
-                    Dim top4Fantasy As Integer = 0
-                    Dim topkey4Fantasy As String = String.Empty
-                        Dim secondSize4Fantasy As Integer = 0
-                    Dim secondkey4Fantasy As String = String.Empty
-                    If B2SData.DualBackglass Then
-                        For Each romsize As KeyValuePair(Of String, Integer) In roms4Fantasy
-                                If romsize.Value > secondSize4Fantasy Then
-                                    secondSize4Fantasy = romsize.Value
-                                    secondkey4Fantasy = romsize.Key.Split("|")(0)
-                            End If
-                            If romsize.Value > top4Fantasy Then
-                                    secondSize4Fantasy = top4Fantasy
-                                secondkey4Fantasy = topkey4Fantasy
-                                top4Fantasy = romsize.Value
-                                topkey4Fantasy = romsize.Key.Split("|")(0)
-                            End If
-                        Next
-                    End If
-
-                    ' maybe draw some light images for pretty fast image changing
-                        If topSize4Authentic >= minSize4Image Then
-                        ' create some light images
-                        If TopLightImage4Authentic Is Nothing Then
-                            TopLightImage4Authentic = CreateLightImage(DarkImage4Authentic, B2SData.eDualMode.Authentic, topkey4Authentic, , TopRomID4Authentic, TopRomIDType4Authentic, TopRomInverted4Authentic)
-                                If secondSize4Authentic > minSize4Image Then
-                                SecondLightImage4Authentic = CreateLightImage(DarkImage4Authentic, B2SData.eDualMode.Authentic, secondkey4Authentic, , SecondRomID4Authentic, SecondRomIDType4Authentic, SecondRomInverted4Authentic)
-                                TopAndSecondLightImage4Authentic = CreateLightImage(DarkImage4Authentic, B2SData.eDualMode.Authentic, topkey4Authentic, secondkey4Authentic)
-                            End If
-                        Else
-                            SecondLightImage4Authentic = CreateLightImage(DarkImage4Authentic, B2SData.eDualMode.Authentic, topkey4Authentic, , SecondRomID4Authentic, SecondRomIDType4Authentic, SecondRomInverted4Authentic)
-                            TopAndSecondLightImage4Authentic = CreateLightImage(TopLightImage4Authentic, B2SData.eDualMode.Authentic, topkey4Authentic)
-                        End If
-                    End If
-                    If B2SData.DualBackglass AndAlso top4Fantasy >= minSize4Image Then
-                        ' create some light images
-                        If TopLightImage4Fantasy Is Nothing Then
-                            TopLightImage4Fantasy = CreateLightImage(DarkImage4Fantasy, B2SData.eDualMode.Fantasy, topkey4Fantasy, , TopRomID4Fantasy, TopRomIDType4Fantasy, TopRomInverted4Fantasy)
-                                If secondSize4Fantasy > minSize4Image Then
-                                SecondLightImage4Fantasy = CreateLightImage(DarkImage4Fantasy, B2SData.eDualMode.Fantasy, secondkey4Fantasy, , SecondRomID4Fantasy, SecondRomIDType4Fantasy, SecondRomInverted4Fantasy)
-                                TopAndSecondLightImage4Fantasy = CreateLightImage(DarkImage4Fantasy, B2SData.eDualMode.Fantasy, topkey4Fantasy, secondkey4Fantasy)
-                            End If
-                        Else
-                            SecondLightImage4Fantasy = CreateLightImage(DarkImage4Fantasy, B2SData.eDualMode.Fantasy, topkey4Fantasy, , SecondRomID4Fantasy, SecondRomIDType4Fantasy, SecondRomInverted4Fantasy)
-                            TopAndSecondLightImage4Fantasy = CreateLightImage(TopLightImage4Fantasy, B2SData.eDualMode.Fantasy, topkey4Fantasy)
-                        End If
-                    End If
-                    B2SData.UsedTopRomIDType4Authentic = TopRomIDType4Authentic
-                    B2SData.UsedSecondRomIDType4Authentic = SecondRomIDType4Authentic
-                    If B2SData.DualBackglass Then
-                        B2SData.UsedTopRomIDType4Fantasy = TopRomIDType4Fantasy
-                        B2SData.UsedSecondRomIDType4Fantasy = SecondRomIDType4Fantasy
-                    End If
-
-                    ' remove top and second rom bulbs
-                    CheckBulbs(TopRomID4Authentic, TopRomIDType4Authentic, TopRomInverted4Authentic, B2SData.eDualMode.Authentic)
-                    CheckBulbs(SecondRomID4Authentic, SecondRomIDType4Authentic, SecondRomInverted4Authentic, B2SData.eDualMode.Authentic)
-                    If B2SData.DualBackglass Then
-                        CheckBulbs(TopRomID4Fantasy, TopRomIDType4Fantasy, TopRomInverted4Fantasy, B2SData.eDualMode.Fantasy)
-                        CheckBulbs(SecondRomID4Fantasy, SecondRomIDType4Fantasy, SecondRomInverted4Fantasy, B2SData.eDualMode.Fantasy)
-                    End If
-#End If
                 End If
 
                 ' get all animation info
@@ -4414,7 +4742,7 @@ Public Class formBackglass
                             End If
                         Next
                         ' maybe add animation
-                        If interval > 0 AndAlso entries.Length > 0 Then
+                        If interval > 0 AndAlso entries IsNot Nothing AndAlso entries.Length > 0 Then
                             B2SAnimation.AddAnimation(name, Me, formDMD, dualmode, interval, loops, startAnimationAtBackglassStartup, lightsStateAtAnimationStart, lightsStateAtAnimationEnd,
                                                       animationstopbehaviour, lockInvolvedLamps, hidescoredisplays, bringtofront, randomstart, randomquality,
                                                       entries)
@@ -4604,6 +4932,13 @@ Public Class formBackglass
 
     End Sub
 
+    ' Full-canvas backglass images: B2S Pro files use the high-quality canvas filter;
+    ' legacy files keep the original 3.0.11 Resized sampling.
+    Private Function ResizeBackglassImage(ByVal image As Image) As Image
+        If B2SData.UnifiedLayerDeck Then Return image.ResizedCanvas(B2SScreen.BackglassSize)
+        Return image.Resized(B2SScreen.BackglassSize)
+    End Function
+
     Private Sub ResizeSomeImages()
 
         ' resize images
@@ -4612,7 +4947,7 @@ Public Class formBackglass
         If DarkImage4Authentic IsNot Nothing Then
             Dim width As Integer = DarkImage4Authentic.Width
             Dim height As Integer = DarkImage4Authentic.Height
-            Dim image As Image = DarkImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(DarkImage4Authentic)
             DarkImage4Authentic.Dispose()
             DarkImage4Authentic = Nothing
             DarkImage4Authentic = image
@@ -4623,37 +4958,37 @@ Public Class formBackglass
             DarkImage4Fantasy = DarkImage4Authentic
         End If
         If TopLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = TopLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(TopLightImage4Authentic)
             TopLightImage4Authentic.Dispose()
             TopLightImage4Authentic = Nothing
             TopLightImage4Authentic = image
         End If
         If TopLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = TopLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(TopLightImage4Fantasy)
             TopLightImage4Fantasy.Dispose()
             TopLightImage4Fantasy = Nothing
             TopLightImage4Fantasy = image
         End If
         If SecondLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = SecondLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(SecondLightImage4Authentic)
             SecondLightImage4Authentic.Dispose()
             SecondLightImage4Authentic = Nothing
             SecondLightImage4Authentic = image
         End If
         If SecondLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = SecondLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(SecondLightImage4Fantasy)
             SecondLightImage4Fantasy.Dispose()
             SecondLightImage4Fantasy = Nothing
             SecondLightImage4Fantasy = image
         End If
         If TopAndSecondLightImage4Authentic IsNot Nothing Then
-            Dim image As Image = TopAndSecondLightImage4Authentic.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(TopAndSecondLightImage4Authentic)
             TopAndSecondLightImage4Authentic.Dispose()
             TopAndSecondLightImage4Authentic = Nothing
             TopAndSecondLightImage4Authentic = image
         End If
         If TopAndSecondLightImage4Fantasy IsNot Nothing Then
-            Dim image As Image = TopAndSecondLightImage4Fantasy.ResizedCanvas(B2SScreen.BackglassSize)
+            Dim image As Image = ResizeBackglassImage(TopAndSecondLightImage4Fantasy)
             TopAndSecondLightImage4Fantasy.Dispose()
             TopAndSecondLightImage4Fantasy = Nothing
             TopAndSecondLightImage4Fantasy = image
@@ -4675,6 +5010,15 @@ Public Class formBackglass
                         illu.Value.OffImage = offimage
                     End If
                 End If
+            Next
+        End If
+
+        ' B2S Pro files: store illumination images premultiplied. GDI+ draws
+        ' premultiplied images faster; the composed pixels are identical.
+        If B2SData.UnifiedLayerDeck Then
+            For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
+                If illu.Value.BackgroundImage IsNot Nothing Then illu.Value.BackgroundImage = ToPremultipliedImage(illu.Value.BackgroundImage)
+                If illu.Value.OffImage IsNot Nothing Then illu.Value.OffImage = ToPremultipliedImage(illu.Value.OffImage)
             Next
         End If
 
@@ -4886,7 +5230,6 @@ Public Class formBackglass
         If Not isdone Then
             isdone = True
             ' maybe show some 'startup on' snippits
-            Dim topIsOn As Boolean = False
             For Each picbox As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
                 If picbox.Value.InitialState = 1 AndAlso picbox.Value.IsImageSnippit Then
                     picbox.Value.Visible = True
@@ -4934,6 +5277,16 @@ Public Class formBackglass
                     End If
                 End If
             Next
+            ' Current-Designer backglasses also show 'startup on' DMD lights.
+            ' Legacy files keep the original behavior (DMD lights are not
+            ' switched on at startup).
+            If B2SData.UnifiedLayerDeck Then
+                For Each picbox As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
+                    If picbox.Value.InitialState = 1 AndAlso Not picbox.Value.IsImageSnippit Then
+                        picbox.Value.Visible = True
+                    End If
+                Next
+            End If
         End If
 
     End Sub
@@ -5114,94 +5467,18 @@ Public Class formBackglass
         End If
     End Sub
 
-    Private Function CreateLightImage(ByRef image As Image,
-                                      ByVal dualmode As B2SData.eDualMode,
-                                      Optional ByVal firstromkey As String = "",
-                                      Optional ByVal secondromkey As String = "",
-                                      Optional ByRef romid As Integer = 0,
-                                      Optional ByRef romidtype As B2SBaseBox.eRomIDType = B2SBaseBox.eRomIDType.NotDefined,
-                                      Optional ByRef rominverted As Boolean = False) As Image
-        Dim firstromValue As Integer = 0
-
-        Dim secondromid As Integer = 0
-        Dim secondromValue As Integer = 0
-        Dim secondromidtype As B2SBaseBox.eRomIDType = B2SBaseBox.eRomIDType.NotDefined
-        Dim secondrominverted As Boolean = False
-        If firstromkey.Substring(0, 1) = "I" Then
-            rominverted = True
-            firstromkey = firstromkey.Substring(1)
-        End If
-        firstromValue = CInt(secondromkey.Split("|")(1))
-        firstromkey = firstromkey.Split("|")(0)
-
-        romidtype = If((firstromkey.Substring(0, 1) = "S"), B2SBaseBox.eRomIDType.Solenoid, If((firstromkey.Substring(0, 2) = "GI"), B2SBaseBox.eRomIDType.GIString, B2SBaseBox.eRomIDType.Lamp))
-        romid = CInt(If((romidtype = B2SBaseBox.eRomIDType.GIString), firstromkey.Substring(2), firstromkey.Substring(1)))
-        If Not String.IsNullOrEmpty(secondromkey) Then
-            secondromValue = CInt(secondromkey.Split("|")(1))
-            secondromkey = secondromkey.Split("|")(0)
-            If secondromkey.Substring(0, 1) = "I" Then
-                secondrominverted = True
-                secondromkey = secondromkey.Substring(1)
-            End If
-            secondromidtype = If((secondromkey.Substring(0, 1) = "S"), B2SBaseBox.eRomIDType.Solenoid, If((secondromkey.Substring(0, 2) = "GI"), B2SBaseBox.eRomIDType.GIString, B2SBaseBox.eRomIDType.Lamp))
-            secondromid = CInt(If((secondromidtype = B2SBaseBox.eRomIDType.GIString), secondromkey.Substring(2), secondromkey.Substring(1)))
-        End If
-        ' create image copy
-        Dim ret As Image = New Bitmap(image.Width, image.Height)
-        Using gr As Graphics = Graphics.FromImage(ret)
-            gr.InterpolationMode = Drawing2D.InterpolationMode.High
-            gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-            gr.DrawImage(image, New Rectangle(0, 0, ret.Width, ret.Height))
+    Private Shared Function ToPremultipliedImage(ByVal image As Image) As Image
+        Dim bitmap As Bitmap = TryCast(image, Bitmap)
+        If bitmap Is Nothing OrElse bitmap.PixelFormat = PixelFormat.Format32bppPArgb Then Return image
+        Dim converted As New Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format32bppPArgb)
+        converted.SetResolution(bitmap.HorizontalResolution, bitmap.VerticalResolution)
+        Using g As Graphics = Graphics.FromImage(converted)
+            g.CompositingMode = Drawing2D.CompositingMode.SourceCopy
+            g.DrawImage(bitmap, New Rectangle(0, 0, bitmap.Width, bitmap.Height), 0, 0, bitmap.Width, bitmap.Height, GraphicsUnit.Pixel)
         End Using
-        ' draw matching bulbs into image
-        For Each picbox As B2SPictureBox In Me.Controls.OfType(Of B2SPictureBox)()
-            If picbox.RomID = romid AndAlso picbox.RomIDValue = firstromValue AndAlso picbox.RomIDType = romidtype AndAlso picbox.RomInverted = rominverted AndAlso (picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = dualmode) Then
-                Using gr As Graphics = Graphics.FromImage(ret)
-                    gr.InterpolationMode = Drawing2D.InterpolationMode.High
-                    gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-                    gr.DrawImage(picbox.BackgroundImage, New Rectangle(picbox.Location.X, picbox.Location.Y, picbox.Size.Width, picbox.Size.Height))
-                End Using
-            End If
-        Next
-        ' maybe draw second matching bulbs into image
-        If Not String.IsNullOrEmpty(secondromkey) Then
-            For Each picbox As B2SPictureBox In Me.Controls.OfType(Of B2SPictureBox)()
-                If picbox.RomID = secondromid AndAlso picbox.RomIDValue = secondromValue AndAlso picbox.RomIDType = secondromidtype AndAlso picbox.RomInverted = secondrominverted AndAlso (picbox.DualMode = B2SData.eDualMode.Both OrElse picbox.DualMode = dualmode) Then
-                    Using gr As Graphics = Graphics.FromImage(ret)
-                        gr.InterpolationMode = Drawing2D.InterpolationMode.High
-                        gr.DrawImage(picbox.BackgroundImage, New Rectangle(picbox.Location.X, picbox.Location.Y, picbox.Size.Width, picbox.Size.Height))
-                    End Using
-                End If
-            Next
-        End If
-        ' that's it
-        Return ret
+        Return converted
     End Function
-    Private Sub CheckBulbs(ByVal romid As Integer,
-                           ByVal romidtype As B2SBaseBox.eRomIDType,
-                           ByVal rominverted As Boolean,
-                           ByVal dualmode As B2SData.eDualMode)
-        If romid > 0 AndAlso romidtype <> B2SBaseBox.eRomIDType.NotDefined Then
-            Dim UsedRomIDs As Generic.SortedList(Of Integer, B2SBaseBox()) = Nothing
-            If romidtype = B2SBaseBox.eRomIDType.Lamp Then
-                UsedRomIDs = If(dualmode = B2SData.eDualMode.Fantasy, B2SData.UsedRomLampIDs4Fantasy, B2SData.UsedRomLampIDs4Authentic)
-            ElseIf romidtype = B2SBaseBox.eRomIDType.Solenoid Then
-                UsedRomIDs = If(dualmode = B2SData.eDualMode.Fantasy, B2SData.UsedRomSolenoidIDs4Fantasy, B2SData.UsedRomSolenoidIDs4Authentic)
-            ElseIf romidtype = B2SBaseBox.eRomIDType.GIString Then
-                UsedRomIDs = If(dualmode = B2SData.eDualMode.Fantasy, B2SData.UsedRomGIStringIDs4Fantasy, B2SData.UsedRomGIStringIDs4Authentic)
-            End If
-            If UsedRomIDs.ContainsKey(romid) Then
-                UsedRomIDs.Remove(romid)
-                For Each picbox As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-                    With picbox.Value
-                        If .RomID = romid AndAlso .RomIDType = romidtype AndAlso .RomInverted <> rominverted AndAlso (.DualMode = B2SData.eDualMode.Both OrElse .DualMode = dualmode) Then
-                            B2SData.Illuminations.Add(picbox.Value, dualmode)
-                        End If
-                    End With
-                Next
-            End If
-        End If
-    End Sub
+
     Public Function GetBoundingRectangle(image As Bitmap) As Rectangle
         Dim rect As New Rectangle(0, 0, image.Width, image.Height)
         Dim bmpData As Imaging.BitmapData = image.LockBits(rect, Imaging.ImageLockMode.ReadOnly, Imaging.PixelFormat.Format32bppArgb)
@@ -5281,16 +5558,6 @@ Public Class formBackglass
 
         Return croppedImage
     End Function
-    Private Function ImageToBase64(image As Image) As String
-        If image IsNot Nothing Then
-            With New System.Drawing.ImageConverter
-                Dim bytes() As Byte = CType(.ConvertTo(image, GetType(Byte())), Byte())
-                Return Convert.ToBase64String(bytes, Base64FormattingOptions.InsertLineBreaks)
-            End With
-        Else
-            Return String.Empty
-        End If
-    End Function
     Private Function Base64ToImage(data As String) As Image
         Dim image As Image = Nothing
         If data.Length > 0 Then
@@ -5304,18 +5571,6 @@ Public Class formBackglass
         Return image
     End Function
 
-    Public Function WavToBase64(stream As IO.Stream) As String
-        If stream IsNot Nothing Then
-            Dim bytes() As Byte
-            ReDim bytes(stream.Length - 1)
-            Using reader As IO.BinaryReader = New IO.BinaryReader(stream)
-                Dim length As Integer = reader.Read(bytes, 0, stream.Length)
-            End Using
-            Return Convert.ToBase64String(bytes, Base64FormattingOptions.InsertLineBreaks)
-        Else
-            Return String.Empty
-        End If
-    End Function
     Public Function Base64ToWav(data As String) As IO.Stream
         If data.Length > 0 Then
             Dim bytes() As Byte = Convert.FromBase64String(data)
@@ -5325,9 +5580,6 @@ Public Class formBackglass
         End If
     End Function
 
-    Private Function Color2String(ByVal color As Color) As String
-        Return color.R.ToString() & "." & color.G.ToString() & "." & color.B.ToString()
-    End Function
     Private Function String2Color(ByVal color As String) As Color
         Dim colorvalues As String() = color.Split(".")
         Return Drawing.Color.FromArgb(CInt(colorvalues(0)), CInt(colorvalues(1)), CInt(colorvalues(2)))
@@ -5345,11 +5597,17 @@ Public Class formBackglass
 
     Private Function RandomStarter(ByVal top As Integer) As Integer
 
+        ' Picks a random entry, avoiding a repeat of the last pick when there is
+        ' more than one. With a single entry the original loop could never end.
         Static lastone As Integer = -1
+        Static random As New Random()
+        If top <= 1 Then
+            lastone = 0
+            Return 0
+        End If
         Dim ret As Integer = -1
         Do Until ret >= 0 AndAlso ret < top AndAlso ret <> lastone
-            Dim random As Random = New Random(Date.Now.Millisecond)
-            ret = CInt(Math.Truncate(random.NextDouble() * top))
+            ret = random.Next(top)
         Loop
         lastone = ret
         Return ret

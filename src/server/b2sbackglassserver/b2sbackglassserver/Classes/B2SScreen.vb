@@ -668,8 +668,18 @@ Public Class B2SScreen
     Private Sub ScaleControl(ByVal _cntrl As B2SBaseBox, ByVal _rescaleX As Single, ByVal _rescaleY As Single, ByVal isOnDMD As Boolean, Optional ByVal flipY As Boolean = False)
 
         ' calculate the exact location and size of all controls
+        ' A snippet may have a large transparent source canvas even though every
+        ' visible pixel remains above the grill. Keep its rectangle so the paint
+        ' path can clip only the portion inside the grill instead of discarding
+        ' the complete snippet. Legacy lights, reels, and LEDs keep the existing
+        ' all-or-nothing cutoff behavior.
+        Dim imageSnippet As B2SPictureBox = TryCast(_cntrl, B2SPictureBox)
+        ' Legacy files and pre-unified exports keep the 3.0.11 rule (a snippet
+        ' touching the cutoff is hidden); only current-Designer files are exempt.
+        Dim crossesCutOffAsSnippet As Boolean = imageSnippet IsNot Nothing AndAlso imageSnippet.IsImageSnippit AndAlso
+                                                B2SData.UnifiedLayerDeck
         If Not isOnDMD AndAlso BackglassCutOff <> Nothing Then
-            If BackglassCutOff.IntersectsWith(New Rectangle(_cntrl.Left, _cntrl.Top, _cntrl.Width, _cntrl.Height)) Then
+            If Not crossesCutOffAsSnippet AndAlso BackglassCutOff.IntersectsWith(New Rectangle(_cntrl.Left, _cntrl.Top, _cntrl.Width, _cntrl.Height)) Then
                 _cntrl.RectangleF = New RectangleF(0, 0, 0, 0)
             ElseIf BackglassCutOff.Top < _cntrl.Top Then
                 _cntrl.RectangleF = New RectangleF(_cntrl.Left / _rescaleX, (_cntrl.Top - Me.BackglassSmallGrillHeight) / _rescaleY, _cntrl.Width / _rescaleX, _cntrl.Height / _rescaleY)
@@ -684,10 +694,6 @@ Public Class B2SScreen
         If TypeOf _cntrl Is B2SLEDBox OrElse TypeOf _cntrl Is B2SReelBox Then
             _cntrl.Location = New Point(Point.Round(_cntrl.RectangleF.Location))
             _cntrl.Size = New Size(Size.Round(_cntrl.RectangleF.Size))
-            Dim reel As B2SReelBox = TryCast(_cntrl, B2SReelBox)
-            If reel IsNot Nothing AndAlso reel.ReelDigitWidth > 0 Then
-                reel.ReelDigitWidth = Math.Max(1, CInt(Math.Round(reel.ReelDigitWidth / _rescaleX)))
-            End If
         End If
 
         ' maybe flip DMD images

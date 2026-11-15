@@ -28,11 +28,19 @@ Public Class formToolLayers
     Private ReadOnly chkShowSnippets As New CategoryToggleCheckBox()
     Private ReadOnly chkShowText As New CategoryToggleCheckBox()
     Private ReadOnly layerIcons As New ImageList()
+    Private ReadOnly layerDragAutoScrollTimer As New Timer With {.Interval = 75}
     Private refreshing As Boolean
     Private draggedItems As New List(Of Object)()
+    Private layerDragAutoScrollDirection As Integer
+    Private layerDragClientPoint As Point
     Private layoutWasChanged As Boolean
     Private restoringDedicatedLayout As Boolean
     Private Shared ReadOnly dedicatedLayoutFile As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "B2SBackglassDesigner", "layers-panel-layout.xml")
+
+    Private NotInheritable Class CanvasLayerMarker
+    End Class
+
+    Private Shared ReadOnly CanvasLayer As New CanvasLayerMarker()
 
     Public ReadOnly Property HasSavedLayout As Boolean
         Get
@@ -62,6 +70,8 @@ Public Class formToolLayers
         AddHandler Me.VisibleChanged, AddressOf LayersVisibilityChanged
         AddHandler Me.FormClosing, AddressOf SaveLayersLayoutNow
         AddHandler Me.Load, AddressOf RestoreDedicatedLayout
+        AddHandler Me.Disposed, AddressOf LayersDisposed
+        AddHandler layerDragAutoScrollTimer.Tick, AddressOf LayerDragAutoScrollTick
 
         layers.Name = "lvLayers"
         layers.Dock = DockStyle.Fill
@@ -78,7 +88,15 @@ Public Class formToolLayers
         layers.OwnerDraw = True
         layers.GridLines = False
         layers.Columns.Add("#", 34)
-        layers.Columns.Add("Z", 32)
+        ' The legacy Z value no longer controls stacking (the Layers list order
+        ' does). Keep the column so sub-item indexes stay unchanged, but hide it.
+        layers.Columns.Add("Z", 0)
+        AddHandler layers.ColumnWidthChanging, Sub(sender As Object, args As ColumnWidthChangingEventArgs)
+                                                   If args.ColumnIndex = 1 Then
+                                                       args.Cancel = True
+                                                       args.NewWidth = 0
+                                                   End If
+                                               End Sub
         layers.Columns.Add("Layer", 108)
         layers.Columns.Add("Type", 52)
         layers.Columns.Add("State", 54)
@@ -93,7 +111,6 @@ Public Class formToolLayers
         AddHandler layers.KeyDown, AddressOf LayersKeyDown
         AddHandler layers.DrawColumnHeader, AddressOf Layers_DrawColumnHeader
         AddHandler layers.DrawItem, AddressOf Layers_DrawItem
-        AddHandler layers.DrawSubItem, AddressOf Layers_DrawSubItem
         AddHandler layers.MouseMove, AddressOf Layers_MouseMove
         AddHandler layers.MouseLeave, AddressOf Layers_MouseLeave
         AddHandler layers.ColumnWidthChanged, AddressOf LayersInternalLayoutChanged
@@ -212,13 +229,7 @@ Public Class formToolLayers
         Dim maskMenu As New ToolStripMenuItem("Mask Placement")
         maskMenu.DropDownItems.Add("Behind Mask", Nothing, AddressOf SetBehindMask)
         maskMenu.DropDownItems.Add("In Front of Mask", Nothing, AddressOf SetInFrontMask)
-        Dim canvasMenu As New ToolStripMenuItem("Canvas Placement")
-        canvasMenu.DropDownItems.Add("Snippet Behind Canvas", Nothing, AddressOf SetSnippetBehindCanvas)
-        canvasMenu.DropDownItems.Add("Snippet In Front of Canvas", Nothing, AddressOf SetSnippetInFrontOfCanvas)
-        canvasMenu.DropDownItems.Add(New ToolStripSeparator())
-        canvasMenu.DropDownItems.Add("Reel / LED Behind Canvas", Nothing, AddressOf SetScoreBehindCanvas)
-        canvasMenu.DropDownItems.Add("Reel / LED In Front of Canvas", Nothing, AddressOf SetScoreInFrontOfCanvas)
-        layerMenu.Items.AddRange(New ToolStripItem() {editMenu, orderMenu, stateMenu, maskMenu, canvasMenu, New ToolStripSeparator(),
+        layerMenu.Items.AddRange(New ToolStripItem() {editMenu, orderMenu, stateMenu, maskMenu, New ToolStripSeparator(),
                                                        New ToolStripMenuItem("Delete Selected Layer", Nothing, AddressOf DeleteLayer)})
         layers.ContextMenuStrip = layerMenu
 
@@ -233,6 +244,9 @@ Public Class formToolLayers
         layerPanel.Controls.Add(layerLabel)
         layerPanel.Controls.Add(layerNumber)
         layerPanel.Controls.Add(btnSetLayer)
+        ' Retired: the "Z layer / Set Layer" control edited the legacy Z value,
+        ' which no longer affects stacking. Stacking is set in the Layers list.
+        layerPanel.Visible = False
 
         Dim opacityPanel As New TableLayoutPanel With {.Name = "pnlLayerOpacity", .Dock = DockStyle.Bottom, .Height = 37, .BackColor = BackColor, .Padding = New Padding(5, 1, 5, 1), .ColumnCount = 3, .RowCount = 1}
         opacityPanel.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 82.0F))
@@ -292,6 +306,7 @@ Public Class formToolLayers
             LayerManager.SetSnippetCategoryVisible(chkShowSnippets.Checked)
         LayerManager.SetTextCategoryVisible(chkShowText.Checked)
             For index As Integer = 0 To layers.Columns.Count - 1
+                If index = 1 Then Continue For ' retired Z column stays hidden
                 layers.Columns(index).Width = Math.Max(20, ReadLayoutInt(root, "column" & index.ToString(), layers.Columns(index).Width))
             Next
         Catch
@@ -509,34 +524,38 @@ Public Class formToolLayers
                 e.Graphics.DrawLine(highlight, cardBounds.Left + 7, cardBounds.Top + 1, cardBounds.Right - 7, cardBounds.Top + 1)
             End Using
         End Using
+
+        ' Paint every cell as part of the same row event. The native Details
+        ' ListView can raise DrawItem without raising DrawSubItem until hover,
+        ' leaving the custom row card visible but its text temporarily blank.
+        For columnIndex As Integer = 0 To Math.Min(layers.Columns.Count, e.Item.SubItems.Count) - 1
+            DrawLayerSubItem(e.Graphics, e.Item, columnIndex, e.Item.SubItems(columnIndex).Bounds)
+        Next
+        If e.Item.Selected Then
+            ControlPaint.DrawFocusRectangle(e.Graphics, e.Item.Bounds, Color.White, rowBack)
+        End If
     End Sub
 
-    Private Sub Layers_DrawSubItem(sender As Object, e As DrawListViewSubItemEventArgs)
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
-        Dim selected As Boolean = e.Item.Selected
-        Dim typeName As String = If(e.Item.SubItems.Count > 3, e.Item.SubItems(3).Text, String.Empty)
-        Dim stateText As String = If(e.Item.SubItems.Count > 4, e.Item.SubItems(4).Text, String.Empty)
-        Dim rowBack As Color = LayerRowBackColor(e.Item, typeName)
-
+    Private Sub DrawLayerSubItem(graphics As Graphics, item As ListViewItem, columnIndex As Integer, bounds As Rectangle)
+        graphics.SmoothingMode = SmoothingMode.AntiAlias
+        Dim typeName As String = If(item.SubItems.Count > 3, item.SubItems(3).Text, String.Empty)
+        Dim stateText As String = If(item.SubItems.Count > 4, item.SubItems(4).Text, String.Empty)
         Dim textColor As Color = LayerCellColor(3, typeName, stateText)
-        Dim textBounds As Rectangle = Rectangle.Inflate(e.Bounds, -6, 0)
-        If e.ColumnIndex = 0 AndAlso layers.SmallImageList IsNot Nothing AndAlso e.Item.ImageIndex >= 0 Then
-            Dim icon As Image = layers.SmallImageList.Images(e.Item.ImageIndex)
-            Dim imageY As Integer = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - icon.Height) \ 2)
-            e.Graphics.DrawImage(icon, e.Bounds.Left + 4, imageY, icon.Width, icon.Height)
+        Dim textBounds As Rectangle = Rectangle.Inflate(bounds, -6, 0)
+        If columnIndex = 0 AndAlso layers.SmallImageList IsNot Nothing AndAlso item.ImageIndex >= 0 Then
+            Dim icon As Image = layers.SmallImageList.Images(item.ImageIndex)
+            Dim imageY As Integer = bounds.Top + Math.Max(0, (bounds.Height - icon.Height) \ 2)
+            graphics.DrawImage(icon, bounds.Left + 4, imageY, icon.Width, icon.Height)
             textBounds.X += icon.Width + 5
             textBounds.Width = Math.Max(1, textBounds.Width - icon.Width - 5)
         End If
 
-        TextRenderer.DrawText(e.Graphics,
-                              e.SubItem.Text,
+        TextRenderer.DrawText(graphics,
+                              item.SubItems(columnIndex).Text,
                               layers.Font,
                               textBounds,
                               textColor,
                               TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.EndEllipsis)
-        If selected AndAlso e.ColumnIndex = layers.Columns.Count - 1 Then
-            ControlPaint.DrawFocusRectangle(e.Graphics, e.Item.Bounds, Color.White, rowBack)
-        End If
     End Sub
 
     Private Function LayerRowBackColor(item As ListViewItem, typeName As String) As Color
@@ -567,8 +586,6 @@ Public Class formToolLayers
                     Return Color.Cyan
                 Case "lamp", "bulb"
                     Return Color.FromArgb(255, 190, 61)
-                Case "blinker"
-                    Return Color.FromArgb(255, 145, 35)
                 Case "blinker"
                     Return Color.FromArgb(255, 145, 35)
                 Case "flasher"
@@ -610,6 +627,7 @@ Public Class formToolLayers
     End Sub
 
     Private Sub AddVisualLayers()
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.EnsureUnifiedLayerDeck()
         Dim visualItems As New List(Of Object)()
         If Backglass.currentBulbs IsNot Nothing Then
             For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
@@ -623,15 +641,27 @@ Public Class formToolLayers
         End If
 
         visualItems.Sort(Function(left As Object, right As Object)
-                             Dim result As Integer = GetVisualZ(right).CompareTo(GetVisualZ(left))
+                             Dim result As Integer = GetVisualLayerOrder(left).CompareTo(GetVisualLayerOrder(right))
                              If result <> 0 Then Return result
                              Return GetStableVisualIndex(left).CompareTo(GetStableVisualIndex(right))
                          End Function)
 
+        Dim orderedRows As New List(Of Object)()
+        Dim belowCount As Integer = If(Backglass.currentData Is Nothing, 0,
+                                       Backglass.currentData.CanvasLayerPositionFor(Backglass.currentData.IsDMDImageShown))
+        Dim canvasIndex As Integer = Math.Max(0, visualItems.Count - belowCount)
+        orderedRows.AddRange(visualItems.Take(canvasIndex))
+        orderedRows.Add(CanvasLayer)
+        orderedRows.AddRange(visualItems.Skip(canvasIndex))
+
         Dim stackPosition As Integer = 1
         Dim addedPictureAnimations As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim addedMotionGroups As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        For Each item As Object In visualItems
+        For Each item As Object In orderedRows
+            If Object.ReferenceEquals(item, CanvasLayer) Then
+                AddLayerRow(CanvasLayer, "-", "-", "Canvas Background", "Canvas", "Fixed")
+                Continue For
+            End If
             If TypeOf item Is Illumination.BulbInfo Then
                 Dim bulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
                 Dim typeName As String
@@ -664,21 +694,46 @@ Public Class formToolLayers
                 Else
                     name = If(String.IsNullOrWhiteSpace(bulb.Name), typeName & " " & bulb.ID, bulb.Name)
                 End If
-                Dim layerState As String = If(bulb.IsImageSnippit,
-                                              If(bulb.SnippitInfo.BehindCanvas, "Behind Canvas", "Front"),
-                                              If(Not bulb.GlobalMaskLayerExplicit, "", If(bulb.InFrontOfGlobalMask, "Front", "Behind Mask")))
+                Dim layerState As String = If(bulb.IsImageSnippit OrElse Not bulb.GlobalMaskLayerExplicit,
+                                              "",
+                                              If(bulb.InFrontOfGlobalMask, "Front", "Behind Mask"))
                 If MatchesFilter(name, typeName, bulb) Then AddLayerRow(bulb, stackPosition.ToString(), bulb.ZOrder.ToString(), name, typeName, layerState)
             ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
                 Dim score As ReelAndLED.ScoreInfo = DirectCast(item, ReelAndLED.ScoreInfo)
                 Dim displayType As String = If(IsReelImageRendered(score.ReelType) OrElse IsReelImageDream7(score.ReelType), "LED", "Reel")
                 Dim name As String = displayType & " " & score.ID
-                If MatchesFilter(name, "Score", score) Then AddLayerRow(score, stackPosition.ToString(), score.ZOrder.ToString(), name, displayType, If(score.BehindCanvas, "Behind Canvas", "Front"))
+                If MatchesFilter(name, "Score", score) Then AddLayerRow(score, stackPosition.ToString(), score.ZOrder.ToString(), name, displayType, "")
             End If
             stackPosition += 1
         Next
-
-        If MatchesFilter("Canvas Background", "Canvas", Nothing) Then AddLayerRow(Nothing, "-", "-", "Canvas Background", "Canvas", "Fixed")
     End Sub
+
+    Private Function GetVisualLayerOrder(ByVal item As Object) As Integer
+        If TypeOf item Is Illumination.BulbInfo Then Return DirectCast(item, Illumination.BulbInfo).LayerOrder
+        If TypeOf item Is ReelAndLED.ScoreInfo Then Return DirectCast(item, ReelAndLED.ScoreInfo).LayerOrder
+        Return Integer.MaxValue
+    End Function
+
+    Private Sub SetVisualLayerOrder(ByVal item As Object, ByVal value As Integer)
+        If TypeOf item Is Illumination.BulbInfo Then
+            DirectCast(item, Illumination.BulbInfo).LayerOrder = value
+        ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
+            DirectCast(item, ReelAndLED.ScoreInfo).LayerOrder = value
+        End If
+    End Sub
+
+    Private Function OrderedVisualDeck() As List(Of Object)
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.EnsureUnifiedLayerDeck()
+        Dim result As New List(Of Object)()
+        If Backglass.currentBulbs IsNot Nothing Then result.AddRange(Backglass.currentBulbs.Cast(Of Object)())
+        If Backglass.currentScores IsNot Nothing Then result.AddRange(Backglass.currentScores.Cast(Of Object)())
+        result.Sort(Function(left, right)
+                        Dim comparison As Integer = GetVisualLayerOrder(left).CompareTo(GetVisualLayerOrder(right))
+                        If comparison <> 0 Then Return comparison
+                        Return GetStableVisualIndex(left).CompareTo(GetStableVisualIndex(right))
+                    End Function)
+        Return result
+    End Function
 
     Private Function GetPictureAnimationPrefix(ByVal bulb As Illumination.BulbInfo) As String
         If bulb Is Nothing OrElse String.IsNullOrEmpty(bulb.Name) OrElse
@@ -950,27 +1005,29 @@ Public Class formToolLayers
     Private Sub Reorder(front As Boolean)
         Dim selected As List(Of Object) = GetSelectedMovableItemsInVisualOrder()
         If selected.Count = 0 Then Return
-        Dim newZ As Integer = If(front, SafeIncrement(GetHighestVisualZ()), SafeDecrement(GetLowestVisualZ()))
+        Dim deck As List(Of Object) = OrderedVisualDeck()
+        Dim canvasIndex As Integer = Math.Max(0, deck.Count - Backglass.currentData.CanvasLayerPositionFor(Backglass.currentData.IsDMDImageShown))
         For Each item As Object In selected
-            SetVisualZ(item, newZ)
+            Dim oldIndex As Integer = deck.IndexOf(item)
+            If oldIndex >= 0 AndAlso oldIndex < canvasIndex Then canvasIndex -= 1
+            deck.Remove(item)
         Next
-        NormalizeBulbCollectionOrder()
+        If front Then
+            deck.InsertRange(0, selected)
+            canvasIndex += selected.Count
+        Else
+            deck.AddRange(selected)
+        End If
+        ApplyVisualDeck(deck, canvasIndex)
         MarkDirty()
         RefreshAll(selected(0))
     End Sub
 
     Private Function GetSelectedMovableItemsInVisualOrder() As List(Of Object)
         Dim result As New List(Of Object)()
-        For Each row As ListViewItem In layers.Items
-            If row.Selected AndAlso (TypeOf row.Tag Is Illumination.BulbInfo OrElse TypeOf row.Tag Is ReelAndLED.ScoreInfo) Then result.Add(row.Tag)
-        Next
-        Return result
-    End Function
-
-    Private Function GetSelectedBulbsInVisualOrder() As List(Of Illumination.BulbInfo)
-        Dim result As New List(Of Illumination.BulbInfo)()
-        For Each item As Object In GetSelectedMovableItemsInVisualOrder()
-            If TypeOf item Is Illumination.BulbInfo Then result.Add(DirectCast(item, Illumination.BulbInfo))
+        Dim selected As List(Of Object) = SelectedObjects()
+        For Each item As Object In OrderedVisualDeck()
+            If selected.Any(Function(candidate) Object.ReferenceEquals(candidate, item)) Then result.Add(item)
         Next
         Return result
     End Function
@@ -981,69 +1038,19 @@ Public Class formToolLayers
             SetVisualZ(item, CInt(layerNumber.Value))
         Next
         If selected.Count > 0 Then
-            NormalizeBulbCollectionOrder()
             MarkDirty()
             RefreshAll(selected(0))
         End If
     End Sub
-
-    Private Sub NormalizeBulbCollectionOrder()
-        If Backglass.currentBulbs Is Nothing OrElse Backglass.currentBulbs.Count < 2 Then Return
-        Dim oldPositions As New Dictionary(Of Illumination.BulbInfo, Integer)()
-        For index As Integer = 0 To Backglass.currentBulbs.Count - 1
-            oldPositions(Backglass.currentBulbs(index)) = index
-        Next
-        Backglass.currentBulbs.Sort(Function(left As Illumination.BulbInfo, right As Illumination.BulbInfo)
-                                        Dim result As Integer = right.ZOrder.CompareTo(left.ZOrder)
-                                        If result <> 0 Then Return result
-                                        Return oldPositions(left).CompareTo(oldPositions(right))
-                                    End Function)
-    End Sub
-
-    Private Function GetHighestVisualZ() As Integer
-        Dim value As Integer = 0
-        If Backglass.currentBulbs IsNot Nothing Then
-            For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
-                value = Math.Max(value, bulb.ZOrder)
-            Next
-        End If
-        If Backglass.currentScores IsNot Nothing Then
-            For Each score As ReelAndLED.ScoreInfo In Backglass.currentScores
-                value = Math.Max(value, score.ZOrder)
-            Next
-        End If
-        Return value
-    End Function
-
-    Private Function GetLowestVisualZ() As Integer
-        Dim value As Integer = 0
-        If Backglass.currentBulbs IsNot Nothing Then
-            For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
-                value = Math.Min(value, bulb.ZOrder)
-            Next
-        End If
-        If Backglass.currentScores IsNot Nothing Then
-            For Each score As ReelAndLED.ScoreInfo In Backglass.currentScores
-                value = Math.Min(value, score.ZOrder)
-            Next
-        End If
-        Return value
-    End Function
-
-    Private Function SafeIncrement(value As Integer) As Integer
-        Return If(value = Integer.MaxValue, value, value + 1)
-    End Function
-
-    Private Function SafeDecrement(value As Integer) As Integer
-        Return If(value = Integer.MinValue, value, value - 1)
-    End Function
 
     Private Sub LayerItemDrag(sender As Object, e As ItemDragEventArgs)
         draggedItems = GetSelectedMovableItemsInVisualOrder()
         Dim row As ListViewItem = TryCast(e.Item, ListViewItem)
         If row Is Nothing OrElse Not (TypeOf row.Tag Is Illumination.BulbInfo OrElse TypeOf row.Tag Is ReelAndLED.ScoreInfo) Then Return
         If draggedItems.Count = 0 Then draggedItems.Add(row.Tag)
+        StopLayerDragAutoScroll()
         layers.DoDragDrop("B2S_LAYER_ROWS", DragDropEffects.Move)
+        StopLayerDragAutoScroll()
     End Sub
 
     Private Sub LayerDragEnter(sender As Object, e As DragEventArgs)
@@ -1052,44 +1059,149 @@ Public Class formToolLayers
 
     Private Sub LayerDragOver(sender As Object, e As DragEventArgs)
         If draggedItems.Count = 0 Then
+            StopLayerDragAutoScroll()
             layers.InsertionMark.Index = -1
             e.Effect = DragDropEffects.None
             Return
         End If
         Dim clientPoint As Point = layers.PointToClient(New Point(e.X, e.Y))
-        Dim target As ListViewItem = layers.GetItemAt(clientPoint.X, clientPoint.Y)
-        If target Is Nothing OrElse Not (TypeOf target.Tag Is Illumination.BulbInfo OrElse TypeOf target.Tag Is ReelAndLED.ScoreInfo) Then
-            layers.InsertionMark.Index = -1
+        UpdateLayerDragAutoScroll(clientPoint)
+        If Not UpdateLayerInsertionMark(clientPoint) Then
             e.Effect = DragDropEffects.None
             Return
         End If
-        layers.InsertionMark.Index = target.Index
-        layers.InsertionMark.AppearsAfterItem = clientPoint.Y > target.Bounds.Top + target.Bounds.Height \ 2
         e.Effect = DragDropEffects.Move
     End Sub
 
     Private Sub LayerDragLeave(sender As Object, e As EventArgs)
+        StopLayerDragAutoScroll()
         layers.InsertionMark.Index = -1
     End Sub
 
     Private Sub LayerDragDrop(sender As Object, e As DragEventArgs)
+        StopLayerDragAutoScroll()
         If draggedItems.Count = 0 Then Return
         Dim clientPoint As Point = layers.PointToClient(New Point(e.X, e.Y))
         Dim targetRow As ListViewItem = layers.GetItemAt(clientPoint.X, clientPoint.Y)
-        If targetRow Is Nothing OrElse Not (TypeOf targetRow.Tag Is Illumination.BulbInfo OrElse TypeOf targetRow.Tag Is ReelAndLED.ScoreInfo) Then Return
+        If targetRow Is Nothing OrElse Not (Object.ReferenceEquals(targetRow.Tag, CanvasLayer) OrElse
+                                            TypeOf targetRow.Tag Is Illumination.BulbInfo OrElse
+                                            TypeOf targetRow.Tag Is ReelAndLED.ScoreInfo) Then Return
         Dim target As Object = targetRow.Tag
         If draggedItems.Contains(target) Then Return
         Dim placeAfter As Boolean = clientPoint.Y > targetRow.Bounds.Top + targetRow.Bounds.Height \ 2
         layers.InsertionMark.Index = -1
-        Dim newZ As Integer = If(placeAfter, SafeDecrement(GetVisualZ(target)), SafeIncrement(GetVisualZ(target)))
-        For Each item As Object In draggedItems
-            SetVisualZ(item, newZ)
-        Next
-        NormalizeBulbCollectionOrder()
+        MoveVisualItemsInDeck(draggedItems, target, placeAfter)
         MarkDirty()
         Dim first As Object = draggedItems(0)
         draggedItems.Clear()
         RefreshAll(first)
+    End Sub
+
+    Private Function UpdateLayerInsertionMark(ByVal clientPoint As Point) As Boolean
+        Dim target As ListViewItem = layers.GetItemAt(clientPoint.X, clientPoint.Y)
+        If target Is Nothing OrElse Not (Object.ReferenceEquals(target.Tag, CanvasLayer) OrElse
+                                         TypeOf target.Tag Is Illumination.BulbInfo OrElse
+                                         TypeOf target.Tag Is ReelAndLED.ScoreInfo) Then
+            layers.InsertionMark.Index = -1
+            Return False
+        End If
+        layers.InsertionMark.Index = target.Index
+        layers.InsertionMark.AppearsAfterItem = clientPoint.Y > target.Bounds.Top + target.Bounds.Height \ 2
+        Return True
+    End Function
+
+    Private Sub UpdateLayerDragAutoScroll(ByVal clientPoint As Point)
+        layerDragClientPoint = clientPoint
+        Dim contentTop As Integer = 0
+        If layers.TopItem IsNot Nothing Then contentTop = Math.Max(0, layers.TopItem.Bounds.Top)
+        Dim edgeSize As Integer = Math.Max(24, layers.Font.Height * 2)
+        Dim direction As Integer = 0
+        If clientPoint.Y <= contentTop + edgeSize Then
+            direction = -1
+        ElseIf clientPoint.Y >= layers.ClientSize.Height - edgeSize Then
+            direction = 1
+        End If
+
+        layerDragAutoScrollDirection = direction
+        If direction = 0 Then
+            layerDragAutoScrollTimer.Stop()
+        ElseIf Not layerDragAutoScrollTimer.Enabled Then
+            layerDragAutoScrollTimer.Start()
+        End If
+    End Sub
+
+    Private Sub LayerDragAutoScrollTick(sender As Object, e As EventArgs)
+        If draggedItems.Count = 0 OrElse layerDragAutoScrollDirection = 0 OrElse
+           Not layers.ClientRectangle.Contains(layerDragClientPoint) OrElse layers.TopItem Is Nothing Then
+            StopLayerDragAutoScroll()
+            Return
+        End If
+
+        Dim newTopIndex As Integer = Math.Max(0, Math.Min(layers.Items.Count - 1,
+                                                         layers.TopItem.Index + layerDragAutoScrollDirection))
+        If newTopIndex = layers.TopItem.Index Then
+            layerDragAutoScrollTimer.Stop()
+            Return
+        End If
+
+        layers.TopItem = layers.Items(newTopIndex)
+        UpdateLayerInsertionMark(layerDragClientPoint)
+    End Sub
+
+    Private Sub StopLayerDragAutoScroll()
+        layerDragAutoScrollDirection = 0
+        layerDragAutoScrollTimer.Stop()
+    End Sub
+
+    Private Sub LayersDisposed(sender As Object, e As EventArgs)
+        layerDragAutoScrollTimer.Stop()
+        layerDragAutoScrollTimer.Dispose()
+    End Sub
+
+    Private Sub MoveVisualItemsInDeck(ByVal moving As List(Of Object),
+                                      ByVal target As Object,
+                                      ByVal placeAfter As Boolean)
+        If moving Is Nothing OrElse moving.Count = 0 OrElse Backglass.currentData Is Nothing Then Return
+        Dim deck As List(Of Object) = OrderedVisualDeck()
+        Dim canvasIndex As Integer = Math.Max(0, deck.Count - Backglass.currentData.CanvasLayerPositionFor(Backglass.currentData.IsDMDImageShown))
+        For Each item As Object In moving
+            Dim oldIndex As Integer = deck.IndexOf(item)
+            If oldIndex >= 0 AndAlso oldIndex < canvasIndex Then canvasIndex -= 1
+            deck.Remove(item)
+        Next
+
+        Dim insertAt As Integer
+        ' Moved layers join the canvas side of the row they are dropped on.
+        ' A drop just under the Canvas row must stay below the canvas.
+        Dim targetAboveCanvas As Boolean = False
+        If Object.ReferenceEquals(target, CanvasLayer) Then
+            insertAt = canvasIndex
+            If placeAfter Then canvasIndex = insertAt
+        Else
+            insertAt = deck.IndexOf(target)
+            If insertAt < 0 Then Return
+            targetAboveCanvas = insertAt < canvasIndex
+            If placeAfter Then insertAt += 1
+        End If
+        insertAt = Math.Max(0, Math.Min(deck.Count, insertAt))
+        deck.InsertRange(insertAt, moving)
+
+        If Object.ReferenceEquals(target, CanvasLayer) Then
+            canvasIndex = If(placeAfter, insertAt, insertAt + moving.Count)
+        ElseIf targetAboveCanvas Then
+            canvasIndex += moving.Count
+        End If
+        ApplyVisualDeck(deck, Math.Max(0, Math.Min(deck.Count, canvasIndex)))
+    End Sub
+
+    Private Sub ApplyVisualDeck(ByVal deck As List(Of Object), ByVal canvasIndex As Integer)
+        If deck Is Nothing OrElse Backglass.currentData Is Nothing Then Return
+        For index As Integer = 0 To deck.Count - 1
+            SetVisualLayerOrder(deck(index), index)
+        Next
+        ' Write only the divider of the deck being edited; the DMD view never
+        ' changes the backglass canvas position.
+        Backglass.currentData.SetCanvasLayerPositionFor(Backglass.currentData.IsDMDImageShown, deck.Count - canvasIndex)
     End Sub
 
     Private Sub UpdateButtonState()
@@ -1170,10 +1282,6 @@ Public Class formToolLayers
 
     Private Sub LayersVisibilityChanged(ByVal sender As Object, ByVal e As EventArgs)
         If Not Me.Visible AndAlso layoutWasChanged Then SaveLayersLayoutNow(sender, e)
-    End Sub
-
-    Private Sub SetSnippetBehindCanvas(sender As Object, e As EventArgs)
-        SetSnippetCanvasLayer(True)
     End Sub
 
     Private Sub EditSnippetMask(sender As Object, e As EventArgs)
@@ -1541,7 +1649,6 @@ Public Class formToolLayers
             .InFrontOfGlobalMask = source.InFrontOfGlobalMask, .GlobalMaskLayerExplicit = source.GlobalMaskLayerExplicit
         }
         clone.SnippitInfo.Brightness = source.SnippitInfo.Brightness
-        clone.SnippitInfo.BehindCanvas = source.SnippitInfo.BehindCanvas
         clone.SnippitInfo.SnippitType = eSnippitType.StandardImage
         Return clone
     End Function
@@ -1693,53 +1800,6 @@ Public Class formToolLayers
         If changed Then
             MarkDirty()
             RefreshAll(firstChanged)
-        End If
-    End Sub
-
-    Private Sub SetSnippetInFrontOfCanvas(sender As Object, e As EventArgs)
-        SetSnippetCanvasLayer(False)
-    End Sub
-
-    Private Sub SetSnippetCanvasLayer(behindCanvas As Boolean)
-        Dim changed As Boolean = False
-        For Each item As Object In SelectedObjects()
-            If TypeOf item Is Illumination.BulbInfo Then
-                Dim bulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
-                If bulb.IsImageSnippit AndAlso bulb.SnippitInfo.BehindCanvas <> behindCanvas Then
-                    bulb.SnippitInfo.BehindCanvas = behindCanvas
-                    bulb.IsIlluminatedImageDirty = True
-                    changed = True
-                End If
-            End If
-        Next
-        If changed Then
-            MarkDirty()
-            RefreshAll()
-        End If
-    End Sub
-
-    Private Sub SetScoreBehindCanvas(sender As Object, e As EventArgs)
-        SetScoreCanvasLayer(True)
-    End Sub
-
-    Private Sub SetScoreInFrontOfCanvas(sender As Object, e As EventArgs)
-        SetScoreCanvasLayer(False)
-    End Sub
-
-    Private Sub SetScoreCanvasLayer(behindCanvas As Boolean)
-        Dim changed As Boolean = False
-        For Each item As Object In SelectedObjects()
-            If TypeOf item Is ReelAndLED.ScoreInfo Then
-                Dim score As ReelAndLED.ScoreInfo = DirectCast(item, ReelAndLED.ScoreInfo)
-                If score.BehindCanvas <> behindCanvas Then
-                    score.BehindCanvas = behindCanvas
-                    changed = True
-                End If
-            End If
-        Next
-        If changed Then
-            MarkDirty()
-            RefreshAll()
         End If
     End Sub
 

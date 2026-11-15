@@ -804,7 +804,6 @@ Public Class B2STabPage
         If SelectedScore IsNot Nothing Then
             If Not IsNumeric(startdigit) Then startdigit = "0"
             SelectedScore.B2SStartDigit = CInt(startdigit)
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -812,7 +811,6 @@ Public Class B2STabPage
     Public Sub ReelsAndLEDs_SetB2SScoreType(ByVal scoretype As eB2SScoreType)
         If SelectedScore IsNot Nothing Then
             SelectedScore.B2SScoreType = scoretype
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -820,7 +818,6 @@ Public Class B2STabPage
     Public Sub ReelsAndLEDs_SetB2SPlayerNo(ByVal playerno As eB2SPlayerNo)
         If SelectedScore IsNot Nothing Then
             SelectedScore.B2SPlayerNo = playerno
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -828,7 +825,6 @@ Public Class B2STabPage
     Public Sub ReelsAndLEDs_SetDigits(ByVal digits As Integer)
         If SelectedScore IsNot Nothing Then
             SelectedScore.Digits = digits
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -836,7 +832,6 @@ Public Class B2STabPage
     Public Sub ReelsAndLEDs_SetSpacing(ByVal spacing As Integer)
         If SelectedScore IsNot Nothing Then
             SelectedScore.Spacing = spacing
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -866,7 +861,6 @@ Public Class B2STabPage
             SelectedScore.ReelType = name
             SelectedScore.KeepDigitAspect = IsProportionalImageSet(name)
             SelectedScore.ReelColor = Backglass.currentData.ReelColor
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -878,7 +872,6 @@ Public Class B2STabPage
     Public Sub ReelsAndLEDs_PerfectScaleWidthFix()
         If SelectedScore IsNot Nothing Then
             SelectedScore.PerfectScaleWidthFix = True
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -947,7 +940,6 @@ Public Class B2STabPage
             SelectedScore.Reel3DTemperature = reel3Dtemperature
             SelectedScore.Reel3DDepth = reel3Ddepth
             SelectedScore.Reel3DGlass = reel3Dglass
-            SelectedScore.IsSingleReelSizeDirty = True
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -1153,7 +1145,6 @@ Public Class B2STabPage
         SelectedScore.Reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
         SelectedScore.Reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
         SelectedScore.Reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
-        SelectedScore.IsSingleReelSizeDirty = True
         BackglassData.IsDirty = True
         Me.Refresh()
     End Sub
@@ -1252,7 +1243,9 @@ Public Class B2STabPage
             ' animation settings configured in their dedicated editors survive.
             With SelectedBulb.SnippitInfo
                 .Brightness = snippitinfo.Brightness
-                .BehindCanvas = snippitinfo.BehindCanvas
+                .MaskEdgeSoftness = snippitinfo.MaskEdgeSoftness
+                .MaskOutwardDiffusion = snippitinfo.MaskOutwardDiffusion
+                .MaskShiftEdge = snippitinfo.MaskShiftEdge
                 .SnippitType = snippitinfo.SnippitType
                 .SnippitMechID = snippitinfo.SnippitMechID
                 .SnippitRotatingSteps = snippitinfo.SnippitRotatingSteps

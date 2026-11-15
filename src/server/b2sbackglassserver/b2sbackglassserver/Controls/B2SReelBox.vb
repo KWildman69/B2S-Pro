@@ -6,8 +6,18 @@ Public Class B2SReelBox
 
     Inherits B2SBaseBox
 
+    Public Property UnifiedLayerZOrder As Integer = 0
+    Public Property UnifiedLayerOverlay As Action(Of Control, PaintEventArgs) = Nothing
+
     Public KeepDigitAspect As Boolean = False
     Public ReelDigitWidth As Integer = 0
+    Public ReelDesignSize As Size = Size.Empty
+
+    ' B2S Pro: this digit's slice of a rotated/perspective score (Nothing = straight on).
+    Private scoreSlice As ScoreTransformState = Nothing
+    ' The rectangle the reel content is drawn into: the client area normally, or
+    ' the off-screen content bitmap for a transformed reel.
+    Private paintTarget As Rectangle = Rectangle.Empty
 
     Public Enum eScoreType
         NotUsed = 0
@@ -57,18 +67,42 @@ Public Class B2SReelBox
 
     Protected Overrides Sub OnPaint(ByVal e As System.Windows.Forms.PaintEventArgs)
 
+        If scoreSlice IsNot Nothing Then
+            Dim quad As PointF() = scoreSlice.Scaled(ClientSize)
+            Dim contentSize As Size = scoreSlice.ContentSize(ClientSize)
+            Dim contentWidth As Integer = contentSize.Width
+            Dim contentHeight As Integer = contentSize.Height
+            Using content As New Bitmap(contentWidth, contentHeight, Imaging.PixelFormat.Format32bppPArgb)
+                Using contentGraphics As Graphics = Graphics.FromImage(content)
+                    contentGraphics.Clear(Color.Transparent)
+                    paintTarget = New Rectangle(0, 0, contentWidth, contentHeight)
+                    PaintReelContent(contentGraphics)
+                End Using
+                ScoreTransform.DrawWarped(e.Graphics, content, quad)
+            End Using
+        Else
+            paintTarget = Me.ClientRectangle
+            PaintReelContent(e.Graphics)
+        End If
+
+        If UnifiedLayerOverlay IsNot Nothing Then UnifiedLayerOverlay.Invoke(Me, e)
+
+    End Sub
+
+    Private Sub PaintReelContent(ByVal graphics As Graphics)
+
         If Not String.IsNullOrEmpty(reelindex) Then
             If intermediates = -1 AndAlso timer.Enabled Then
                 Static firstintermediatecount As Integer = 1
                 Dim regularName As String = _ReelType & "_" & reelindex & "_" & firstintermediatecount.ToString()
                 Dim illuminatedName As String = _ReelType & "_" & reelindex & If(SetID > 0, "_" & SetID.ToString(), "") & "_" & firstintermediatecount.ToString()
-                If DrawAvailableReelImage(e.Graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName) Then
+                If DrawAvailableReelImage(graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName) Then
                     firstintermediatecount += 1
                     intermediates2go = 2
                 Else
                     regularName = _ReelType & "_" & ConvertText(_CurrentText + 1)
                     illuminatedName = regularName & If(SetID > 0, "_" & SetID.ToString(), "")
-                    DrawAvailableReelImage(e.Graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
+                    DrawAvailableReelImage(graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
                     intermediates = firstintermediatecount - 1
                     intermediates2go = 1
                 End If
@@ -76,11 +110,11 @@ Public Class B2SReelBox
                 Dim intermediateIndex As String = (intermediates - intermediates2go + 1).ToString()
                 Dim regularName As String = _ReelType & "_" & reelindex & "_" & intermediateIndex
                 Dim illuminatedName As String = _ReelType & "_" & reelindex & If(SetID > 0, "_" & SetID.ToString(), "") & "_" & intermediateIndex
-                DrawAvailableReelImage(e.Graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName)
+                DrawAvailableReelImage(graphics, B2SData.ReelIntermediateImages, B2SData.ReelIntermediateIlluImages, regularName, illuminatedName)
             Else
                 Dim regularName As String = _ReelType & "_" & reelindex
                 Dim illuminatedName As String = regularName & If(SetID > 0, "_" & SetID.ToString(), "")
-                DrawAvailableReelImage(e.Graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
+                DrawAvailableReelImage(graphics, B2SData.ReelImages, B2SData.ReelIlluImages, regularName, illuminatedName)
             End If
         End If
 
@@ -104,9 +138,10 @@ Public Class B2SReelBox
 
     Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         If KeepDigitAspect Then
+            Dim renderSize As Size = AuthoredReelSize()
             Using fitted As Bitmap = If(ReelDigitWidth > 0,
-                                        ReelImageSizing.StretchToWidth(reelImage, ClientSize, ReelDigitWidth),
-                                        ReelImageSizing.Fit(reelImage, ClientSize))
+                                        ReelImageSizing.StretchToWidth(reelImage, renderSize, ReelDigitWidth),
+                                        ReelImageSizing.Fit(reelImage, renderSize))
                 DrawReelImageCore(graphics, fitted, cacheName & "|aspect")
             End Using
         Else
@@ -117,6 +152,7 @@ Public Class B2SReelBox
     Private Sub DrawReelImageCore(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         If graphics Is Nothing OrElse reelImage Is Nothing Then Return
 
+        Dim renderSize As Size = AuthoredReelSize()
         Dim imageToDraw As Image = reelImage
         If Reel3DEnabled Then
             ' A triggered 3D reel keeps its depth and glass while inactive, but
@@ -125,11 +161,11 @@ Public Class B2SReelBox
             Dim backlightOn As Boolean = (RomID <= 0 OrElse _Illuminated)
             Dim effectiveBrightness As Integer = If(backlightOn, Reel3DBrightness, 0)
             Dim effectiveTemperature As Integer = If(backlightOn, Reel3DTemperature, 4000)
-            Dim cacheKey As String = cacheName & "|" & ClientSize.Width.ToString() & "x" & ClientSize.Height.ToString() &
+            Dim cacheKey As String = cacheName & "|" & renderSize.Width.ToString() & "x" & renderSize.Height.ToString() &
                                      "|" & effectiveBrightness.ToString() & "|" & effectiveTemperature.ToString() & "|" & Reel3DDepth.ToString()
             If Not reel3DImageCache.ContainsKey(cacheKey) Then
                 Dim enhanced As Bitmap = Reel3DEffect.RenderReel(reelImage,
-                                                                 ClientSize,
+                                                                 renderSize,
                                                                  effectiveBrightness,
                                                                  effectiveTemperature,
                                                                  Reel3DDepth)
@@ -138,43 +174,67 @@ Public Class B2SReelBox
             If reel3DImageCache.ContainsKey(cacheKey) Then imageToDraw = reel3DImageCache(cacheKey)
         End If
 
-        graphics.DrawImage(imageToDraw, Me.ClientRectangle)
+        ' Legacy directB2S files and pre-unified B2S Pro exports keep the original
+        ' 3.0.11 reel drawing exactly. Only backglasses written by the current
+        ' Designer (UnifiedLayerDeck) use high-quality scaling.
+        If (imageToDraw.Width = paintTarget.Width AndAlso imageToDraw.Height = paintTarget.Height) OrElse
+           Not B2SData.UnifiedLayerDeck Then
+            graphics.DrawImage(imageToDraw, paintTarget)
+        Else
+            Dim oldInterpolation As Drawing2D.InterpolationMode = graphics.InterpolationMode
+            Dim oldPixelOffset As Drawing2D.PixelOffsetMode = graphics.PixelOffsetMode
+            graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+            Try
+                graphics.DrawImage(imageToDraw,
+                                   paintTarget,
+                                   New Rectangle(Point.Empty, imageToDraw.Size),
+                                   GraphicsUnit.Pixel)
+            Finally
+                graphics.InterpolationMode = oldInterpolation
+                graphics.PixelOffsetMode = oldPixelOffset
+            End Try
+        End If
 
         ' Each digit crops its aligned piece from one display-wide overlay, so
         ' the reflection is continuous across the complete score window.
         If Reel3DEnabled AndAlso Reel3DDisplayWidth > 2 Then
-            Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & ClientSize.Height.ToString() &
+            Dim overlayHeight As Integer = renderSize.Height
+            Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & overlayHeight.ToString() &
                                        "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString()
             If reel3DOverlayCache Is Nothing OrElse reel3DOverlayCacheKey <> overlayKey Then
                 If reel3DOverlayCache IsNot Nothing Then reel3DOverlayCache.Dispose()
-                reel3DOverlayCache = Reel3DEffect.CreateWindowOverlay(New Size(Reel3DDisplayWidth, ClientSize.Height),
+                reel3DOverlayCache = Reel3DEffect.CreateWindowOverlay(New Size(Reel3DDisplayWidth, overlayHeight),
                                                                       Reel3DDepth,
                                                                       Reel3DGlass)
                 reel3DOverlayCacheKey = overlayKey
             End If
             If reel3DOverlayCache IsNot Nothing Then
                 Dim sourceX As Integer = Math.Max(0, Math.Min(reel3DOverlayCache.Width - 1, Reel3DDisplayOffsetX))
-                Dim sourceWidth As Integer = Math.Min(ClientSize.Width, reel3DOverlayCache.Width - sourceX)
+                Dim sourceWidth As Integer = Math.Min(renderSize.Width, reel3DOverlayCache.Width - sourceX)
                 If sourceWidth > 0 Then
                     graphics.DrawImage(reel3DOverlayCache,
-                                       New Rectangle(0, 0, sourceWidth, ClientSize.Height),
+                                       paintTarget,
                                        New Rectangle(sourceX, 0, sourceWidth, reel3DOverlayCache.Height),
                                        GraphicsUnit.Pixel)
                 End If
             End If
         End If
 
-        ' Score controls are WinForms child controls and normally always appear
-        ' above their parent's background. For a reel placed behind the canvas,
-        ' composite the matching canvas patch after both the reel and its glass.
-        ' Canvas transparency exposes the complete 3D reel only through the
-        ' score openings while opaque artwork covers both passes.
-        If _BehindCanvas AndAlso Me.Parent IsNot Nothing AndAlso Me.Parent.BackgroundImage IsNot Nothing Then
-            Dim canvas As Image = Me.Parent.BackgroundImage
-            Dim source As New Rectangle(Me.Left, Me.Top, Me.Width, Me.Height)
-            graphics.DrawImage(canvas, Me.ClientRectangle, source, GraphicsUnit.Pixel)
-        End If
     End Sub
+
+    ' Places this digit on its slice of the transformed score (design units).
+    Friend Sub ApplyScoreTransform(ByVal digitQuad As PointF())
+        scoreSlice = New ScoreTransformState(digitQuad)
+        Me.Location = scoreSlice.Bounds.Location
+        Me.Size = scoreSlice.Bounds.Size
+        scoreSlice.ApplyRegion(Me)
+    End Sub
+
+    Private Function AuthoredReelSize() As Size
+        If ReelDesignSize.Width > 0 AndAlso ReelDesignSize.Height > 0 Then Return ReelDesignSize
+        Return paintTarget.Size
+    End Function
 
     Private Sub ClearReel3DCache()
         If reel3DImageCache IsNot Nothing Then
@@ -193,20 +253,8 @@ Public Class B2SReelBox
     Protected Overrides Sub OnSizeChanged(ByVal e As EventArgs)
         ClearReel3DCache()
         MyBase.OnSizeChanged(e)
+        If scoreSlice IsNot Nothing Then scoreSlice.ApplyRegion(Me)
     End Sub
-
-    Private _BehindCanvas As Boolean = False
-    Public Property BehindCanvas() As Boolean
-        Get
-            Return _BehindCanvas
-        End Get
-        Set(ByVal value As Boolean)
-            If _BehindCanvas <> value Then
-                _BehindCanvas = value
-                Me.Invalidate()
-            End If
-        End Set
-    End Property
 
     Public Property Reel3DEnabled As Boolean = False
     Public Property Reel3DBrightness As Integer = 100
@@ -461,4 +509,167 @@ Public Class B2SReelBox
         Return ret
     End Function
 
+End Class
+
+' B2S Pro score display transform, matching the Designer
+' (B2SPictureBox.ScorePerspectivePoints and DrawPerspectiveBitmap).
+Friend NotInheritable Class ScoreTransform
+    Public ReadOnly RotationAngle As Single
+    Public ReadOnly PerspectiveDepth As Single
+    Public ReadOnly PerspectiveLeftScale As Single
+    Public ReadOnly PerspectiveRightScale As Single
+
+    Private Sub New(ByVal angle As Single, ByVal depth As Single, ByVal leftScale As Single, ByVal rightScale As Single)
+        RotationAngle = angle
+        PerspectiveDepth = depth
+        PerspectiveLeftScale = leftScale
+        PerspectiveRightScale = rightScale
+    End Sub
+
+    ' Returns Nothing when the score is drawn straight on.
+    Public Shared Function Read(ByVal node As Xml.XmlNode) As ScoreTransform
+        Dim angle As Single = ReadSingle(node, "RotationAngle", 0.0F)
+        Dim depth As Single = ReadSingle(node, "PerspectiveDepth", 0.0F)
+        Dim leftScale As Single = ReadSingle(node, "PerspectiveLeftScale", 1.0F)
+        Dim rightScale As Single = ReadSingle(node, "PerspectiveRightScale", 1.0F)
+        If Math.Abs(angle) <= 0.001F AndAlso Math.Abs(depth) <= 0.001F AndAlso
+           Math.Abs(leftScale - 1.0F) <= 0.001F AndAlso Math.Abs(rightScale - 1.0F) <= 0.001F Then Return Nothing
+        Return New ScoreTransform(angle, depth, leftScale, rightScale)
+    End Function
+
+    Private Shared Function ReadSingle(ByVal node As Xml.XmlNode, ByVal name As String, ByVal fallback As Single) As Single
+        Dim value As Single = fallback
+        If node IsNot Nothing AndAlso node.Attributes(name) IsNot Nothing Then
+            If Not Single.TryParse(node.Attributes(name).InnerText, Globalization.NumberStyles.Float,
+                                   Globalization.CultureInfo.InvariantCulture, value) Then value = fallback
+        End If
+        Return value
+    End Function
+
+    ' The four corners (top-left, top-right, bottom-right, bottom-left) of the
+    ' score rectangle after perspective and rotation, in design units.
+    Public Function DisplayQuad(ByVal rect As RectangleF) As PointF()
+        Dim centerX As Single = rect.X + rect.Width / 2.0F
+        Dim centerY As Single = rect.Y + rect.Height / 2.0F
+        Dim halfWidth As Single = rect.Width / 2.0F
+        Dim halfHeight As Single = rect.Height / 2.0F
+        Dim depth As Single = Math.Max(-1.0F, Math.Min(1.0F, PerspectiveDepth))
+        Dim amount As Single = Math.Abs(depth)
+        Dim projectedHalfWidth As Single = halfWidth * (1.0F - 0.34F * amount)
+        Dim nearScale As Single = 1.0F + 0.06F * amount
+        Dim farScale As Single = 1.0F - 0.58F * amount
+        Dim leftScale As Single = If(depth >= 0.0F, nearScale, farScale) * Math.Max(0.2F, Math.Min(2.5F, PerspectiveLeftScale))
+        Dim rightScale As Single = If(depth >= 0.0F, farScale, nearScale) * Math.Max(0.2F, Math.Min(2.5F, PerspectiveRightScale))
+        Dim points() As PointF = {
+            New PointF(centerX - projectedHalfWidth, centerY - halfHeight * leftScale),
+            New PointF(centerX + projectedHalfWidth, centerY - halfHeight * rightScale),
+            New PointF(centerX + projectedHalfWidth, centerY + halfHeight * rightScale),
+            New PointF(centerX - projectedHalfWidth, centerY + halfHeight * leftScale)}
+        If Math.Abs(RotationAngle) > 0.001F Then
+            Dim radians As Double = RotationAngle * Math.PI / 180.0
+            For i As Integer = 0 To points.Length - 1
+                Dim dx As Double = points(i).X - centerX
+                Dim dy As Double = points(i).Y - centerY
+                points(i) = New PointF(CSng(centerX + dx * Math.Cos(radians) - dy * Math.Sin(radians)),
+                                       CSng(centerY + dx * Math.Sin(radians) + dy * Math.Cos(radians)))
+            Next
+        End If
+        Return points
+    End Function
+
+    ' The part of the quad covering the flat fractions u0..u1 across and v0..v1 down.
+    Public Shared Function SubQuad(ByVal quad As PointF(), ByVal u0 As Single, ByVal u1 As Single,
+                                   ByVal v0 As Single, ByVal v1 As Single) As PointF()
+        Return {Bilinear(quad, u0, v0), Bilinear(quad, u1, v0), Bilinear(quad, u1, v1), Bilinear(quad, u0, v1)}
+    End Function
+
+    Private Shared Function Bilinear(ByVal quad As PointF(), ByVal u As Single, ByVal v As Single) As PointF
+        Dim top As PointF = Lerp(quad(0), quad(1), u)
+        Dim bottom As PointF = Lerp(quad(3), quad(2), u)
+        Return Lerp(top, bottom, v)
+    End Function
+
+    Private Shared Function Lerp(ByVal a As PointF, ByVal b As PointF, ByVal t As Single) As PointF
+        Return New PointF(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t)
+    End Function
+
+    Public Shared Function Distance(ByVal a As PointF, ByVal b As PointF) As Double
+        Return Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y))
+    End Function
+
+    Public Shared Function BoundingBox(ByVal quad As PointF()) As Rectangle
+        Return Rectangle.FromLTRB(CInt(Math.Floor(quad.Min(Function(point) point.X))),
+                                  CInt(Math.Floor(quad.Min(Function(point) point.Y))),
+                                  CInt(Math.Ceiling(quad.Max(Function(point) point.X))),
+                                  CInt(Math.Ceiling(quad.Max(Function(point) point.Y))))
+    End Function
+
+    ' Draws the flat bitmap onto the quad: one affine draw for a rotated
+    ' rectangle, vertical strips for a perspective trapezoid (as the Designer).
+    Public Shared Sub DrawWarped(ByVal graphics As Graphics, ByVal bitmap As Bitmap, ByVal quad As PointF())
+        If graphics Is Nothing OrElse bitmap Is Nothing OrElse quad Is Nothing OrElse quad.Length <> 4 Then Return
+        Dim oldMode As Drawing2D.InterpolationMode = graphics.InterpolationMode
+        graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+        Try
+            If Math.Abs(quad(0).X + quad(2).X - quad(1).X - quad(3).X) < 0.01F AndAlso
+               Math.Abs(quad(0).Y + quad(2).Y - quad(1).Y - quad(3).Y) < 0.01F Then
+                graphics.DrawImage(bitmap, New PointF() {quad(0), quad(1), quad(3)},
+                                   New RectangleF(0, 0, bitmap.Width, bitmap.Height), GraphicsUnit.Pixel)
+                Return
+            End If
+            Dim strips As Integer = Math.Max(24, Math.Min(160, bitmap.Width))
+            For i As Integer = 0 To strips - 1
+                Dim t0 As Single = CSng(i / CDbl(strips))
+                Dim t1 As Single = CSng((i + 1) / CDbl(strips))
+                Dim top0 As PointF = Lerp(quad(0), quad(1), t0)
+                Dim top1 As PointF = Lerp(quad(0), quad(1), t1)
+                Dim bottom0 As PointF = Lerp(quad(3), quad(2), t0)
+                Dim srcX0 As Single = bitmap.Width * t0
+                Dim srcX1 As Single = bitmap.Width * t1
+                graphics.DrawImage(bitmap, New PointF() {top0, top1, bottom0},
+                                   New RectangleF(srcX0, 0, Math.Max(1.0F, srcX1 - srcX0 + 0.75F), bitmap.Height), GraphicsUnit.Pixel)
+            Next
+        Finally
+            graphics.InterpolationMode = oldMode
+        End Try
+    End Sub
+End Class
+
+' The slice of a transformed score that one control shows, in design units
+' relative to the control's box. B2SScreen scales the box after placement, so
+' the slice is scaled with the control's client size.
+Friend NotInheritable Class ScoreTransformState
+    Private ReadOnly quad As PointF()
+    Private ReadOnly designSize As SizeF
+    Public ReadOnly Bounds As Rectangle
+
+    Public Sub New(ByVal absoluteQuad As PointF())
+        Bounds = ScoreTransform.BoundingBox(absoluteQuad)
+        designSize = New SizeF(Math.Max(1, Bounds.Width), Math.Max(1, Bounds.Height))
+        quad = absoluteQuad.Select(Function(point) New PointF(point.X - Bounds.X, point.Y - Bounds.Y)).ToArray()
+    End Sub
+
+    ' The slice in client pixels.
+    Public Function Scaled(ByVal clientSize As Size) As PointF()
+        Dim scaleX As Single = clientSize.Width / designSize.Width
+        Dim scaleY As Single = clientSize.Height / designSize.Height
+        Return quad.Select(Function(point) New PointF(point.X * scaleX, point.Y * scaleY)).ToArray()
+    End Function
+
+    ' The flat size of the content in client pixels (top edge by left edge).
+    Public Function ContentSize(ByVal clientSize As Size) As Size
+        Dim points As PointF() = Scaled(clientSize)
+        Return New Size(Math.Max(1, CInt(Math.Round(ScoreTransform.Distance(points(0), points(1))))),
+                        Math.Max(1, CInt(Math.Round(ScoreTransform.Distance(points(0), points(3))))))
+    End Function
+
+    ' Only the slice belongs to the control; the rest of its box shows what is behind it.
+    Public Sub ApplyRegion(ByVal control As Control)
+        Using path As New Drawing2D.GraphicsPath()
+            path.AddPolygon(Scaled(control.ClientSize))
+            Dim oldRegion As Region = control.Region
+            control.Region = New Region(path)
+            If oldRegion IsNot Nothing Then oldRegion.Dispose()
+        End Using
+    End Sub
 End Class

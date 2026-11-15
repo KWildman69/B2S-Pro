@@ -296,6 +296,9 @@ Public Class B2SAnimation
         Private FormDMD As Form = Nothing
         Private Entries As Generic.SortedList(Of Integer, EntryAction) = New Generic.SortedList(Of Integer, EntryAction)
         Private DeferredLoopSeamOffBulbs As String() = Nothing
+        ' The steps as authored, before the loop-seam Off step is removed. Reverse
+        ' play pairs each On step with its Off step (Corrector), so it uses these.
+        Private ReverseEntries As Generic.SortedList(Of Integer, EntryAction) = Nothing
 
         Private LightsInvolved As Generic.List(Of String) = New Generic.List(Of String)
         Private LightsStateAtStartup As Generic.Dictionary(Of String, Boolean) = New Generic.Dictionary(Of String, Boolean)
@@ -358,10 +361,12 @@ Public Class B2SAnimation
             ' A continuous loop must not switch a light off at the seam when the
             ' first action immediately switches that same light back on. Keeping
             ' that zero-wait Off action creates one full dark timer interval.
-            If Entries.Count > 1 Then
+            ' B2S Pro files only; legacy files keep the original 3.0.11 loop.
+            If B2SData.UnifiedLayerDeck AndAlso Entries.Count > 1 Then
                 Dim firstAction As EntryAction = Entries.Values(0)
                 Dim lastAction As EntryAction = Entries.Values(Entries.Count - 1)
                 If firstAction.Visible AndAlso Not lastAction.Visible AndAlso lastAction.IntervalMultiplier = 0 Then
+                    ReverseEntries = New Generic.SortedList(Of Integer, EntryAction)(Entries)
                     firstAction.LoopSeamOffBulbs = lastAction.Bulbs
                     DeferredLoopSeamOffBulbs = lastAction.Bulbs
                     Entries.RemoveAt(Entries.Count - 1)
@@ -550,12 +555,13 @@ Public Class B2SAnimation
             End If
 
             ' show animation stuff
-            If Me.Entries IsNot Nothing AndAlso Me.Entries.Count > 0 Then
+            Dim playEntries As Generic.SortedList(Of Integer, EntryAction) = If(PlayReverse AndAlso ReverseEntries IsNot Nothing, ReverseEntries, Me.Entries)
+            If playEntries IsNot Nothing AndAlso playEntries.Count > 0 Then
                 Do While True
-                    Dim index As Integer = If(Not PlayReverse, ticker + 1, Me.Entries.Count - ticker)
-                    If Me.Entries.ContainsKey(index) Then
-                        Dim currentEntryAction As EntryAction = Me.Entries(index)
-                        If currentEntryAction.Corrector <> 0 AndAlso PlayReverse Then currentEntryAction = Me.Entries(index + currentEntryAction.Corrector)
+                    Dim index As Integer = If(Not PlayReverse, ticker + 1, playEntries.Count - ticker)
+                    If playEntries.ContainsKey(index) Then
+                        Dim currentEntryAction As EntryAction = playEntries(index)
+                        If currentEntryAction.Corrector <> 0 AndAlso PlayReverse Then currentEntryAction = playEntries(index + currentEntryAction.Corrector)
                         ' At a loop seam, switch off the previous final step in
                         ' the same timer pass that switches on the first step.
                         If Not PlayReverse AndAlso currentEntryAction.LoopSeamOffBulbs IsNot Nothing Then
@@ -579,7 +585,7 @@ Public Class B2SAnimation
                             Exit Do
                         Else
                             ticker += 1
-                            If ticker >= Me.Entries.Count Then
+                            If ticker >= playEntries.Count Then
                                 Exit Do
                             End If
                         End If
@@ -592,7 +598,7 @@ Public Class B2SAnimation
             ' count on and maybe restart the timer
             Dim restart As Boolean = True
             ticker += 1
-            If ticker >= Me.Entries.Count Then
+            If ticker >= playEntries.Count Then
                 reachedThe0Point = True
                 loopticker += 1
                 ticker = 0
@@ -642,7 +648,8 @@ Public Class B2SAnimation
                 ' Dream7 displays are independent child controls. Full-screen
                 ' animation images invalidate their entire parent, so explicitly
                 ' keep the displays above that repaint and refresh only them.
-                If Not _GroupName.StartsWith("PA_InfinityLights", StringComparison.OrdinalIgnoreCase) Then
+                ' B2S Pro files only; legacy files keep the original 3.0.11 behaviour.
+                If B2SData.UnifiedLayerDeck AndAlso Not _GroupName.StartsWith("PA_InfinityLights", StringComparison.OrdinalIgnoreCase) Then
                     For Each leddisplay As KeyValuePair(Of String, Dream7Display) In B2SData.LEDDisplays
                         If leddisplay.Value.Parent Is Form AndAlso leddisplay.Value.Visible Then
                             leddisplay.Value.BringToFront()

@@ -121,23 +121,14 @@
     <value>Window</value>
   </data>
   <assembly alias="System.Windows.Forms" name="System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" />
-  <data name="check_default_S" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_default_S.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="EMR_CT2_01" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT2_01.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="LED_1" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\LED_1.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="check_checked_S" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_checked_S.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="close" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\close.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="help2" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\help2.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="B2SLED_vb" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Codefiles\B2SLED.vb.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;utf-8</value>
@@ -169,9 +160,6 @@
   <data name="new1" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\new_2.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="save2" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\save2.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="LED_6" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\LED_6.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
@@ -183,9 +171,6 @@
   </data>
   <data name="B2SSolution_vbproj" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Codefiles\B2SSolution.vbproj.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;utf-8</value>
-  </data>
-  <data name="MSG_NoProjectFileFound" xml:space="preserve">
-    <value>Sorry, there is no project file. Please load another project.</value>
   </data>
   <data name="LED_Blue_1" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\LED_Blue 1.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -201,12 +186,6 @@
   </data>
   <data name="EMR_T1_2" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T1_2.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="marker_text" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\marker_text.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="imagesize" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\imagesize.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="IMAGES_DMDImages" xml:space="preserve">
     <value>DMD image(s)</value>
@@ -319,9 +298,6 @@
   <data name="Application_myapp" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Codefiles\Application.myapp.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;utf-8</value>
   </data>
-  <data name="ReelsAndLEDs_TypeRendered" xml:space="preserve">
-    <value>Rendered type</value>
-  </data>
   <data name="EMR_CT2_00" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT2_00.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
@@ -348,9 +324,6 @@
   </data>
   <data name="zoom_in" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\zoom_out.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="imagemarker" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\imagemarker.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="ReelsAndLEDs_TypeEMReel" xml:space="preserve">
     <value>EM reel</value>
@@ -412,9 +385,6 @@
   <data name="resize" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\resize.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="marker2" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\saa.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="TXT_GrillTop" xml:space="preserve">
     <value>'Standard grill' top location</value>
   </data>
@@ -429,9 +399,6 @@
   </data>
   <data name="EMR_T1_1" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T1_1.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="MSG_SaveAsAndImportNewImage" xml:space="preserve">
-    <value>Please import a new background image right now. This is necessary to move and resize all the bulb, reel and LED infos matching the new background image.</value>
   </data>
   <data name="AdjustLeft" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\AdjustLeft.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -480,12 +447,6 @@
   </data>
   <data name="Settings_Designer_vb" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Codefiles\Settings.Designer.vb.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;utf-8</value>
-  </data>
-  <data name="marker_reel3" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\marker_reel3.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="TXT_B2SID" xml:space="preserve">
-    <value>B2S ID</value>
   </data>
   <data name="EMR_CT1_00" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT1_00.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -559,9 +520,6 @@ Are you running the designer as 'Administrator'?</value>
   <data name="EMR_CT2_10" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT2_10.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="save_black" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\save_black.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="MSG_ReelImagesImportIsOkay" xml:space="preserve">
     <value>You have successfully imported all reel or LED images.</value>
   </data>
@@ -583,17 +541,8 @@ Are you running the designer as 'Administrator'?</value>
   <data name="open" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\open_2.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="MSG_WrongNumberOfImportedReelImages" xml:space="preserve">
-    <value>Please remember, you have to import 11 images step by step, one image for each numeric character, from 0 to 9, and one image for an empty reel or LED.</value>
-  </data>
   <data name="EMR_T3_3" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T3_3.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="TXT_RomID" xml:space="preserve">
-    <value>ROM ID</value>
-  </data>
-  <data name="check_disabled_checked" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_disabled_checked.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="illumination_intensity" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\illumination_intensity.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -615,9 +564,6 @@ Are you running the designer as 'Administrator'?</value>
   </data>
   <data name="EMR_CT1_03" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT1_03.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="TXT_RomIDType" xml:space="preserve">
-    <value>ROM ID type</value>
   </data>
   <data name="STATUS_Start" xml:space="preserve">
     <value>Start a new project or open an already existing project file. Maybe use the recent file list.</value>
@@ -646,15 +592,6 @@ Are you running the designer as 'Administrator'?</value>
   <data name="EMR_T2_2" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T2_2.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="MSG_ImportImages" xml:space="preserve">
-    <value>Import some images for background, illumination and/or DMD with the 'Images &amp; layers' tool window. 
-If you import more than one background image you can toggle between these background images.
-If you import illuminated images you can import yourself created illumination effects and use them in the backglass.
-If you import one or more DMD images you can use them as background or main picture of your DMD screen.</value>
-  </data>
-  <data name="check_default" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_default.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="EMR_T1_6" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_T1_6.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
@@ -663,9 +600,6 @@ If you import one or more DMD images you can use them as background or main pict
   </data>
   <data name="UNDO_ImageImported" xml:space="preserve">
     <value>Image imported</value>
-  </data>
-  <data name="imagefile" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\imagefile.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="UNDO_BulbRemoved" xml:space="preserve">
     <value>Illumination frame removed</value>
@@ -705,9 +639,6 @@ If you import one or more DMD images you can use them as background or main pict
   </data>
   <data name="B2SBaseBox_vb" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\resources\codefiles\b2sbasebox.vb.txt;System.String, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089;utf-8</value>
-  </data>
-  <data name="check_checked" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_checked.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="EMR_CT2_15" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EMR_CT2_15.jpg;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -804,9 +735,6 @@ If you import one or more DMD images you can use them as background or main pict
   </data>
   <data name="LED_Blue_4" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\LED_Blue 4.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="check_disabled" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\check_disabled.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="brightness" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\brightness.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -1000,11 +928,6 @@ To stop the import press 'Cancel' at the file selection dialog and answer with '
   </data>
   <data name="TXT_DMDDefaultLocationRemoved" xml:space="preserve">
     <value>The 'B2S DMD' default location is removed.</value>
-  </data>
-  <data name="MSG_ReelTypeLEDsSelected" xml:space="preserve">
-    <value>You have selected an LED image set. My recommendation is to use 'Rendered LEDs' because of more flexibility, more realism and much better look.	 
-
-Do you really want to use an LED image set?</value>
   </data>
   <data name="MSG_ImportError" xml:space="preserve">
     <value>An error occurred loading the backglass file ('{0}').

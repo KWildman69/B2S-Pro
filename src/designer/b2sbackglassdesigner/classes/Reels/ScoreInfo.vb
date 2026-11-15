@@ -29,7 +29,10 @@
         ' Shared visual layer used by reels/LEDs, snippets and lights.
         ' Higher values are painted in front of lower values.
         Public ZOrder As Integer = 1000000
-        Public BehindCanvas As Boolean = False
+        ' Exact front-to-back position in the unified visual deck.  This is
+        ' independent of the editable Z value so dragging a layer never has to
+        ' rewrite the user's authored Z number.
+        Public LayerOrder As Integer = -1
         Public B2SStartDigit As Integer = 0
         Public B2SScoreType As eB2SScoreType = eB2SScoreType.NotUsed
         Public B2SPlayerNo As eB2SPlayerNo = eB2SPlayerNo.NotUsed
@@ -48,9 +51,6 @@
         Public Reel3DDepth As Integer = 100
         Public Reel3DGlass As Integer = 55
 
-        Public SingleReelSize As SizeF = Nothing
-        Public IsSingleReelSizeDirty As Boolean = True
-        Public SingleReelFactor As Double = 1
 
         Public PerfectScaleWidthFix As Boolean = False
 
@@ -70,7 +70,6 @@
             PerspectiveDepth = source.PerspectiveDepth
             PerspectiveLeftScale = source.PerspectiveLeftScale
             PerspectiveRightScale = source.PerspectiveRightScale
-            BehindCanvas = source.BehindCanvas
 
             B2SScoreType = source.B2SScoreType
 
@@ -86,9 +85,6 @@
             ' ID, player/start-digit routing, location, parent and Z layer are
             ' assigned by the normal Add Reel path. Render dimensions are
             ' derived for the new frame instead of sharing the source cache.
-            SingleReelSize = Nothing
-            IsSingleReelSizeDirty = True
-            SingleReelFactor = 1
         End Sub
 
         Public Sub CopyReel3DSettingsFrom(ByVal source As ScoreInfo)

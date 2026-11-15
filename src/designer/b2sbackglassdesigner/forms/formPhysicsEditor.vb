@@ -1393,14 +1393,6 @@ Public Partial Class formPhysicsEditor
             TabStop = True
         End Sub
 
-        Public ReadOnly Property SelectedPoint As Nullable(Of PointF)
-            Get
-                Dim points As List(Of PointF) = ActivePoints()
-                If selectedIndex < 0 OrElse selectedIndex >= points.Count Then Return Nothing
-                Return points(selectedIndex)
-            End Get
-        End Property
-
         Public ReadOnly Property SelectedSegmentIndex As Integer
             Get
                 Return selectedSegment

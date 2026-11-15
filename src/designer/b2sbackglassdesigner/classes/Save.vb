@@ -222,7 +222,6 @@ Public Class Save
                         If innerNode.Attributes("ZOrder") IsNot Nothing Then
                             score.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
                         End If
-                        score.BehindCanvas = (ReadIntAttribute(innerNode, "BehindCanvas", 0, 0, 1) = 1)
                         If innerNode.Attributes("RotationAngle") IsNot Nothing Then
                             score.RotationAngle = Single.Parse(innerNode.Attributes("RotationAngle").InnerText, Globalization.CultureInfo.InvariantCulture)
                         End If
@@ -251,6 +250,7 @@ Public Class Save
                         score.Reel3DGlass = ReadIntAttribute(innerNode, "Reel3DGlass", 55, 0, 200)
                         score.Location = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                         score.Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
+                        If innerNode.Attributes("LayerOrder") IsNot Nothing Then score.LayerOrder = CInt(innerNode.Attributes("LayerOrder").InnerText)
                         If score.Size.Width < 10 Then score.Size.Width = 10
                         If score.Size.Height < 10 Then score.Size.Height = 10
                         If innerNode.Attributes("Parent") IsNot Nothing AndAlso innerNode.Attributes("Parent").InnerText.Equals("DMD") Then
@@ -268,10 +268,23 @@ Public Class Save
                 End If
 
                 ' get all illumination info
-                If topnode.SelectSingleNode("Illumination") IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
+                Dim illuminationNode As Xml.XmlElement = TryCast(topnode.SelectSingleNode("Illumination"), Xml.XmlElement)
+                .UnifiedLayerDeck = (illuminationNode IsNot Nothing AndAlso
+                                     illuminationNode.Attributes("UnifiedLayerDeck") IsNot Nothing AndAlso
+                                     illuminationNode.Attributes("UnifiedLayerDeck").InnerText = "1")
+                Dim hasCanvasLayerPosition As Boolean = (illuminationNode IsNot Nothing AndAlso
+                                                          illuminationNode.Attributes("CanvasLayerPosition") IsNot Nothing)
+                If hasCanvasLayerPosition Then
+                    .CanvasLayerPosition = Math.Max(0, CInt(illuminationNode.Attributes("CanvasLayerPosition").InnerText))
+                End If
+                If illuminationNode IsNot Nothing AndAlso illuminationNode.Attributes("DMDCanvasLayerPosition") IsNot Nothing Then
+                    .DMDCanvasLayerPosition = Math.Max(0, CInt(illuminationNode.Attributes("DMDCanvasLayerPosition").InnerText))
+                End If
+                If illuminationNode IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
                     For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Illumination/Bulb")
                         Dim bulb As Illumination.BulbInfo = New Illumination.BulbInfo()
                         bulb.ID = CInt(innerNode.Attributes("ID").InnerText)
+                        If innerNode.Attributes("LayerOrder") IsNot Nothing Then bulb.LayerOrder = CInt(innerNode.Attributes("LayerOrder").InnerText)
                         If innerNode.Attributes("B2SID") IsNot Nothing Then
                             bulb.B2SID = CInt(innerNode.Attributes("B2SID").InnerText)
                         End If
@@ -321,6 +334,17 @@ Public Class Save
                         bulb.DynamicFrontLighting = (ReadIntAttribute(innerNode, "DynamicFrontLighting", 0, 0, 1) = 1)
                         bulb.DynamicFrontShowLight = (ReadIntAttribute(innerNode, "DynamicFrontShowLight", 0, 0, 1) = 1)
                         bulb.DynamicFrontTargetSnippetID = ReadIntAttribute(innerNode, "DynamicFrontTargetSnippetID", 0, 0, Integer.MaxValue)
+                        bulb.DynamicFrontTargetSnippetIDs.Clear()
+                        bulb.DynamicFrontTargetSelectionDefined = (innerNode.Attributes("DynamicFrontTargetSnippetIDs") IsNot Nothing)
+                        If bulb.DynamicFrontTargetSelectionDefined Then
+                            For Each token As String In innerNode.Attributes("DynamicFrontTargetSnippetIDs").InnerText.Split("|"c)
+                                Dim targetID As Integer = 0
+                                If Integer.TryParse(token.Trim(), targetID) AndAlso targetID > 0 AndAlso
+                                   Not bulb.DynamicFrontTargetSnippetIDs.Contains(targetID) Then
+                                    bulb.DynamicFrontTargetSnippetIDs.Add(targetID)
+                                End If
+                            Next
+                        End If
                         bulb.BlinkEnabled = (ReadIntAttribute(innerNode, "BlinkEnabled", 0, 0, 1) = 1)
                         bulb.BlinkInterval = ReadIntAttribute(innerNode, "BlinkInterval", 500, 1, 60000)
                         ' Read enhanced/flasher values defensively.  Older projects and interrupted
@@ -330,7 +354,6 @@ Public Class Save
                         bulb.GlowSpread = ReadIntAttribute(innerNode, "GlowSpread", bulb.GlowSpread, 0, 1000)
                         If innerNode.Attributes("InFrontOfGlobalMask") IsNot Nothing Then bulb.InFrontOfGlobalMask = (innerNode.Attributes("InFrontOfGlobalMask").InnerText = "1")
                         If innerNode.Attributes("GlobalMaskLayerExplicit") IsNot Nothing Then bulb.GlobalMaskLayerExplicit = (innerNode.Attributes("GlobalMaskLayerExplicit").InnerText = "1")
-                        bulb.LightBehindCanvas = (ReadIntAttribute(innerNode, "LightBehindCanvas", 0, 0, 1) = 1)
                         bulb.GlowSoftness = ReadIntAttribute(innerNode, "GlowSoftness", bulb.GlowSoftness, 0, 300)
                         bulb.GlowFalloff = ReadIntAttribute(innerNode, "GlowFalloff", bulb.GlowFalloff, 0, 300)
                         bulb.LightDiffusion = ReadIntAttribute(innerNode, "LightDiffusion", bulb.LightDiffusion, 0, 300)
@@ -405,7 +428,9 @@ Public Class Save
                             End If
                         End If
                         bulb.SnippitInfo.Brightness = ReadIntAttribute(innerNode, "SnippitBrightness", 100, 0, 200)
-                        bulb.SnippitInfo.BehindCanvas = (ReadIntAttribute(innerNode, "SnippitBehindCanvas", 0, 0, 1) = 1)
+                        bulb.SnippitInfo.MaskEdgeSoftness = ReadIntAttribute(innerNode, "SnippitMaskEdgeSoftness", 0, 0, 300)
+                        bulb.SnippitInfo.MaskOutwardDiffusion = ReadIntAttribute(innerNode, "SnippitMaskOutwardDiffusion", 0, 0, 300)
+                        bulb.SnippitInfo.MaskShiftEdge = ReadIntAttribute(innerNode, "SnippitMaskShiftEdge", 0, -100, 100)
                         bulb.SnippitInfo.InfinityLightsGroup = If(innerNode.Attributes("InfinityLightsGroup") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsGroup").InnerText)
                         bulb.SnippitInfo.InfinityLightsSettings = If(innerNode.Attributes("InfinityLightsSettings") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsSettings").InnerText)
                         bulb.SnippitInfo.MotionPathDuration = ReadIntAttribute(innerNode, "MotionPathDuration", 3000, 250, 30000)
@@ -565,7 +590,9 @@ Public Class Save
                     Next
                     RestoreDesignerStackOrder(mybulbs, mybulbstackorders)
                     RestoreDesignerStackOrder(mydmdbulbs, mydmdbulbstackorders)
+                    .EnsureUnifiedLayerDeck()
                 End If
+                .EnsureUnifiedLayerDeck()
 
                 ' get standard thumbnail image
                 If topnode.SelectSingleNode("Images/ThumbnailImages/MainImage") IsNot Nothing Then
@@ -640,7 +667,8 @@ Public Class Save
     Public Sub SaveData(ByRef _backglassData As Backglass.Data,
                         ByRef serializedXml As Xml.XmlDocument)
 
-            ' Serialize the editable project for embedding inside the one .B2SPro file.
+            ' Serialize the private editable .b2s project. Runtime .B2SPro
+            ' exports are created separately by Coding.
             Dim XML As Xml.XmlDocument = New Xml.XmlDocument
             Dim nodeHeader As Xml.XmlElement = XML.CreateElement("B2SBackglassData")
             Dim nodeScores As Xml.XmlElement = XML.CreateElement("Scores")
@@ -650,6 +678,10 @@ Public Class Save
             XML.AppendChild(nodeHeader)
             nodeHeader.SetAttribute("Version", SaveVersion)
             With _backglassData
+                .EnsureUnifiedLayerDeck()
+                nodeIllumination.SetAttribute("UnifiedLayerDeck", "1")
+                nodeIllumination.SetAttribute("CanvasLayerPosition", .CanvasLayerPosition.ToString())
+                If .DMDCanvasLayerPosition > 0 Then nodeIllumination.SetAttribute("DMDCanvasLayerPosition", .DMDCanvasLayerPosition.ToString())
                 AddXMLAttribute(XML, nodeHeader, "ProjectGUID", "Value", .ProjectGUID)
                 AddXMLAttribute(XML, nodeHeader, "ProjectGUID2", "Value", .ProjectGUID2)
                 If Not String.IsNullOrEmpty(.GlobalIlluminationMaskData) Then
@@ -780,10 +812,10 @@ Public Class Save
                             nodeScore.SetAttribute("Spacing", .Spacing.ToString())
                             nodeScore.SetAttribute("DisplayState", CInt(.DisplayState).ToString())
                             nodeScore.SetAttribute("ZOrder", .ZOrder.ToString())
+                            nodeScore.SetAttribute("LayerOrder", .LayerOrder.ToString())
                             Dim designerStackOrder As Integer
                             Dim stackOrders As Generic.Dictionary(Of ReelAndLED.ScoreInfo, Integer) = If(.ParentForm = eParentForm.DMD, dmdscorestackorders, scorestackorders)
                             If stackOrders.TryGetValue(score.Value, designerStackOrder) Then nodeScore.SetAttribute("DesignerStackOrder", designerStackOrder.ToString())
-                            nodeScore.SetAttribute("BehindCanvas", If(.BehindCanvas, "1", "0"))
                             If Math.Abs(.RotationAngle) > 0.001F Then
                                 nodeScore.SetAttribute("RotationAngle", .RotationAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                             End If
@@ -854,13 +886,24 @@ Public Class Save
                             nodeBulb.SetAttribute("SeparateLightLayer", If(.SeparateLightLayer, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontLighting", If(.DynamicFrontLighting, "1", "0"))
                             nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
-                            nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", Math.Max(0, .DynamicFrontTargetSnippetID).ToString())
+                            Dim selectedDynamicFrontTargetIDs As Integer() = .DynamicFrontTargetSnippetIDs.
+                                Where(Function(targetID) targetID > 0).Distinct().ToArray()
+                            Dim legacyDynamicFrontTargetID As Integer = Math.Max(0, .DynamicFrontTargetSnippetID)
+                            If .DynamicFrontTargetSelectionDefined Then
+                                legacyDynamicFrontTargetID = If(selectedDynamicFrontTargetIDs.Length > 0,
+                                                                selectedDynamicFrontTargetIDs(0), 0)
+                            End If
+                            nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", legacyDynamicFrontTargetID.ToString())
+                            If .DynamicFrontTargetSelectionDefined Then
+                                nodeBulb.SetAttribute("DynamicFrontTargetSnippetIDs",
+                                                      String.Join("|", selectedDynamicFrontTargetIDs.
+                                                          Select(Function(targetID) targetID.ToString()).ToArray()))
+                            End If
                             nodeBulb.SetAttribute("BlinkEnabled", If(.BlinkEnabled, "1", "0"))
                             nodeBulb.SetAttribute("BlinkInterval", Math.Max(1, Math.Min(60000, .BlinkInterval)).ToString())
                             nodeBulb.SetAttribute("GlowSpread", .GlowSpread.ToString())
                             nodeBulb.SetAttribute("InFrontOfGlobalMask", If(.InFrontOfGlobalMask, "1", "0"))
                             nodeBulb.SetAttribute("GlobalMaskLayerExplicit", If(.GlobalMaskLayerExplicit, "1", "0"))
-                            nodeBulb.SetAttribute("LightBehindCanvas", If(.LightBehindCanvas, "1", "0"))
                             nodeBulb.SetAttribute("GlowSoftness", .GlowSoftness.ToString())
                             nodeBulb.SetAttribute("GlowFalloff", .GlowFalloff.ToString())
                             nodeBulb.SetAttribute("LightDiffusion", .LightDiffusion.ToString())
@@ -898,13 +941,16 @@ Public Class Save
                             End If
                             nodeBulb.SetAttribute("IlluMode", CInt(.IlluMode).ToString())
                             nodeBulb.SetAttribute("ZOrder", .ZOrder.ToString())
+                            nodeBulb.SetAttribute("LayerOrder", .LayerOrder.ToString())
                             Dim designerStackOrder As Integer
                             Dim stackOrders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = If(.ParentForm = eParentForm.DMD, dmdbulbstackorders, bulbstackorders)
                             If stackOrders.TryGetValue(bulb.Value, designerStackOrder) Then nodeBulb.SetAttribute("DesignerStackOrder", designerStackOrder.ToString())
                             nodeBulb.SetAttribute("IsImageSnippit", If(.IsImageSnippit, "1", "0"))
                             nodeBulb.SetAttribute("SnippitType", CInt(.SnippitInfo.SnippitType).ToString())
                             nodeBulb.SetAttribute("SnippitBrightness", Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)).ToString())
-                            nodeBulb.SetAttribute("SnippitBehindCanvas", If(.SnippitInfo.BehindCanvas, "1", "0"))
+                            If .SnippitInfo.MaskEdgeSoftness <> 0 Then nodeBulb.SetAttribute("SnippitMaskEdgeSoftness", Math.Max(0, Math.Min(300, .SnippitInfo.MaskEdgeSoftness)).ToString())
+                            If .SnippitInfo.MaskOutwardDiffusion <> 0 Then nodeBulb.SetAttribute("SnippitMaskOutwardDiffusion", Math.Max(0, Math.Min(300, .SnippitInfo.MaskOutwardDiffusion)).ToString())
+                            If .SnippitInfo.MaskShiftEdge <> 0 Then nodeBulb.SetAttribute("SnippitMaskShiftEdge", Math.Max(-100, Math.Min(100, .SnippitInfo.MaskShiftEdge)).ToString())
                             If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup) Then nodeBulb.SetAttribute("InfinityLightsGroup", .SnippitInfo.InfinityLightsGroup)
                             If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsSettings) Then nodeBulb.SetAttribute("InfinityLightsSettings", .SnippitInfo.InfinityLightsSettings)
                             If .IsImageSnippit Then

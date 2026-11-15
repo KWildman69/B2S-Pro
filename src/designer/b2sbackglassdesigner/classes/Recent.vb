@@ -22,7 +22,7 @@ Public Class Recent
     End Sub
 
     Public Sub AddToRecentList(ByVal backglassdata As Backglass.Data, Optional ByVal filename As String = "")
-        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name, backglassdata.Name & B2SProFileExtension)
+        If String.IsNullOrEmpty(filename) Then filename = IO.Path.Combine(BackglassProjectsPath, backglassdata.Name, backglassdata.Name & B2SProjectFileExtension)
         filename = IO.Path.GetFullPath(filename)
         Dim thumbnail As Image = backglassdata.ThumbnailImage
         If thumbnail Is Nothing AndAlso backglassdata.Image IsNot Nothing Then thumbnail = backglassdata.Image.Resized(New Size(32, 32))
@@ -50,35 +50,6 @@ Public Class Recent
         Next
         ' add the new entry
         recentEntries.Add(key + 1, newrecent)
-        ' save data
-        SaveRecentList()
-        ' set dirty flag for menu
-        IsDirty = True
-    End Sub
-    Public Sub ResetThumbnailImage(ByVal backglassdata As Backglass.Data)
-        For Each recentEntry As KeyValuePair(Of Integer, recentEntry) In recentEntries
-            If recentEntry.Value.Name.Equals(backglassdata.Name) Then
-                recentEntry.Value.ThumbnailImage = backglassdata.Image.Resized(New Size(32, 32))
-                Exit For
-            End If
-        Next
-    End Sub
-    Public Sub RenameRecentEntry(ByVal oldname As String, ByVal newname As String)
-        ' rename entry
-        For Each recentEntry As KeyValuePair(Of Integer, recentEntry) In recentEntries
-            If recentEntry.Value.Name.Equals(oldname) Then
-                recentEntry.Value.Name = newname
-                recentEntry.Value.FileName = IO.Path.Combine(BackglassProjectsPath, newname, newname & B2SProFileExtension)
-            End If
-        Next
-        ' save data
-        SaveRecentList()
-        ' set dirty flag for menu
-        IsDirty = True
-    End Sub
-    Public Sub RemoveFromRecentList(ByVal key As Integer)
-        ' remove the entry
-        recentEntries.Remove(key)
         ' save data
         SaveRecentList()
         ' set dirty flag for menu
@@ -128,7 +99,7 @@ Public Class Recent
                 Dim i As Integer = 1
                 For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Recent")
                     Dim name As String = innerNode.Attributes("Name").InnerText
-                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name, name & B2SProFileExtension)
+                    Dim filename As String = IO.Path.Combine(BackglassProjectsPath, name, name & B2SProjectFileExtension)
                     If innerNode.Attributes("FileName") IsNot Nothing AndAlso Not String.IsNullOrEmpty(innerNode.Attributes("FileName").InnerText) Then
                         filename = innerNode.Attributes("FileName").InnerText
                     End If

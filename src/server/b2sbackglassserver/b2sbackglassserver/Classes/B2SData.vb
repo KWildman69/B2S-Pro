@@ -9,14 +9,9 @@ Imports System.Threading
 
 Public Partial Class B2SData
 
-    Public Shared Property PhysicsSwitchPulseTestHandler As Action(Of Integer)
-    Public Shared Property PhysicsSoundTestHandler As Action(Of String)
-    Public Shared Property PhysicsSoundVolumeTestHandler As Action(Of String, Single)
 
     Public Shared Sub PlayPhysicsSound(ByVal soundName As String, Optional ByVal soundVolume As Single = 1.0F)
         soundVolume = Math.Max(0.0F, Math.Min(2.0F, soundVolume))
-        If PhysicsSoundVolumeTestHandler IsNot Nothing Then PhysicsSoundVolumeTestHandler.Invoke(soundName, soundVolume) : Return
-        If PhysicsSoundTestHandler IsNot Nothing Then PhysicsSoundTestHandler.Invoke(soundName) : Return
         If String.IsNullOrWhiteSpace(soundName) OrElse Not Sounds.ContainsKey(soundName) Then Return
         My.Computer.Audio.Play(PhysicsSoundVolume.Apply(Sounds(soundName), soundVolume), AudioPlayMode.Background)
     End Sub
@@ -36,6 +31,16 @@ Public Partial Class B2SData
 #If B2S = "DLL" Then
     Private Shared switchPipeThread As Thread
     Private Shared switchPipeStopping As Boolean
+    ' In EXE mode the DLL does not load the backglass, so it cannot know which
+    ' lamp/solenoid/B2S IDs are physics launchers. The EXE announces them once
+    ' after loading (message -6). Until then every ON event is forwarded; after
+    ' it, only the announced IDs are (none at all for legacy backglasses).
+    Private Shared ReadOnly forwardedLauncherKeys As New Generic.HashSet(Of Long)()
+    Private Shared launcherFilterReceived As Boolean = False
+
+    Private Shared Function LauncherKey(ByVal triggerType As Integer, ByVal triggerID As Integer) As Long
+        Return (CLng(triggerType) << 32) Or (CLng(triggerID) And &HFFFFFFFFL)
+    End Function
 
     Public Shared Sub StartPhysicsLauncherBridge(ByVal pipeName As String)
         ' The DLL sends launcher triggers; the EXE owns the receiving bridge.
@@ -46,6 +51,10 @@ Public Partial Class B2SData
         If String.IsNullOrWhiteSpace(pipeName) Then Return
         SwitchPulsePipeName = pipeName
         PhysicsLauncherPipeName = pipeName & "_Launcher"
+        SyncLock forwardedLauncherKeys
+            forwardedLauncherKeys.Clear()
+            launcherFilterReceived = False
+        End SyncLock
         switchPipeStopping = False
         switchPipeThread = New Thread(AddressOf ListenForSwitchPulses) With {.IsBackground = True, .Name = "B2S switch pulse bridge"}
         switchPipeThread.Start()
@@ -77,7 +86,21 @@ Public Partial Class B2SData
                     server.WaitForConnection()
                     Using reader As New BinaryReader(server)
                         Dim switchID As Integer = reader.ReadInt32()
-                        If Not switchPipeStopping Then
+                        If switchID = -6 Then
+                            ' launcher ID announcement: count, then (triggerType, triggerID) pairs
+                            Dim count As Integer = reader.ReadInt32()
+                            Dim keys As New Generic.List(Of Long)()
+                            For index As Integer = 1 To Math.Max(0, Math.Min(count, 4096))
+                                Dim triggerType As Integer = reader.ReadInt32()
+                                Dim triggerID As Integer = reader.ReadInt32()
+                                keys.Add(LauncherKey(triggerType, triggerID))
+                            Next
+                            SyncLock forwardedLauncherKeys
+                                forwardedLauncherKeys.Clear()
+                                forwardedLauncherKeys.UnionWith(keys)
+                                launcherFilterReceived = True
+                            End SyncLock
+                        ElseIf Not switchPipeStopping Then
                             If switchID = -5 Then
                                 TesterSwitchesEnabled = True
                             ElseIf switchID > 0 Then
@@ -93,12 +116,16 @@ Public Partial Class B2SData
     End Sub
 
     Public Shared Sub PulsePhysicsSwitch(ByVal switchID As Integer)
-        If PhysicsSwitchPulseTestHandler IsNot Nothing Then PhysicsSwitchPulseTestHandler.Invoke(switchID) : Return
         If switchID > 0 Then B2SAnimation.SetSwitch(switchID)
     End Sub
 
     Private Shared Sub SendPhysicsLauncherTrigger(ByVal triggerType As Integer, ByVal triggerID As Integer, ByVal value As Integer)
         If (value = 0 AndAlso triggerType <> -5) OrElse String.IsNullOrWhiteSpace(PhysicsLauncherPipeName) Then Return
+        If triggerType <> -5 Then
+            SyncLock forwardedLauncherKeys
+                If launcherFilterReceived AndAlso Not forwardedLauncherKeys.Contains(LauncherKey(triggerType, triggerID)) Then Return
+            End SyncLock
+        End If
         Try
             Using client As New NamedPipeClientStream(".", PhysicsLauncherPipeName, PipeDirection.Out)
                 client.Connect(100)
@@ -120,6 +147,9 @@ Public Partial Class B2SData
     Private Shared launcherPipeStopping As Boolean
     Private Shared ReadOnly testerSwitchQueue As New Generic.Queue(Of Generic.KeyValuePair(Of Integer, Boolean))()
     Private Shared testerSwitchAnnounced As Boolean = False
+    ' Launcher triggers arrive on the pipe thread; they are queued and fired on
+    ' the UI thread (B2STimer) where the physics timer also runs.
+    Private Shared ReadOnly physicsLauncherQueue As New Generic.Queue(Of Integer())()
 
     Public Shared Sub StartPhysicsLauncherBridge(ByVal pipeName As String)
         If String.IsNullOrWhiteSpace(pipeName) Then Return
@@ -144,7 +174,9 @@ Public Partial Class B2SData
                                     testerSwitchQueue.Enqueue(New Generic.KeyValuePair(Of Integer, Boolean)(triggerID, value <> 0))
                                 End SyncLock
                             Else
-                                FirePhysicsLaunchers(triggerType, triggerID, value)
+                                SyncLock physicsLauncherQueue
+                                    physicsLauncherQueue.Enqueue(New Integer() {triggerType, triggerID, value})
+                                End SyncLock
                             End If
                         End If
                     End Using
@@ -169,6 +201,43 @@ Public Partial Class B2SData
         End Try
     End Sub
 
+    Public Shared Sub FireQueuedPhysicsLaunchers()
+        Do
+            Dim item As Integer() = Nothing
+            SyncLock physicsLauncherQueue
+                If physicsLauncherQueue.Count = 0 Then Return
+                item = physicsLauncherQueue.Dequeue()
+            End SyncLock
+            FirePhysicsLaunchers(item(0), item(1), item(2))
+        Loop
+    End Sub
+
+    ' Tells the DLL which lamp/solenoid/B2S IDs are launchers, so it forwards only
+    ' those (an empty list for legacy backglasses, which have no launchers).
+    Public Shared Sub AnnouncePhysicsLaunchers()
+        If String.IsNullOrWhiteSpace(SwitchPulsePipeName) Then Return
+        Dim pairs As New Generic.List(Of Integer())()
+        For Each triggerType As Integer In New Integer() {1, 2, 3}
+            For Each triggerID As Integer In GetPhysicsLauncherIDs(triggerType)
+                pairs.Add(New Integer() {triggerType, triggerID})
+            Next
+        Next
+        Try
+            Using client As New NamedPipeClientStream(".", SwitchPulsePipeName, PipeDirection.Out)
+                client.Connect(100)
+                Using writer As New BinaryWriter(client)
+                    writer.Write(-6)
+                    writer.Write(pairs.Count)
+                    For Each pair As Integer() In pairs
+                        writer.Write(pair(0))
+                        writer.Write(pair(1))
+                    Next
+                End Using
+            End Using
+        Catch
+        End Try
+    End Sub
+
     Public Shared Function TryDequeueTesterSwitchState(ByRef switchID As Integer, ByRef state As Boolean) As Boolean
         SyncLock testerSwitchQueue
             If testerSwitchQueue.Count = 0 Then Return False
@@ -180,7 +249,6 @@ Public Partial Class B2SData
     End Function
 
     Public Shared Sub PulsePhysicsSwitch(ByVal switchID As Integer)
-        If PhysicsSwitchPulseTestHandler IsNot Nothing Then PhysicsSwitchPulseTestHandler.Invoke(switchID) : Return
         If switchID <= 0 OrElse String.IsNullOrWhiteSpace(SwitchPulsePipeName) Then Return
         Try
             Using client As New NamedPipeClientStream(".", SwitchPulsePipeName, PipeDirection.Out)
@@ -194,7 +262,6 @@ Public Partial Class B2SData
     End Sub
 #End If
 
-    Private Declare Function GetShortPathName Lib "kernel32" Alias "GetShortPathNameA" (ByVal LongName As String, ShortName As String, ByVal bufsize As Integer) As Long
     Public Enum eDMDType
         NotDefined = 0
         NoB2SDMD = 1
@@ -1400,7 +1467,7 @@ Public Partial Class B2SData
             If IsSolenoidsInfoDirty Then
                 IsSolenoidsInfoDirty = False
                 ret = (IsBackglassRunning AndAlso
-                       (IsBackglassStartedAsEXE OrElse UseRomSolenoids OrElse UsedMotionPathSolenoidIDs.Count > 0 OrElse UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse UsedMotionPathStopSolenoidIDs.Count > 0 OrElse UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse PivotSolenoidIDs.Count > 0 OrElse UseAnimationSolenoids OrElse TestMode OrElse B2SSettings.IsSolenoidsStateLogOn OrElse B2SStatistics.LogStatistics) AndAlso
+                       (IsBackglassStartedAsEXE OrElse UseRomSolenoids OrElse UsedMotionPathSolenoidIDs.Count > 0 OrElse UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse UsedMotionPathStopSolenoidIDs.Count > 0 OrElse UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse PhysicsLauncherSolenoidIDs.Count > 0 OrElse PivotSolenoidIDs.Count > 0 OrElse UseAnimationSolenoids OrElse TestMode OrElse B2SSettings.IsSolenoidsStateLogOn OrElse B2SStatistics.LogStatistics) AndAlso
                        Not B2SSettings.AllOff AndAlso Not B2SSettings.SolenoidsOff)
             End If
             Return ret
@@ -1566,6 +1633,10 @@ Public Partial Class B2SData
 
     Public Shared Property UseZOrder() As Boolean = False
     Public Shared Property UseDMDZOrder() As Boolean = False
+    Public Shared Property UnifiedLayerDeck() As Boolean = False
+    Public Shared Property CanvasLayerPosition() As Integer = 0
+    ' Number of back-most DMD ranks drawn behind the DMD image (current-Designer files only).
+    Public Shared Property DMDCanvasLayerPosition() As Integer = 0
     Public Shared Property ZOrderImages() As ZOrderCollection = New ZOrderCollection()
     Public Shared Property ZOrderDMDImages() As ZOrderCollection = New ZOrderCollection()
 
@@ -1692,6 +1763,9 @@ Public Partial Class B2SData
         IlluminationLocks.Clear()
         UseZOrder = False
         UseDMDZOrder = False
+        CanvasLayerPosition = 0
+        DMDCanvasLayerPosition = 0
+        UnifiedLayerDeck = False
         ZOrderImages.Clear()
         ZOrderDMDImages.Clear()
         UseRotatingImage = False

@@ -12,7 +12,6 @@ Public Class formDesigner
     Private WithEvents formToolResources As formToolResources = New formToolResources()
     Private WithEvents formToolLayers As formToolLayers = New formToolLayers()
     Private tsmiLayersEnhanced As ToolStripMenuItem
-    Private tsmiLayerManagerView As ToolStripMenuItem
     ' B2S Pro integrated two-row header matching the approved visual target.
     Private b2sProHeader As TableLayoutPanel
     Private b2sProLogo As PictureBox
@@ -81,7 +80,6 @@ Public Class formDesigner
     Private recent As Recent = New Recent()
     Private WithEvents coding As Coding = New Coding()
 
-    Private WithEvents UndoEvents As Undo = New Undo()
 
     Private ignoreChanges As Boolean = False
 
@@ -732,32 +730,6 @@ Public Class formDesigner
         End Using
     End Sub
 
-    Private Function CreateLogoFileButton(caption As String, icon As Image, handler As EventHandler) As Button
-        Dim button As New Button With {
-            .Name = "btnLogo" & caption.Replace(" ", String.Empty),
-            .Text = caption,
-            .Image = ResizeToolbarImage(icon, 14, 14),
-            .ImageAlign = ContentAlignment.TopCenter,
-            .TextAlign = ContentAlignment.BottomCenter,
-            .TextImageRelation = TextImageRelation.ImageAboveText,
-            .Size = New Size(44, 32),
-            .Margin = New Padding(1, 0, 1, 0),
-            .Padding = New Padding(1, 0, 1, 0),
-            .FlatStyle = FlatStyle.Flat,
-            .BackColor = Color.FromArgb(4, 7, 12),
-            .ForeColor = Color.White,
-            .Font = New Font("Segoe UI Condensed", 6.25F, FontStyle.Regular),
-            .TabStop = False,
-            .UseVisualStyleBackColor = False
-        }
-        button.FlatAppearance.BorderColor = Color.FromArgb(140, 30, 149, 225)
-        button.FlatAppearance.BorderSize = 1
-        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(62, 37, 53, 105)
-        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(105, 75, 35, 150)
-        AddHandler button.Click, handler
-        Return button
-    End Function
-
     Private Function ResizeToolbarImage(source As Image, width As Integer, height As Integer) As Image
         If source Is Nothing Then Return Nothing
         Dim result As New Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb)
@@ -917,11 +889,6 @@ Public Class formDesigner
 
     Private Sub MainMenuBlankArea_MouseDown(sender As Object, e As MouseEventArgs)
         If msB2SDesigner.GetItemAt(e.Location) Is Nothing Then MainHeader_MouseDown(sender, e)
-    End Sub
-
-    Private Sub MainMenuBlankArea_DoubleClick(sender As Object, e As EventArgs)
-        Dim mousePoint As Point = msB2SDesigner.PointToClient(Cursor.Position)
-        If msB2SDesigner.GetItemAt(mousePoint) Is Nothing Then MainHeader_DoubleClick(sender, e)
     End Sub
 
     Private Sub MainToolbarBlankArea_MouseDown(sender As Object, e As MouseEventArgs)
@@ -1099,14 +1066,6 @@ Public Class formDesigner
 
     End Sub
 
-    Private Sub LayerManagerView_Click(sender As Object, e As EventArgs)
-        ShowLayersPanel()
-        If formToolLayers IsNot Nothing Then
-            formToolLayers.Activate()
-            formToolLayers.BringToFront()
-        End If
-    End Sub
-
     Private Sub LayersMenu_Click(sender As Object, e As EventArgs)
         If tsmiLayersEnhanced.Checked Then
             ShowLayersPanel()
@@ -1205,12 +1164,12 @@ Public Class formDesigner
         Dim data As Backglass.Data = Backglass.currentData
         Dim wasDirty As Boolean = data.IsDirty
         Try
-            Dim recoveryFile As String = If(IsB2SProRecoveryPath(data.RecoverySourceFilePath),
+            Dim recoveryFile As String = If(IsB2SProjectRecoveryPath(data.RecoverySourceFilePath),
                                             data.RecoverySourceFilePath,
                                             RecoveryFileFor(data))
-            If Not IsB2SProRecoveryPath(recoveryFile) Then Throw New InvalidOperationException("The AutoRecovery destination is invalid.")
+            If Not IsB2SProjectRecoveryPath(recoveryFile) Then Throw New InvalidOperationException("The AutoRecovery destination is invalid.")
             Dim saveStartedUtc As DateTime = DateTime.UtcNow
-            If coding.CreateB2SProFile(recoveryFile, isRecoverySnapshot:=True) AndAlso
+            If WriteProjectFile(data, recoveryFile) AndAlso
                IO.File.Exists(recoveryFile) AndAlso
                IO.File.GetLastWriteTimeUtc(recoveryFile) >= saveStartedUtc.AddSeconds(-2) Then
                 data.RecoverySourceFilePath = IO.Path.GetFullPath(recoveryFile)
@@ -1228,7 +1187,13 @@ Public Class formDesigner
         End Try
     End Sub
 
-    Private Function B2SProFileFor(ByVal data As Backglass.Data) As String
+    Private Function ProjectFileFor(ByVal data As Backglass.Data) As String
+        If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return String.Empty
+        Dim fileName As String = data.Name & B2SProjectFileExtension
+        Return IO.Path.Combine(BackglassProjectsPath, data.Name, fileName)
+    End Function
+
+    Private Function RuntimeB2SProFileFor(ByVal data As Backglass.Data) As String
         If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return String.Empty
         Dim fileName As String = If(String.IsNullOrWhiteSpace(data.VSName), data.Name, data.VSName) & B2SProFileExtension
         Return IO.Path.Combine(BackglassProjectsPath, data.Name, fileName)
@@ -1255,16 +1220,16 @@ Public Class formDesigner
         Return IO.Path.Combine(BackglassProjectsPath,
                                projectName,
                                AutoRecoverySuffix,
-                               fileBase & "_" & AutoRecoverySuffix & "_" & token & B2SProFileExtension)
+                               fileBase & "_" & AutoRecoverySuffix & "_" & token & B2SBackupFileExtension)
     End Function
 
-    Private Function IsB2SProRecoveryPath(ByVal filename As String) As Boolean
+    Private Function IsB2SProjectRecoveryPath(ByVal filename As String) As Boolean
         If String.IsNullOrWhiteSpace(filename) Then Return False
         Try
             Dim fullPath As String = IO.Path.GetFullPath(filename)
             Dim projectsRoot As String = IO.Path.GetFullPath(BackglassProjectsPath).TrimEnd(IO.Path.DirectorySeparatorChar)
             Return fullPath.StartsWith(projectsRoot & IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) AndAlso
-                   IO.Path.GetExtension(fullPath).Equals(B2SProFileExtension, StringComparison.OrdinalIgnoreCase) AndAlso
+                   IO.Path.GetExtension(fullPath).Equals(B2SBackupFileExtension, StringComparison.OrdinalIgnoreCase) AndAlso
                    IO.Path.GetFileNameWithoutExtension(fullPath).IndexOf("_" & AutoRecoverySuffix & "_", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso
                    IO.Path.GetFileName(IO.Path.GetDirectoryName(fullPath)).Equals(AutoRecoverySuffix, StringComparison.OrdinalIgnoreCase)
         Catch
@@ -1273,7 +1238,7 @@ Public Class formDesigner
     End Function
 
     Private Sub RemoveRecoveryCopy(ByVal data As Backglass.Data)
-        If data Is Nothing OrElse Not IsB2SProRecoveryPath(data.RecoverySourceFilePath) Then Return
+        If data Is Nothing OrElse Not IsB2SProjectRecoveryPath(data.RecoverySourceFilePath) Then Return
         Dim filename As String = data.RecoverySourceFilePath
         Try
             If IO.File.Exists(filename) Then IO.File.Delete(filename)
@@ -1293,11 +1258,11 @@ Public Class formDesigner
         For Each projectFolder As String In IO.Directory.GetDirectories(BackglassProjectsPath)
             Dim recoveryFolder As String = IO.Path.Combine(projectFolder, AutoRecoverySuffix)
             If Not IO.Directory.Exists(recoveryFolder) Then Continue For
-            For Each recoveryFile As String In IO.Directory.GetFiles(recoveryFolder, "Unsaved_*_" & AutoRecoverySuffix & "_*.B2SPro")
-                If Not IsB2SProRecoveryPath(recoveryFile) Then Continue For
+            For Each recoveryFile As String In IO.Directory.GetFiles(recoveryFolder, "Unsaved_*_" & AutoRecoverySuffix & "_*" & B2SBackupFileExtension)
+                If Not IsB2SProjectRecoveryPath(recoveryFile) Then Continue For
                 Try
                     Dim recoveryData As Backglass.Data = Nothing
-                    If Not coding.ImportBackglassFile(recoveryData, recoveryFile, preserveEmbeddedVSName:=True) OrElse
+                    If Not LoadProjectFile(recoveryData, recoveryFile) OrElse
                        recoveryData Is Nothing Then Continue For
                     recoveryData.RecoverySourceFilePath = recoveryFile
                     Dim answer As DialogResult = B2SMessageBox.Show(Me,
@@ -1318,19 +1283,49 @@ Public Class formDesigner
         Next
     End Sub
 
-    Private Function SaveB2SPro(ByVal data As Backglass.Data,
-                                Optional ByVal markClean As Boolean = True,
-                                Optional ByVal outputFilename As String = "") As Boolean
+    Private Function WriteProjectFile(ByVal data As Backglass.Data, ByVal target As String) As Boolean
+        If data Is Nothing OrElse String.IsNullOrWhiteSpace(target) Then Return False
+        Dim projectXml As Xml.XmlDocument = Nothing
+        save.SaveData(data, projectXml)
+        If projectXml Is Nothing Then Return False
+
+        Dim directory As String = IO.Path.GetDirectoryName(target)
+        If Not String.IsNullOrWhiteSpace(directory) Then IO.Directory.CreateDirectory(directory)
+        Dim temporaryFile As String = IO.Path.Combine(directory,
+                                                       "." & IO.Path.GetFileName(target) & "." & Guid.NewGuid().ToString("N") & ".tmp")
+        Try
+            projectXml.Save(temporaryFile)
+            If IO.File.Exists(target) Then
+                IO.File.Replace(temporaryFile, target, Nothing, True)
+            Else
+                IO.File.Move(temporaryFile, target)
+            End If
+            Return True
+        Finally
+            If IO.File.Exists(temporaryFile) Then IO.File.Delete(temporaryFile)
+        End Try
+    End Function
+
+    Private Function LoadProjectFile(ByRef data As Backglass.Data, ByVal filename As String) As Boolean
+        If String.IsNullOrWhiteSpace(filename) OrElse Not IO.File.Exists(filename) Then Return False
+        Dim projectXml As New Xml.XmlDocument()
+        projectXml.Load(filename)
+        Return save.LoadData(data, projectXml, defaultArtworkPixelLighting:=True)
+    End Function
+
+    Private Function SaveProject(ByVal data As Backglass.Data,
+                                 Optional ByVal markClean As Boolean = True,
+                                 Optional ByVal outputFilename As String = "") As Boolean
         If data Is Nothing OrElse Not Object.ReferenceEquals(data, Backglass.currentData) Then Return False
 
-        Dim target As String = If(String.IsNullOrWhiteSpace(outputFilename), B2SProFileFor(data), B2SProFileName(IO.Path.GetFullPath(outputFilename)))
+        Dim target As String = If(String.IsNullOrWhiteSpace(outputFilename),
+                                  ProjectFileFor(data),
+                                  IO.Path.ChangeExtension(IO.Path.GetFullPath(outputFilename), B2SProjectFileExtension))
         If String.IsNullOrWhiteSpace(target) Then Return False
 
         Dim saveStartedUtc As DateTime = DateTime.UtcNow
-        TraceMotionPersistence("Saving B2S Pro file: " & target)
-        If Not coding.CreateB2SProFile(target) Then Return False
+        If Not WriteProjectFile(data, target) Then Return False
         If Not IO.File.Exists(target) OrElse IO.File.GetLastWriteTimeUtc(target) < saveStartedUtc.AddSeconds(-2) Then
-            TraceMotionPersistence("B2S Pro save could not be verified: " & target)
             Return False
         End If
 
@@ -1340,13 +1335,17 @@ Public Class formDesigner
         data.LoadedName = data.Name
         data.IsDirty = Not markClean
         recent.AddToRecentList(data, target)
-        TraceMotionPersistence("B2S Pro save verified: " & target)
         Return True
     End Function
 
 #Region "events"
 
     Private Sub formDesigner_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Load
+        ' The 'mini grill' authoring command is retired from the Designer UI.
+        ' Existing mini grill values still load, save, and export unchanged so
+        ' legacy backglasses keep their layout; only the command is hidden.
+        tsmiSetMiniGrillHeight.Visible = False
+        ToolStripSeparator26.Visible = False
         ' allow drag and drop
         Me.AllowDrop = True
         ' start app title and status bar
@@ -1644,10 +1643,9 @@ Public Class formDesigner
         saveSucceeded = False
         If data Is Nothing OrElse String.IsNullOrWhiteSpace(data.Name) Then Return
         Try
-            saveSucceeded = SaveB2SPro(data)
-            If Not saveSucceeded Then TraceMotionPersistence("Close B2S Pro save failed; keeping tab open")
+            saveSucceeded = SaveProject(data)
         Catch ex As Exception
-            TraceMotionPersistence("Close B2S Pro save failed; keeping tab open: " & ex.ToString())
+            ' The save failed; saveSucceeded stays False so the tab is kept open.
         End Try
     End Sub
 
@@ -1886,6 +1884,10 @@ Public Class formDesigner
             End Select
         End If
     End Sub
+    Private Sub formToolIllumination_SnippitSettingsRequested(ByVal sender As Object, ByVal e As EventArgs) Handles formToolIllumination.SnippitSettingsRequested
+        OpenSelectedObjectSettings()
+    End Sub
+
     Private Sub formToolIllumination_DataChanged(ByVal sender As Object, ByVal e As formToolIllumination.IlluminationEventArgs) Handles formToolIllumination.DataChanged
         If NoToolEvents Then Return
         If Backglass.currentTabPage IsNot Nothing Then
@@ -1930,10 +1932,6 @@ Public Class formDesigner
                     Backglass.currentTabPage.Illumination_SetLocation(e.Data)
                 Case B2SBackglassDesigner.formToolIllumination.eIlluminationDataType.Size
                     Backglass.currentTabPage.Illumination_SetSize(e.Data)
-                Case B2SBackglassDesigner.formToolIllumination.eIlluminationDataType.ZOrder
-                    Backglass.currentTabPage.Illumination_SetZOrder(e.Data)
-                Case B2SBackglassDesigner.formToolIllumination.eIlluminationDataType.SnippitInfo
-                    Backglass.currentTabPage.Illumination_SetSnippitInfo(e.Data)
             End Select
             ' refresh rom filter
             RefreshIDFilter()
@@ -2025,7 +2023,7 @@ Public Class formDesigner
     Private Sub Open_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiOpen.Click, tsbOpen.Click
         Using filedialog As OpenFileDialog = New OpenFileDialog
             With filedialog
-                .Filter = "B2S Pro and directB2S backglass files (*.B2SPro;*.directb2s)|*.B2SPro;*.directb2s"
+                .Filter = "B2S project and backglass files (*.b2s;*.B2SPro;*.directb2s)|*.b2s;*.B2SPro;*.directb2s"
                 .FileName = String.Empty
                 .InitialDirectory = If(String.IsNullOrWhiteSpace(LatestImportDirectory), BackglassProjectsPath, LatestImportDirectory)
                 If .ShowDialog(Me) = DialogResult.OK Then
@@ -2043,7 +2041,7 @@ Public Class formDesigner
     Private Sub Save_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles tsmiSave.Click, tsbSave.Click
         If Backglass.currentTabPage IsNot Nothing Then
             Cursor.Current = Cursors.WaitCursor
-            SaveB2SPro(Backglass.currentData)
+            SaveProject(Backglass.currentData)
             Cursor.Current = Cursors.Default
         Else
             tsmiNew.PerformClick()
@@ -2053,17 +2051,17 @@ Public Class formDesigner
     Private Sub SaveAs_Click(sender As System.Object, e As System.EventArgs) Handles tsmiSaveAs.Click
         If Backglass.currentTabPage IsNot Nothing Then
             Using fileDialog As New SaveFileDialog()
-                fileDialog.Title = "Save B2S Pro As"
-                fileDialog.Filter = "B2S Pro backglass file (*.B2SPro)|*.B2SPro"
-                fileDialog.DefaultExt = B2SProFileExtension.TrimStart("."c)
+                fileDialog.Title = "Save B2S Project As"
+                fileDialog.Filter = "B2S project file (*.b2s)|*.b2s"
+                fileDialog.DefaultExt = B2SProjectFileExtension.TrimStart("."c)
                 fileDialog.AddExtension = True
-                fileDialog.FileName = If(String.IsNullOrWhiteSpace(Backglass.currentData.VSName), Backglass.currentData.Name, Backglass.currentData.VSName) & B2SProFileExtension
+                fileDialog.FileName = Backglass.currentData.Name & B2SProjectFileExtension
                 If Not String.IsNullOrWhiteSpace(Backglass.currentData.SourceFilePath) Then
                     fileDialog.InitialDirectory = IO.Path.GetDirectoryName(Backglass.currentData.SourceFilePath)
                 End If
                 If fileDialog.ShowDialog(Me) = DialogResult.OK Then
                     Cursor.Current = Cursors.WaitCursor
-                    SaveB2SPro(Backglass.currentData, True, fileDialog.FileName)
+                    SaveProject(Backglass.currentData, True, fileDialog.FileName)
                     Cursor.Current = Cursors.Default
                 End If
             End Using
@@ -2073,7 +2071,7 @@ Public Class formDesigner
         Dim originalIndex As Integer = B2STab.SelectedIndex
         For index As Integer = 0 To B2STab.TabPages.Count - 1
             B2STab.SelectedIndex = index
-            If Backglass.currentData IsNot Nothing Then SaveB2SPro(Backglass.currentData)
+            If Backglass.currentData IsNot Nothing Then SaveProject(Backglass.currentData)
         Next
         If originalIndex >= 0 AndAlso originalIndex < B2STab.TabPages.Count Then B2STab.SelectedIndex = originalIndex
     End Sub
@@ -2144,7 +2142,6 @@ Public Class formDesigner
         Dim menuItem As ToolStripMenuItem = TryCast(sender, ToolStripMenuItem)
         Dim entry As Recent.recentEntry = If(menuItem IsNot Nothing, TryCast(menuItem.Tag, Recent.recentEntry), Nothing)
         If entry IsNot Nothing AndAlso IO.File.Exists(entry.FileName) Then
-            TraceMotionPersistence("Recent clicked: " & entry.FileName)
             If IsSupportedBackglassFile(entry.FileName) Then
                 LoadBackglassFile(entry.FileName)
             End If
@@ -2170,32 +2167,9 @@ Public Class formDesigner
 
     Private copiedBulb As Illumination.BulbInfo = Nothing
 
-    ' Enhanced Edition 2.3 arrange commands. Created in code so existing localized
-    ' resource files remain untouched and older project files stay compatible.
-    Private tsmiArrange As ToolStripMenuItem
-    Private tsmiBringToFrontEnhanced As ToolStripMenuItem
-    Private tsmiMoveForwardEnhanced As ToolStripMenuItem
-    Private tsmiMoveBackwardEnhanced As ToolStripMenuItem
-    Private tsmiSendToBackEnhanced As ToolStripMenuItem
-
     Private Sub InitializeEnhancedEditMenu()
         tsmiPaste.ShortcutKeys = Keys.Control Or Keys.V
         tsmiPaste.ShowShortcutKeys = True
-
-        tsmiArrange = New ToolStripMenuItem("Arrange")
-        tsmiBringToFrontEnhanced = New ToolStripMenuItem("Bring to Front", Nothing, AddressOf BringToFrontEnhanced_Click)
-        tsmiMoveForwardEnhanced = New ToolStripMenuItem("Move Forward", Nothing, AddressOf MoveForwardEnhanced_Click)
-        tsmiMoveBackwardEnhanced = New ToolStripMenuItem("Move Backward", Nothing, AddressOf MoveBackwardEnhanced_Click)
-        tsmiSendToBackEnhanced = New ToolStripMenuItem("Send to Back", Nothing, AddressOf SendToBackEnhanced_Click)
-
-        tsmiBringToFrontEnhanced.ShortcutKeys = Keys.Control Or Keys.Shift Or Keys.OemCloseBrackets
-        tsmiMoveForwardEnhanced.ShortcutKeys = Keys.Control Or Keys.OemCloseBrackets
-        tsmiMoveBackwardEnhanced.ShortcutKeys = Keys.Control Or Keys.OemOpenBrackets
-        tsmiSendToBackEnhanced.ShortcutKeys = Keys.Control Or Keys.Shift Or Keys.OemOpenBrackets
-
-        tsmiArrange.DropDownItems.AddRange(New ToolStripItem() {
-            tsmiBringToFrontEnhanced, tsmiMoveForwardEnhanced,
-            tsmiMoveBackwardEnhanced, tsmiSendToBackEnhanced})
         AddHandler tsmiEdit.DropDownOpening, AddressOf EnhancedEdit_DropDownOpening
     End Sub
 
@@ -2211,6 +2185,9 @@ Public Class formDesigner
         target.DynamicFrontLighting = source.DynamicFrontLighting
         target.DynamicFrontShowLight = source.DynamicFrontShowLight
         target.DynamicFrontTargetSnippetID = source.DynamicFrontTargetSnippetID
+        target.DynamicFrontTargetSnippetIDs.Clear()
+        target.DynamicFrontTargetSnippetIDs.AddRange(source.DynamicFrontTargetSnippetIDs)
+        target.DynamicFrontTargetSelectionDefined = source.DynamicFrontTargetSelectionDefined
         target.GlowSpread = source.GlowSpread
         target.GlowSoftness = source.GlowSoftness
         target.GlowIntensity = source.GlowIntensity
@@ -2239,11 +2216,18 @@ Public Class formDesigner
         target.ArtworkAdjustmentPasses = source.ArtworkAdjustmentPasses
         target.InFrontOfGlobalMask = source.InFrontOfGlobalMask
         target.GlobalMaskLayerExplicit = source.GlobalMaskLayerExplicit
-        target.LightBehindCanvas = source.LightBehindCanvas
         target.SelectionMaskData = source.SelectionMaskData
         target.SelectionTolerance = source.SelectionTolerance
         target.SelectionFeather = source.SelectionFeather
         target.IsIlluminatedImageDirty = True
+    End Sub
+
+    Private Shared Sub CopySnippetMaskRefinement(ByVal source As Illumination.SnippitInfo,
+                                                 ByVal target As Illumination.SnippitInfo)
+        If source Is Nothing OrElse target Is Nothing Then Return
+        target.MaskEdgeSoftness = source.MaskEdgeSoftness
+        target.MaskOutwardDiffusion = source.MaskOutwardDiffusion
+        target.MaskShiftEdge = source.MaskShiftEdge
     End Sub
 
     Private Sub EnhancedEdit_DropDownOpening(sender As Object, e As EventArgs)
@@ -2253,7 +2237,6 @@ Public Class formDesigner
         Dim hasDmdCopyWindow As Boolean = hasTab AndAlso IsDMDCopyWindowActive() AndAlso Backglass.currentTabPage.Mouse.IsDMDCopyAreaSelected
         Dim hasDmdCanvasImage As Boolean = hasTab AndAlso Backglass.currentTabPage.IsDMDCanvasImageSelected AndAlso Backglass.currentData.DMDImage IsNot Nothing
 
-        tsmiArrange.Enabled = hasBulb
         tsmiCut.Enabled = hasItem OrElse hasDmdCopyWindow OrElse hasDmdCanvasImage
         tsmiCopy.Enabled = hasBulb
         tsmiDelete.Enabled = hasItem OrElse hasDmdCopyWindow OrElse hasDmdCanvasImage
@@ -2340,59 +2323,6 @@ Public Class formDesigner
         Return Backglass.currentData.Bulbs
     End Function
 
-    Private Sub ArrangeSelectedBulb(mode As Integer)
-        If Backglass.currentTabPage Is Nothing OrElse Backglass.currentTabPage.Mouse.SelectedBulb Is Nothing Then Return
-        Dim bulbs As Illumination.BulbCollection = CurrentBulbCollection()
-        If bulbs Is Nothing OrElse bulbs.Count < 2 Then Return
-
-        Dim selected As Illumination.BulbInfo = Backglass.currentTabPage.Mouse.SelectedBulb
-        Dim ordered As New List(Of Illumination.BulbInfo)(bulbs)
-        ordered.Sort(Function(a, b) a.ZOrder.CompareTo(b.ZOrder))
-        Dim index As Integer = ordered.IndexOf(selected)
-        If index < 0 Then Return
-
-        Select Case mode
-            Case 0 ' send to back
-                ordered.RemoveAt(index)
-                ordered.Insert(0, selected)
-            Case 1 ' move backward
-                If index = 0 Then Return
-                ordered(index) = ordered(index - 1)
-                ordered(index - 1) = selected
-            Case 2 ' move forward
-                If index = ordered.Count - 1 Then Return
-                ordered(index) = ordered(index + 1)
-                ordered(index + 1) = selected
-            Case 3 ' bring to front
-                ordered.RemoveAt(index)
-                ordered.Add(selected)
-        End Select
-
-        For i As Integer = 0 To ordered.Count - 1
-            ordered(i).ZOrder = i
-        Next
-        Backglass.currentData.IsDirty = True
-        Backglass.currentTabPage.Invalidate()
-        Backglass.currentTabPage.RefreshIllumination()
-        UpdateStatusBar(Me, Backglass.currentTabPage)
-    End Sub
-
-    Private Sub BringToFrontEnhanced_Click(sender As Object, e As EventArgs)
-        ArrangeSelectedBulb(3)
-    End Sub
-
-    Private Sub MoveForwardEnhanced_Click(sender As Object, e As EventArgs)
-        ArrangeSelectedBulb(2)
-    End Sub
-
-    Private Sub MoveBackwardEnhanced_Click(sender As Object, e As EventArgs)
-        ArrangeSelectedBulb(1)
-    End Sub
-
-    Private Sub SendToBackEnhanced_Click(sender As Object, e As EventArgs)
-        ArrangeSelectedBulb(0)
-    End Sub
-
     Private Sub Cut_Click(sender As Object, e As EventArgs) Handles tsmiCut.Click
         If Backglass.currentTabPage Is Nothing Then Return
         If RemoveSelectedDMDCanvasImage(True) Then Return
@@ -2433,7 +2363,7 @@ Public Class formDesigner
             ' Copy all SnippitInfo properties
             copiedBulb.SnippitInfo = New Illumination.SnippitInfo
             copiedBulb.SnippitInfo.Brightness = selectedBulb.SnippitInfo.Brightness
-            copiedBulb.SnippitInfo.BehindCanvas = selectedBulb.SnippitInfo.BehindCanvas
+            CopySnippetMaskRefinement(selectedBulb.SnippitInfo, copiedBulb.SnippitInfo)
             copiedBulb.SnippitInfo.SnippitType = selectedBulb.SnippitInfo.SnippitType
             copiedBulb.SnippitInfo.SnippitMechID = selectedBulb.SnippitInfo.SnippitMechID
             copiedBulb.SnippitInfo.SnippitRotatingSteps = selectedBulb.SnippitInfo.SnippitRotatingSteps
@@ -2501,7 +2431,7 @@ Public Class formDesigner
             ' Copy all SnippitInfo properties
             copiedBulb.SnippitInfo = New Illumination.SnippitInfo
             copiedBulb.SnippitInfo.Brightness = selectedBulb.SnippitInfo.Brightness
-            copiedBulb.SnippitInfo.BehindCanvas = selectedBulb.SnippitInfo.BehindCanvas
+            CopySnippetMaskRefinement(selectedBulb.SnippitInfo, copiedBulb.SnippitInfo)
             copiedBulb.SnippitInfo.SnippitType = selectedBulb.SnippitInfo.SnippitType
             copiedBulb.SnippitInfo.SnippitMechID = selectedBulb.SnippitInfo.SnippitMechID
             copiedBulb.SnippitInfo.SnippitRotatingSteps = selectedBulb.SnippitInfo.SnippitRotatingSteps
@@ -2559,7 +2489,7 @@ Public Class formDesigner
             ' Paste all SnippitInfo properties
             newBulb.SnippitInfo = New Illumination.SnippitInfo
             newBulb.SnippitInfo.Brightness = copiedBulb.SnippitInfo.Brightness
-            newBulb.SnippitInfo.BehindCanvas = copiedBulb.SnippitInfo.BehindCanvas
+            CopySnippetMaskRefinement(copiedBulb.SnippitInfo, newBulb.SnippitInfo)
             newBulb.SnippitInfo.SnippitType = copiedBulb.SnippitInfo.SnippitType
             newBulb.SnippitInfo.SnippitMechID = copiedBulb.SnippitInfo.SnippitMechID
             newBulb.SnippitInfo.SnippitRotatingSteps = copiedBulb.SnippitInfo.SnippitRotatingSteps
@@ -3252,8 +3182,6 @@ Public Class formDesigner
         target.GlowFalloff = source.GlowFalloff
         target.InFrontOfGlobalMask = source.InFrontOfGlobalMask
         target.GlobalMaskLayerExplicit = source.GlobalMaskLayerExplicit
-        target.LightBehindCanvas = source.LightBehindCanvas
-        target.SnippitInfo.BehindCanvas = source.SnippitInfo.BehindCanvas OrElse source.LightBehindCanvas
     End Sub
     Private Sub AddNewFlasher_Click(ByVal sender As Object, ByVal e As EventArgs)
         If Backglass.currentTabPage Is Nothing Then Return
@@ -3585,7 +3513,9 @@ Public Class formDesigner
     Private Sub CreateDirectAccessBackglassCodeFile_Click(sender As System.Object, e As System.EventArgs) Handles tsmiCreateDirectAccessBackglassCodeFile.Click
 
         If Backglass.currentTabPage IsNot Nothing Then
-            SaveB2SPro(Backglass.currentData)
+            If SaveProject(Backglass.currentData) Then
+                coding.CreateB2SProFile(RuntimeB2SProFileFor(Backglass.currentData))
+            End If
         End If
 
     End Sub
@@ -3742,15 +3672,21 @@ Public Class formDesigner
         LatestImportDirectory = IO.Path.GetDirectoryName(filename)
         SaveSettings()
         Try
-            coding.ImportBackglassFile(backglassdata, filename)
+            Dim extension As String = IO.Path.GetExtension(filename)
+            If extension.Equals(B2SProjectFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+               extension.Equals(B2SBackupFileExtension, StringComparison.OrdinalIgnoreCase) Then
+                LoadProjectFile(backglassdata, filename)
+            Else
+                coding.ImportBackglassFile(backglassdata, filename)
+            End If
             If backglassdata IsNot Nothing Then
                 Dim originalData As Backglass.Data = backglassdata
                 Dim recoveryFile As String = RecoveryFileFor(originalData, filename)
                 Dim recovered As Boolean = False
-                If IsB2SProRecoveryPath(recoveryFile) AndAlso IO.File.Exists(recoveryFile) Then
+                If IsB2SProjectRecoveryPath(recoveryFile) AndAlso IO.File.Exists(recoveryFile) Then
                     Try
                         Dim recoveryData As Backglass.Data = Nothing
-                        If coding.ImportBackglassFile(recoveryData, recoveryFile, preserveEmbeddedVSName:=True) AndAlso
+                        If LoadProjectFile(recoveryData, recoveryFile) AndAlso
                            recoveryData IsNot Nothing AndAlso
                            Not String.IsNullOrWhiteSpace(originalData.ProjectGUID) AndAlso
                            String.Equals(recoveryData.ProjectGUID, originalData.ProjectGUID, StringComparison.OrdinalIgnoreCase) Then
@@ -4286,7 +4222,9 @@ Public Class formDesigner
         Dim snippetName As String = selected.Name
         Dim snippetType As eSnippitType = selected.SnippitInfo.SnippitType
         Dim snippetBrightness As Integer = selected.SnippitInfo.Brightness
-        Dim snippetBehindCanvas As Boolean = selected.SnippitInfo.BehindCanvas
+        Dim snippetMaskEdgeSoftness As Integer = selected.SnippitInfo.MaskEdgeSoftness
+        Dim snippetMaskOutwardDiffusion As Integer = selected.SnippitInfo.MaskOutwardDiffusion
+        Dim snippetMaskShiftEdge As Integer = selected.SnippitInfo.MaskShiftEdge
         Dim zorder As Integer = selected.ZOrder
         Dim mechID As Integer = selected.SnippitInfo.SnippitMechID
         Dim rotatingSteps As Integer = selected.SnippitInfo.SnippitRotatingSteps
@@ -4303,7 +4241,8 @@ Public Class formDesigner
         Dim automaticRotationStopBehaviour As eSnippitRotationStopBehaviour = selected.SnippitInfo.AutomaticRotationStopBehaviour
 
         Using propertiesDialog As New formSnippitSettings()
-            If propertiesDialog.ShowDialog(Me, selected.ID, snippetName, snippetType, zorder, snippetBrightness, snippetBehindCanvas, mechID,
+            If propertiesDialog.ShowDialog(Me, selected.ID, snippetName, snippetType, zorder, snippetBrightness,
+                                           snippetMaskEdgeSoftness, snippetMaskOutwardDiffusion, snippetMaskShiftEdge, mechID,
                                            rotatingSteps, rotatingInterval, rotatingDirection,
                                            rotationStopping, automaticRotationEnabled,
                                            automaticRotationContinuous, automaticRotationTriggerID,
@@ -4318,7 +4257,9 @@ Public Class formDesigner
         Backglass.currentTabPage.Illumination_SetZOrder(zorder)
         Dim updatedInfo As New Illumination.SnippitInfo With {
             .Brightness = snippetBrightness,
-            .BehindCanvas = snippetBehindCanvas,
+            .MaskEdgeSoftness = snippetMaskEdgeSoftness,
+            .MaskOutwardDiffusion = snippetMaskOutwardDiffusion,
+            .MaskShiftEdge = snippetMaskShiftEdge,
             .SnippitType = snippetType,
             .SnippitMechID = mechID,
             .SnippitRotatingSteps = rotatingSteps,
@@ -4343,7 +4284,9 @@ Public Class formDesigner
             If Object.ReferenceEquals(candidate, selected) Then Continue For
             With candidate.SnippitInfo
                 .Brightness = updatedInfo.Brightness
-                .BehindCanvas = updatedInfo.BehindCanvas
+                .MaskEdgeSoftness = updatedInfo.MaskEdgeSoftness
+                .MaskOutwardDiffusion = updatedInfo.MaskOutwardDiffusion
+                .MaskShiftEdge = updatedInfo.MaskShiftEdge
                 .SnippitType = updatedInfo.SnippitType
                 .SnippitMechID = updatedInfo.SnippitMechID
                 .SnippitRotatingSteps = updatedInfo.SnippitRotatingSteps
@@ -4369,21 +4312,6 @@ Public Class formDesigner
         If formToolLayers IsNot Nothing AndAlso Not formToolLayers.IsDisposed Then formToolLayers.RefreshLayers()
     End Sub
 
-    Public Sub OpenSelectedIlluminationSettings(ByVal openSnippitDialog As Boolean)
-        CheckToolIlluminationForm()
-        LoadToolIlluminationForm()
-        ShowToolIlluminationForm()
-
-        If formToolIllumination.WindowState = FormWindowState.Minimized Then
-            formToolIllumination.WindowState = FormWindowState.Normal
-        End If
-        formToolIllumination.BringToFront()
-        formToolIllumination.Activate()
-
-        If openSnippitDialog AndAlso formToolIllumination.btnSnippitSettings.Enabled Then
-            formToolIllumination.BeginInvoke(New MethodInvoker(Sub() formToolIllumination.btnSnippitSettings.PerformClick()))
-        End If
-    End Sub
     Private Sub LoadToolIlluminationForm()
         NoToolEvents = True
         If formToolIllumination IsNot Nothing Then
@@ -4429,24 +4357,7 @@ Public Class formDesigner
                     formToolIllumination.txtSizeHeight.Text = .Size.Height.ToString()
                     formToolIllumination.ignoreChange = False
 
-                    formToolIllumination.ZOrder = .ZOrder
                     formToolIllumination.IsSnippit = .IsImageSnippit
-                    formToolIllumination.SnippitType = .SnippitInfo.SnippitType
-                    formToolIllumination.SnippitBrightness = .SnippitInfo.Brightness
-                    formToolIllumination.SnippitBehindCanvas = .SnippitInfo.BehindCanvas
-                    formToolIllumination.SnippitMechID = .SnippitInfo.SnippitMechID
-                    formToolIllumination.SnippitRotatingSteps = .SnippitInfo.SnippitRotatingSteps
-                    formToolIllumination.SnippitRotatingInterval = .SnippitInfo.SnippitRotatingInterval
-                    formToolIllumination.SnippitRotatingDirection = .SnippitInfo.SnippitRotatingDirection
-                    formToolIllumination.SnippitRotatingStopBehaviour = .SnippitInfo.SnippitRotatingStopBehaviour
-                    formToolIllumination.AutomaticRotationEnabled = .SnippitInfo.AutomaticRotationEnabled
-                    formToolIllumination.AutomaticRotationContinuous = .SnippitInfo.AutomaticRotationContinuous
-                    formToolIllumination.AutomaticRotationTriggerID = .SnippitInfo.AutomaticRotationTriggerID
-                    formToolIllumination.AutomaticRotationTriggerType = .SnippitInfo.AutomaticRotationTriggerType
-                    formToolIllumination.AutomaticRotationSteps = .SnippitInfo.AutomaticRotationSteps
-                    formToolIllumination.AutomaticRotationInterval = .SnippitInfo.AutomaticRotationInterval
-                    formToolIllumination.AutomaticRotationDirection = .SnippitInfo.AutomaticRotationDirection
-                    formToolIllumination.AutomaticRotationStopBehaviour = .SnippitInfo.AutomaticRotationStopBehaviour
                 End With
             Else
                 formToolIllumination.txtName.Text = ""
@@ -4467,7 +4378,6 @@ Public Class formDesigner
                 formToolIllumination.txtIlluminationText.Text = ""
                 formToolIllumination.rbAlignCenter.Checked = True
                 formToolIllumination.MyFont = Nothing
-                formToolIllumination.ZOrder = 0
                 formToolIllumination.IsSnippit = False
 
                 formToolIllumination.ignoreChange = True
@@ -4623,10 +4533,6 @@ Public Class formDesigner
             End If
             If Not String.IsNullOrEmpty(sourceFileName) Then recent.AddToRecentList(_backglassdata, sourceFileName)
         End If
-    End Sub
-
-    Private Sub TraceMotionPersistence(ByVal message As String)
-        Debug.WriteLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") & " | " & message)
     End Sub
 
     Private Sub IDTester_Click(sender As Object, e As EventArgs)

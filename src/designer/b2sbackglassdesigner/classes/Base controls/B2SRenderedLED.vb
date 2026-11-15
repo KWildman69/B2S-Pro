@@ -47,7 +47,6 @@ Public Class B2SRenderedLED
 
         ' generate a randomized brush
         Dim randomize1 As Integer = Random()
-        Dim randomize2 As Integer = Random(randomize1)
         Dim brush As SolidBrush = Nothing
         'Dim glowingbrush As SolidBrush = Nothing
         If _ForeColor = Nothing Then

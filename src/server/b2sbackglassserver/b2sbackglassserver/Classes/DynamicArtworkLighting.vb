@@ -119,6 +119,11 @@ Friend NotInheritable Class DynamicArtworkLighting
         Return rendered
     End Function
 
+    ' Native one-image rotation recomputes every lit dynamic light each frame.
+    ' Rows (and blur columns) are independent, so they are processed in
+    ' parallel; every pixel uses exactly the same arithmetic as before, so the
+    ' result is identical. Transmission is only needed where the light field is
+    ' non-zero (RenderPixelsWithWorkspace skips every other pixel).
     Private Shared Function BuildTransmissionMapWithWorkspace(ByVal source As Bitmap,
                                                               ByVal contrastPercent As Integer,
                                                               ByVal workspace As Workspace) As Double()
@@ -131,13 +136,16 @@ Friend NotInheritable Class DynamicArtworkLighting
             Dim byteCount As Integer = stride * height
             workspace.EnsureCapacity(pixelCount, byteCount)
             Marshal.Copy(data.Scan0, workspace.SourcePixels, 0, byteCount)
-            For y As Integer = 0 To height - 1
-                For x As Integer = 0 To width - 1
-                    Dim p As Integer = y * stride + x * 4
-                    workspace.Luminance(y * width + x) = Math.Max(0.0, Math.Min(1.0,
-                        (workspace.SourcePixels(p + 2) * 0.299 + workspace.SourcePixels(p + 1) * 0.587 + workspace.SourcePixels(p) * 0.114) / 255.0))
-                Next
-            Next
+            Dim sourcePixels As Byte() = workspace.SourcePixels
+            Dim luminance As Double() = workspace.Luminance
+            Threading.Tasks.Parallel.For(0, height,
+                Sub(y As Integer)
+                    For x As Integer = 0 To width - 1
+                        Dim p As Integer = y * stride + x * 4
+                        luminance(y * width + x) = Math.Max(0.0, Math.Min(1.0,
+                            (sourcePixels(p + 2) * 0.299 + sourcePixels(p + 1) * 0.587 + sourcePixels(p) * 0.114) / 255.0))
+                    Next
+                End Sub)
         Finally
             source.UnlockBits(data)
         End Try
@@ -146,48 +154,61 @@ Friend NotInheritable Class DynamicArtworkLighting
         Dim contrast As Double = Math.Max(0.0, Math.Min(3.0, contrastPercent / 100.0))
         Dim detailStrength As Double = 0.45 + contrast * 1.15
         Dim midpointStrength As Double = 0.72 + contrast * 0.28
-        For i As Integer = 0 To pixelCount - 1
-            Dim transmitted As Double = Math.Pow(Math.Max(0.0, workspace.Luminance(i)), 0.82) * midpointStrength +
-                                        (workspace.Luminance(i) - workspace.BlurOutput(i)) * detailStrength
-            workspace.Transmission(i) = Math.Max(0.025, Math.Min(1.0, transmitted))
-        Next
+        Dim field As Byte() = workspace.Field
+        Dim lum As Double() = workspace.Luminance
+        Dim blurred As Double() = workspace.BlurOutput
+        Dim transmission As Double() = workspace.Transmission
+        Threading.Tasks.Parallel.For(0, height,
+            Sub(y As Integer)
+                Dim rowStart As Integer = y * width
+                For i As Integer = rowStart To rowStart + width - 1
+                    If field(i) = 0 Then Continue For
+                    Dim transmitted As Double = Math.Pow(Math.Max(0.0, lum(i)), 0.82) * midpointStrength +
+                                                (lum(i) - blurred(i)) * detailStrength
+                    transmission(i) = Math.Max(0.025, Math.Min(1.0, transmitted))
+                Next
+            End Sub)
         Return workspace.Transmission
     End Function
 
     Private Shared Sub BlurDoubleMapWithWorkspace(ByVal values As Double(), ByVal width As Integer,
                                                   ByVal height As Integer, ByVal radius As Integer,
                                                   ByVal workspace As Workspace)
-        For y As Integer = 0 To height - 1
-            Dim row As Integer = y * width
-            Dim sum As Double = 0.0
-            Dim left As Integer = 0
-            Dim right As Integer = Math.Min(width - 1, radius)
-            For x As Integer = left To right
-                sum += values(row + x)
-            Next
-            For x As Integer = 0 To width - 1
-                workspace.BlurHorizontal(row + x) = sum / (right - left + 1)
-                Dim removeX As Integer = x - radius
-                Dim addX As Integer = x + radius + 1
-                If removeX >= 0 Then sum -= values(row + removeX) : left += 1
-                If addX < width Then sum += values(row + addX) : right += 1
-            Next
-        Next
-        For x As Integer = 0 To width - 1
-            Dim sum As Double = 0.0
-            Dim top As Integer = 0
-            Dim bottom As Integer = Math.Min(height - 1, radius)
-            For y As Integer = top To bottom
-                sum += workspace.BlurHorizontal(y * width + x)
-            Next
-            For y As Integer = 0 To height - 1
-                workspace.BlurOutput(y * width + x) = sum / (bottom - top + 1)
-                Dim removeY As Integer = y - radius
-                Dim addY As Integer = y + radius + 1
-                If removeY >= 0 Then sum -= workspace.BlurHorizontal(removeY * width + x) : top += 1
-                If addY < height Then sum += workspace.BlurHorizontal(addY * width + x) : bottom += 1
-            Next
-        Next
+        Dim horizontal As Double() = workspace.BlurHorizontal
+        Dim output As Double() = workspace.BlurOutput
+        Threading.Tasks.Parallel.For(0, height,
+            Sub(y As Integer)
+                Dim row As Integer = y * width
+                Dim sum As Double = 0.0
+                Dim left As Integer = 0
+                Dim right As Integer = Math.Min(width - 1, radius)
+                For x As Integer = left To right
+                    sum += values(row + x)
+                Next
+                For x As Integer = 0 To width - 1
+                    horizontal(row + x) = sum / (right - left + 1)
+                    Dim removeX As Integer = x - radius
+                    Dim addX As Integer = x + radius + 1
+                    If removeX >= 0 Then sum -= values(row + removeX) : left += 1
+                    If addX < width Then sum += values(row + addX) : right += 1
+                Next
+            End Sub)
+        Threading.Tasks.Parallel.For(0, width,
+            Sub(x As Integer)
+                Dim sum As Double = 0.0
+                Dim top As Integer = 0
+                Dim bottom As Integer = Math.Min(height - 1, radius)
+                For y As Integer = top To bottom
+                    sum += horizontal(y * width + x)
+                Next
+                For y As Integer = 0 To height - 1
+                    output(y * width + x) = sum / (bottom - top + 1)
+                    Dim removeY As Integer = y - radius
+                    Dim addY As Integer = y + radius + 1
+                    If removeY >= 0 Then sum -= horizontal(removeY * width + x) : top += 1
+                    If addY < height Then sum += horizontal(addY * width + x) : bottom += 1
+                Next
+            End Sub)
     End Sub
 
     Private Shared Function RenderPixelsWithWorkspace(ByVal source As Bitmap, ByVal lightField As Byte(),
@@ -210,49 +231,51 @@ Friend NotInheritable Class DynamicArtworkLighting
             Array.Clear(workspace.OutputPixels, 0, outputByteCount)
             Dim normalizedIntensity As Double = Math.Max(0.0, Math.Min(16.0, intensity / 100.0))
             Dim exposureStrength As Double = normalizedIntensity * 1.18 + Math.Pow(Math.Max(0.0, normalizedIntensity - 3.0), 1.28) * 0.58
-            Dim whitePush As Double = Math.Max(0.0, Math.Min(0.82, (normalizedIntensity - 3.75) / 5.0))
             Dim protect As Double = Math.Max(0.0, Math.Min(1.0, highlightProtection / 100.0))
             Dim shadowLift As Double = Math.Max(0.0, Math.Min(1.0, darkAreaLift / 100.0))
             Dim sat As Double = Math.Max(0.0, Math.Min(2.0, saturation / 100.0))
-            For y As Integer = 0 To height - 1
-                For x As Integer = 0 To width - 1
-                    Dim index As Integer = y * width + x
-                    Dim field As Double = lightField(index) / 255.0
-                    If field <= 0.0 Then Continue For
-                    Dim sp As Integer = y * sourceStride + x * 4
-                    Dim dp As Integer = y * outputStride + x * 4
-                    Dim b As Double = workspace.SourcePixels(sp)
-                    Dim g As Double = workspace.SourcePixels(sp + 1)
-                    Dim r As Double = workspace.SourcePixels(sp + 2)
-                    Dim sourceAlpha As Double = workspace.SourcePixels(sp + 3) / 255.0
-                    Dim surfaceDetail As Double = transmissionMap(index)
-                    Dim luminance As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
-                    Dim blackProtection As Double = SmoothStep((Math.Max(r, Math.Max(g, b)) - 18.0) / 30.0)
-                    If blackProtection <= 0.0 Then Continue For
-                    Dim response As Double = 0.72 + shadowLift * (1.0 - luminance) * 0.28
-                    Dim detailResponse As Double = 0.8 + surfaceDetail * 0.4
-                    Dim localEnergy As Double = exposureStrength * field * response * detailResponse
-                    localEnergy *= 1.0 - protect * luminance * 0.8
-                    Dim gain As Double = 1.0 + localEnergy * 0.38
-                    Dim rr As Double = r * (1.0 + (gain - 1.0) * lightColor.R / 255.0)
-                    Dim gg As Double = g * (1.0 + (gain - 1.0) * lightColor.G / 255.0)
-                    Dim bb As Double = b * (1.0 + (gain - 1.0) * lightColor.B / 255.0)
-                    Dim burstMix As Double = SmoothStep((normalizedIntensity - 8.0) / 8.0) * field *
-                                             SmoothStep((luminance - 0.55) / 0.45)
-                    rr += (255.0 - rr) * burstMix
-                    gg += (255.0 - gg) * burstMix
-                    bb += (255.0 - bb) * burstMix
-                    Dim litLum As Double = rr * 0.299 + gg * 0.587 + bb * 0.114
-                    rr = litLum + (rr - litLum) * sat
-                    gg = litLum + (gg - litLum) * sat
-                    bb = litLum + (bb - litLum) * sat
-                    If flasherStyle = 2 Then rr = lightColor.R : gg = lightColor.G : bb = lightColor.B
-                    workspace.OutputPixels(dp) = CByte(ClampByte(CInt(bb)))
-                    workspace.OutputPixels(dp + 1) = CByte(ClampByte(CInt(gg)))
-                    workspace.OutputPixels(dp + 2) = CByte(ClampByte(CInt(rr)))
-                    workspace.OutputPixels(dp + 3) = CByte(ClampByte(CInt(field * sourceAlpha * blackProtection * 255.0)))
-                Next
-            Next
+            Dim sourcePixels As Byte() = workspace.SourcePixels
+            Dim outputPixels As Byte() = workspace.OutputPixels
+            Threading.Tasks.Parallel.For(0, height,
+                Sub(y As Integer)
+                    For x As Integer = 0 To width - 1
+                        Dim index As Integer = y * width + x
+                        Dim field As Double = lightField(index) / 255.0
+                        If field <= 0.0 Then Continue For
+                        Dim sp As Integer = y * sourceStride + x * 4
+                        Dim dp As Integer = y * outputStride + x * 4
+                        Dim b As Double = sourcePixels(sp)
+                        Dim g As Double = sourcePixels(sp + 1)
+                        Dim r As Double = sourcePixels(sp + 2)
+                        Dim sourceAlpha As Double = sourcePixels(sp + 3) / 255.0
+                        Dim surfaceDetail As Double = transmissionMap(index)
+                        Dim luminance As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
+                        Dim blackProtection As Double = SmoothStep((Math.Max(r, Math.Max(g, b)) - 18.0) / 30.0)
+                        If blackProtection <= 0.0 Then Continue For
+                        Dim response As Double = 0.72 + shadowLift * (1.0 - luminance) * 0.28
+                        Dim detailResponse As Double = 0.8 + surfaceDetail * 0.4
+                        Dim localEnergy As Double = exposureStrength * field * response * detailResponse
+                        localEnergy *= 1.0 - protect * luminance * 0.8
+                        Dim gain As Double = 1.0 + localEnergy * 0.38
+                        Dim rr As Double = r * (1.0 + (gain - 1.0) * lightColor.R / 255.0)
+                        Dim gg As Double = g * (1.0 + (gain - 1.0) * lightColor.G / 255.0)
+                        Dim bb As Double = b * (1.0 + (gain - 1.0) * lightColor.B / 255.0)
+                        Dim burstMix As Double = SmoothStep((normalizedIntensity - 8.0) / 8.0) * field *
+                                                 SmoothStep((luminance - 0.55) / 0.45)
+                        rr += (255.0 - rr) * burstMix
+                        gg += (255.0 - gg) * burstMix
+                        bb += (255.0 - bb) * burstMix
+                        Dim litLum As Double = rr * 0.299 + gg * 0.587 + bb * 0.114
+                        rr = litLum + (rr - litLum) * sat
+                        gg = litLum + (gg - litLum) * sat
+                        bb = litLum + (bb - litLum) * sat
+                        If flasherStyle = 2 Then rr = lightColor.R : gg = lightColor.G : bb = lightColor.B
+                        outputPixels(dp) = CByte(ClampByte(CInt(bb)))
+                        outputPixels(dp + 1) = CByte(ClampByte(CInt(gg)))
+                        outputPixels(dp + 2) = CByte(ClampByte(CInt(rr)))
+                        outputPixels(dp + 3) = CByte(ClampByte(CInt(field * sourceAlpha * blackProtection * 255.0)))
+                    Next
+                End Sub)
             Marshal.Copy(workspace.OutputPixels, 0, outputData.Scan0, outputByteCount)
         Finally
             source.UnlockBits(sourceData)
@@ -284,26 +307,29 @@ Friend NotInheritable Class DynamicArtworkLighting
             Dim byteCount As Integer = stride * rendered.Height
             workspace.EnsureCapacity(rendered.Width * rendered.Height, byteCount)
             Marshal.Copy(data.Scan0, workspace.TemperaturePixels, 0, byteCount)
-            For y As Integer = 0 To rendered.Height - 1
-                For x As Integer = 0 To rendered.Width - 1
-                    Dim p As Integer = y * stride + x * 4
-                    If workspace.TemperaturePixels(p + 3) = 0 Then Continue For
-                    Dim ob As Double = workspace.TemperaturePixels(p)
-                    Dim og As Double = workspace.TemperaturePixels(p + 1)
-                    Dim orr As Double = workspace.TemperaturePixels(p + 2)
-                    Dim oldLuma As Double = orr * 0.2126 + og * 0.7152 + ob * 0.0722
-                    Dim nr As Double = orr * rf, ng As Double = og * gf, nb As Double = ob * bf
-                    Dim newLuma As Double = nr * 0.2126 + ng * 0.7152 + nb * 0.0722
-                    If newLuma > 0.001 Then
-                        Dim scale As Double = Math.Max(0.82, Math.Min(1.18, oldLuma / newLuma))
-                        nr *= scale : ng *= scale : nb *= scale
-                    End If
-                    Dim strength As Double = 0.55 + 0.3 * (oldLuma / 255.0)
-                    workspace.TemperaturePixels(p) = CByte(ClampByte(CInt(Math.Round(ob + (nb - ob) * strength))))
-                    workspace.TemperaturePixels(p + 1) = CByte(ClampByte(CInt(Math.Round(og + (ng - og) * strength))))
-                    workspace.TemperaturePixels(p + 2) = CByte(ClampByte(CInt(Math.Round(orr + (nr - orr) * strength))))
-                Next
-            Next
+            Dim pixels As Byte() = workspace.TemperaturePixels
+            Dim width As Integer = rendered.Width
+            Threading.Tasks.Parallel.For(0, rendered.Height,
+                Sub(y As Integer)
+                    For x As Integer = 0 To width - 1
+                        Dim p As Integer = y * stride + x * 4
+                        If pixels(p + 3) = 0 Then Continue For
+                        Dim ob As Double = pixels(p)
+                        Dim og As Double = pixels(p + 1)
+                        Dim orr As Double = pixels(p + 2)
+                        Dim oldLuma As Double = orr * 0.2126 + og * 0.7152 + ob * 0.0722
+                        Dim nr As Double = orr * rf, ng As Double = og * gf, nb As Double = ob * bf
+                        Dim newLuma As Double = nr * 0.2126 + ng * 0.7152 + nb * 0.0722
+                        If newLuma > 0.001 Then
+                            Dim scale As Double = Math.Max(0.82, Math.Min(1.18, oldLuma / newLuma))
+                            nr *= scale : ng *= scale : nb *= scale
+                        End If
+                        Dim strength As Double = 0.55 + 0.3 * (oldLuma / 255.0)
+                        pixels(p) = CByte(ClampByte(CInt(Math.Round(ob + (nb - ob) * strength))))
+                        pixels(p + 1) = CByte(ClampByte(CInt(Math.Round(og + (ng - og) * strength))))
+                        pixels(p + 2) = CByte(ClampByte(CInt(Math.Round(orr + (nr - orr) * strength))))
+                    Next
+                End Sub)
             Marshal.Copy(workspace.TemperaturePixels, 0, data.Scan0, byteCount)
         Finally
             rendered.UnlockBits(data)
@@ -397,7 +423,6 @@ Friend NotInheritable Class DynamicArtworkLighting
             Marshal.Copy(sourceData.Scan0, sourcePixels, 0, sourcePixels.Length)
             Dim normalizedIntensity As Double = Math.Max(0.0, Math.Min(16.0, intensity / 100.0))
             Dim exposureStrength As Double = normalizedIntensity * 1.18 + Math.Pow(Math.Max(0.0, normalizedIntensity - 3.0), 1.28) * 0.58
-            Dim whitePush As Double = Math.Max(0.0, Math.Min(0.82, (normalizedIntensity - 3.75) / 5.0))
             Dim protect As Double = Math.Max(0.0, Math.Min(1.0, highlightProtection / 100.0))
             Dim shadowLift As Double = Math.Max(0.0, Math.Min(1.0, darkAreaLift / 100.0))
             Dim sat As Double = Math.Max(0.0, Math.Min(2.0, saturation / 100.0))
@@ -504,11 +529,6 @@ Friend NotInheritable Class DynamicArtworkLighting
     Private Shared Function SmoothStep(ByVal value As Double) As Double
         Dim t As Double = Math.Max(0.0, Math.Min(1.0, value))
         Return t * t * (3.0 - 2.0 * t)
-    End Function
-
-    Private Shared Function ScreenExposure(ByVal channel As Double, ByVal exposure As Double) As Double
-        Dim normalized As Double = Math.Max(0.0, Math.Min(1.0, channel / 255.0))
-        Return (1.0 - Math.Pow(1.0 - normalized, Math.Max(1.0, exposure))) * 255.0
     End Function
 
     Private Shared Function Lerp(ByVal a As Double, ByVal b As Double, ByVal amount As Double) As Double

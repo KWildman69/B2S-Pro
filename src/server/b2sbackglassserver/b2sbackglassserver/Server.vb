@@ -3179,11 +3179,17 @@ Public Class Server
 
     Private Function RandomStarter(ByVal top As Integer) As Integer
 
+        ' Picks a random entry, avoiding a repeat of the last pick when there is
+        ' more than one. With a single entry the original loop could never end.
         Static lastone As Integer = -1
+        Static random As New Random()
+        If top <= 1 Then
+            lastone = 0
+            Return 0
+        End If
         Dim ret As Integer = -1
         Do Until ret >= 0 AndAlso ret < top AndAlso ret <> lastone
-            Dim random As Random = New Random(Date.Now.Millisecond)
-            ret = CInt(Math.Truncate(random.NextDouble() * top))
+            ret = random.Next(top)
         Loop
         lastone = ret
         Return ret

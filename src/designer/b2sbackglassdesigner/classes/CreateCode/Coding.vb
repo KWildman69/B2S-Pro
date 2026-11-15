@@ -38,19 +38,24 @@ Public Class Coding
                                                                                         If(isInfinity, bulb.MaskRadius, 0),
                                                                                         If(isInfinity, bulb.MaskSmooth, 0),
                                                                                         If(isInfinity, bulb.MaskFeather, 0),
-                                                                                        If(isInfinity, bulb.MaskShiftEdge, 0))
+                                                                                        If(isInfinity, bulb.MaskShiftEdge, bulb.SnippitInfo.MaskShiftEdge),
+                                                                                        If(isInfinity, 0, bulb.SnippitInfo.MaskEdgeSoftness),
+                                                                                        If(isInfinity, 0, bulb.SnippitInfo.MaskOutwardDiffusion))
                 If masked Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet selection mask.")
                 result.Dispose()
                 result = masked
-            End If
-            ' A physics ball moves away from its saved position. The server
-            ' composites the stationary canvas over it at its current position;
-            ' baking the starting canvas mask here can erase the entire ball.
-            If bulb.SnippitInfo.BehindCanvas AndAlso Not bulb.SnippitInfo.PhysicsBall Then
-                Dim clipped As Image = Illumination.Lights.CreateCanvasClippedSnippet(result, canvas, rect, True)
-                If clipped Is Nothing Then Throw New InvalidOperationException("Unable to preserve the snippet canvas mask.")
+            ElseIf bulb.SnippitInfo.MaskShiftEdge <> 0 OrElse bulb.SnippitInfo.MaskEdgeSoftness <> 0 OrElse
+                   bulb.SnippitInfo.MaskOutwardDiffusion <> 0 Then
+                Dim refined As Image = Illumination.Lights.CreateAlphaRefinedSnippet(result,
+                                                                                     0,
+                                                                                     0,
+                                                                                     0,
+                                                                                     bulb.SnippitInfo.MaskShiftEdge,
+                                                                                     bulb.SnippitInfo.MaskEdgeSoftness,
+                                                                                     bulb.SnippitInfo.MaskOutwardDiffusion)
+                If refined Is Nothing Then Throw New InvalidOperationException("Unable to refine the snippet alpha mask.")
                 result.Dispose()
-                result = clipped
+                result = refined
             End If
             Return result
         Catch
@@ -111,9 +116,8 @@ Public Class Coding
                                          IO.Path.GetFullPath(outputFilename))
         Dim exportedFile As String = B2SProFileName(requestedFile)
 
-        ' Create only the requested B2S Pro destination. The editor's normal
-        ' save paths always pass an explicit filename, so no separate project
-        ' folder or project-format file is needed.
+        ' Create only the requested runtime .B2SPro destination. Editable .b2s
+        ' projects are written separately by the Designer project serializer.
         Dim exportDirectory As String = IO.Path.GetDirectoryName(exportedFile)
         If Not String.IsNullOrWhiteSpace(exportDirectory) Then IO.Directory.CreateDirectory(exportDirectory)
         Dim workingDirectory As String = If(String.IsNullOrWhiteSpace(exportDirectory), currentDir, exportDirectory)
@@ -132,6 +136,8 @@ Public Class Coding
         XML.AppendChild(nodeHeader)
         nodeHeader.SetAttribute("Version", DirectB2SVersion)
         With Backglass.currentData
+
+            .EnsureUnifiedLayerDeck()
 
             ' get scores and bulbs
             Dim savescores As Generic.SortedList(Of Integer, ReelAndLED.ScoreInfo) = New Generic.SortedList(Of Integer, ReelAndLED.ScoreInfo)
@@ -156,8 +162,8 @@ Public Class Coding
             ' so writing those values directly (or omitting them) makes the server
             ' fall back to XML/name order. Translate the complete designer stack to
             ' positive, unique runtime ranks while preserving the preview order.
-            Dim backglassRuntimeZOrders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = BuildRuntimeBulbZOrders(.Bulbs)
-            Dim dmdRuntimeZOrders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = BuildRuntimeBulbZOrders(.DMDBulbs)
+            Dim backglassRuntimeZOrders As Generic.Dictionary(Of Object, Integer) = BuildRuntimeVisualZOrders(.Bulbs, .Scores)
+            Dim dmdRuntimeZOrders As Generic.Dictionary(Of Object, Integer) = BuildRuntimeVisualZOrders(.DMDBulbs, .DMDScores)
             Dim nextAutomaticRotationBulbID As Integer = 1
             For Each bulb As Illumination.BulbInfo In .Bulbs
                 nextAutomaticRotationBulbID = Math.Max(nextAutomaticRotationBulbID, bulb.ID + 1)
@@ -181,6 +187,19 @@ Public Class Coding
             ' add additional main data
             AddXMLAttribute(XML, nodeHeader, "ProjectGUID", "Value", .ProjectGUID)
             AddXMLAttribute(XML, nodeHeader, "ProjectGUID2", "Value", .ProjectGUID2)
+            ' Public B2S Pro files must remain fully editable without embedding a
+            ' second copy of the complete project artwork.  Keep the authoring
+            ' mask itself as metadata; the runtime renderer continues using the
+            ' already-generated images below.
+            If Not String.IsNullOrEmpty(.GlobalIlluminationMaskData) Then
+                Dim nodeGlobalMask As Xml.XmlElement = XML.CreateElement("GlobalIlluminationMask")
+                nodeGlobalMask.SetAttribute("Data", .GlobalIlluminationMaskData)
+                If Not String.IsNullOrEmpty(.GlobalIlluminationMaskSourceData) Then nodeGlobalMask.SetAttribute("SourceData", .GlobalIlluminationMaskSourceData)
+                nodeGlobalMask.SetAttribute("Enabled", If(.GlobalIlluminationMaskEnabled, "1", "0"))
+                nodeGlobalMask.SetAttribute("Inverted", If(.GlobalIlluminationMaskInverted, "1", "0"))
+                nodeGlobalMask.SetAttribute("Threshold", Math.Max(0, Math.Min(255, .GlobalIlluminationMaskThreshold)).ToString())
+                nodeHeader.AppendChild(nodeGlobalMask)
+            End If
             AddXMLAttribute(XML, nodeHeader, "AssemblyGUID", "Value", .AssemblyGUID)
             AddXMLAttribute(XML, nodeHeader, "VSName", "Value", .VSName)
             AddXMLAttribute(XML, nodeHeader, "DualBackglass", "Value", If(.DualBackglass, "1", "0"))
@@ -338,9 +357,11 @@ Public Class Coding
                     nodeScore.SetAttribute("Digits", .Digits.ToString())
                     nodeScore.SetAttribute("Spacing", .Spacing.ToString())
                     nodeScore.SetAttribute("DisplayState", CInt(.DisplayState).ToString())
-                    nodeScore.SetAttribute("ZOrder", .ZOrder.ToString())
+                    Dim runtimeZOrders As Generic.Dictionary(Of Object, Integer) = If(.ParentForm = eParentForm.DMD, dmdRuntimeZOrders, backglassRuntimeZOrders)
+                    Dim runtimeZOrder As Integer = 0
+                    If runtimeZOrders.TryGetValue(score.Value, runtimeZOrder) Then nodeScore.SetAttribute("ZOrder", runtimeZOrder.ToString())
                     nodeScore.SetAttribute("DesignerZOrder", .ZOrder.ToString())
-                    nodeScore.SetAttribute("BehindCanvas", If(.BehindCanvas, "1", "0"))
+                    nodeScore.SetAttribute("LayerOrder", .LayerOrder.ToString())
                     If Math.Abs(.RotationAngle) > 0.001F Then nodeScore.SetAttribute("RotationAngle", .RotationAngle.ToString(Globalization.CultureInfo.InvariantCulture))
                             If Math.Abs(.PerspectiveDepth) > 0.001F Then nodeScore.SetAttribute("PerspectiveDepth", .PerspectiveDepth.ToString(Globalization.CultureInfo.InvariantCulture))
                             If Math.Abs(.PerspectiveLeftScale - 1.0F) > 0.001F Then nodeScore.SetAttribute("PerspectiveLeftScale", .PerspectiveLeftScale.ToString(Globalization.CultureInfo.InvariantCulture))
@@ -615,6 +636,15 @@ Public Class Coding
             RaiseEvent ReportProgress(Me, New CodingProgressEventArgs(80))
 
             ' add illumination
+            nodeIllumination.SetAttribute("UnifiedLayerDeck", "1")
+            ' Runtime Z ranks are assigned across the complete Designer deck, including
+            ' items that do not emit a runtime image. Keep the canvas at that same rank
+            ' boundary instead of recounting only exported items, which would move the
+            ' divider whenever a hidden or non-exporting item created a rank gap.
+            nodeIllumination.SetAttribute("CanvasLayerPosition", .CanvasLayerPosition.ToString())
+            ' The DMD deck has its own divider; written only when DMD items are
+            ' placed behind the DMD image, so other exports are unchanged.
+            If .DMDCanvasLayerPosition > 0 Then nodeIllumination.SetAttribute("DMDCanvasLayerPosition", .DMDCanvasLayerPosition.ToString())
             nodeHeader.AppendChild(nodeIllumination)
             For Each bulb As KeyValuePair(Of Integer, Illumination.BulbInfo) In savebulbs
                 With bulb.Value
@@ -673,13 +703,46 @@ Public Class Coding
                             nodeBulb.SetAttribute("IlluMode", CInt(.IlluMode).ToString())
                             nodeBulb.SetAttribute("ArtworkPixelLighting", If(.ArtworkPixelLighting, "1", "0"))
                             nodeBulb.SetAttribute("SeparateLightLayer", If(.SeparateLightLayer, "1", "0"))
+                            ' Preserve every Designer light/mask control directly on
+                            ' the existing runtime object.  These attributes contain
+                            ' no duplicate backglass image and are ignored by older
+                            ' Servers, but allow a public B2S Pro file to round-trip.
+                            nodeBulb.SetAttribute("LightPurpose", CInt(.LightPurpose).ToString())
+                            nodeBulb.SetAttribute("GlowSpread", .GlowSpread.ToString())
+                            nodeBulb.SetAttribute("GlowSoftness", .GlowSoftness.ToString())
+                            nodeBulb.SetAttribute("GlowFalloff", .GlowFalloff.ToString())
+                            nodeBulb.SetAttribute("LightDiffusion", .LightDiffusion.ToString())
+                            nodeBulb.SetAttribute("LightTemperature", Math.Max(2000, Math.Min(6500, .LightTemperature)).ToString())
+                            nodeBulb.SetAttribute("GlowIntensity", .GlowIntensity.ToString())
+                            nodeBulb.SetAttribute("GlowBlendMode", .GlowBlendMode.ToString())
+                            nodeBulb.SetAttribute("GlowPreviewQuality", .GlowPreviewQuality.ToString())
+                            nodeBulb.SetAttribute("FlasherStyle", .FlasherStyle.ToString())
+                            nodeBulb.SetAttribute("FlasherSaturation", .FlasherSaturation.ToString())
+                            nodeBulb.SetAttribute("FlasherHighlightProtection", .FlasherHighlightProtection.ToString())
+                            nodeBulb.SetAttribute("FlasherDarkAreaLift", .FlasherDarkAreaLift.ToString())
+                            nodeBulb.SetAttribute("FlasherHotspotX", .FlasherHotspotX.ToString())
+                            nodeBulb.SetAttribute("FlasherHotspotY", .FlasherHotspotY.ToString())
+                            If Not String.IsNullOrEmpty(.SelectionMaskData) Then nodeBulb.SetAttribute("SelectionMaskData", .SelectionMaskData)
+                            nodeBulb.SetAttribute("SelectionTolerance", .SelectionTolerance.ToString())
+                            nodeBulb.SetAttribute("SelectionFeather", .SelectionFeather.ToString())
+                            nodeBulb.SetAttribute("MaskRadius", .MaskRadius.ToString())
+                            nodeBulb.SetAttribute("MaskSmartRadius", If(.MaskSmartRadius, "1", "0"))
+                            nodeBulb.SetAttribute("MaskSmooth", .MaskSmooth.ToString())
+                            nodeBulb.SetAttribute("MaskFeather", .MaskFeather.ToString())
+                            nodeBulb.SetAttribute("MaskContrast", .MaskContrast.ToString())
+                            nodeBulb.SetAttribute("MaskShiftEdge", .MaskShiftEdge.ToString())
+                            nodeBulb.SetAttribute("ArtworkBrightness", .ArtworkBrightness.ToString())
+                            nodeBulb.SetAttribute("ArtworkContrast", .ArtworkContrast.ToString())
+                            nodeBulb.SetAttribute("ArtworkAdjustmentPasses", .ArtworkAdjustmentPasses.ToString())
+                            If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup) Then nodeBulb.SetAttribute("InfinityLightsGroup", .SnippitInfo.InfinityLightsGroup)
+                            If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsSettings) Then nodeBulb.SetAttribute("InfinityLightsSettings", .SnippitInfo.InfinityLightsSettings)
                             If (.IlluMode = Illumination.eIlluMode.Flasher OrElse .LightPurpose = Illumination.eLightPurpose.Flasher) AndAlso .FlasherPulseDuration > 0 Then
                                 nodeBulb.SetAttribute("FlasherPulseDuration", Math.Max(50, Math.Min(5000, .FlasherPulseDuration)).ToString())
                             End If
                             If .FlasherRadialSpikes > 0 Then
                                 nodeBulb.SetAttribute("FlasherRadialSpikes", Math.Max(0, Math.Min(100, .FlasherRadialSpikes)).ToString())
                             End If
-                            If Not .IsImageSnippit AndAlso Math.Abs(.LightRotationAngle) > 0.001F Then
+                            If Not .IsImageSnippit Then
                                 nodeBulb.SetAttribute("LightRotationAngle", .LightRotationAngle.ToString("R", Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("LightDesignLocX", .LocationX.X.ToString())
                                 nodeBulb.SetAttribute("LightDesignLocY", .LocationX.Y.ToString())
@@ -689,12 +752,21 @@ Public Class Coding
                             nodeBulb.SetAttribute("Visible", If(.Visible, "1", "0"))
                             nodeBulb.SetAttribute("InFrontOfGlobalMask", If(Not .GlobalMaskLayerExplicit OrElse .InFrontOfGlobalMask, "1", "0"))
                             nodeBulb.SetAttribute("GlobalMaskLayerExplicit", If(.GlobalMaskLayerExplicit, "1", "0"))
-                            nodeBulb.SetAttribute("LightBehindCanvas", If(.LightBehindCanvas, "1", "0"))
                             If .DynamicFrontLighting AndAlso Not .IsImageSnippit AndAlso imageinfo.Image IsNot Nothing Then
                                 nodeBulb.SetAttribute("DynamicFrontLighting", "1")
                                 nodeBulb.SetAttribute("DynamicFrontShowLight", If(.DynamicFrontShowLight, "1", "0"))
-                                If .DynamicFrontTargetSnippetID > 0 Then
-                                    nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", .DynamicFrontTargetSnippetID.ToString())
+                                Dim selectedDynamicFrontTargetIDs As Integer() = .DynamicFrontTargetSnippetIDs.
+                                    Where(Function(targetID) targetID > 0).Distinct().ToArray()
+                                Dim legacyDynamicFrontTargetID As Integer = Math.Max(0, .DynamicFrontTargetSnippetID)
+                                If .DynamicFrontTargetSelectionDefined Then
+                                    legacyDynamicFrontTargetID = If(selectedDynamicFrontTargetIDs.Length > 0,
+                                                                    selectedDynamicFrontTargetIDs(0), 0)
+                                    nodeBulb.SetAttribute("DynamicFrontTargetSnippetIDs",
+                                                          String.Join("|", selectedDynamicFrontTargetIDs.
+                                                              Select(Function(targetID) targetID.ToString()).ToArray()))
+                                End If
+                                If legacyDynamicFrontTargetID > 0 Then
+                                    nodeBulb.SetAttribute("DynamicFrontTargetSnippetID", legacyDynamicFrontTargetID.ToString())
                                 End If
                                 nodeBulb.SetAttribute("DynamicLightExposure", Math.Max(0, Math.Min(1600, .GlowIntensity)).ToString())
                                 nodeBulb.SetAttribute("DynamicLightColor", Color2String(.LightColor))
@@ -726,7 +798,7 @@ Public Class Coding
                                 nodeBulb.SetAttribute("Height", .SizeX.Height)
                             End If
                             ' snippit stuff
-                            Dim runtimeZOrders As Generic.Dictionary(Of Illumination.BulbInfo, Integer) = If(.ParentForm = eParentForm.DMD, dmdRuntimeZOrders, backglassRuntimeZOrders)
+                            Dim runtimeZOrders As Generic.Dictionary(Of Object, Integer) = If(.ParentForm = eParentForm.DMD, dmdRuntimeZOrders, backglassRuntimeZOrders)
                             Dim runtimeZOrder As Integer = 0
                             If runtimeZOrders.TryGetValue(bulb.Value, runtimeZOrder) Then
                                 nodeBulb.SetAttribute("ZOrder", runtimeZOrder.ToString())
@@ -735,6 +807,7 @@ Public Class Coding
                             ' server. Keep the editable layer value separately so a
                             ' DirectB2S round trip does not replace the designer stack.
                             nodeBulb.SetAttribute("DesignerZOrder", .ZOrder.ToString())
+                            nodeBulb.SetAttribute("LayerOrder", .LayerOrder.ToString())
                             nodeBulb.SetAttribute("IsImageSnippit", If(.IsImageSnippit, "1", "0"))
                             If .SnippitInfo.SnippitType <> eSnippitType.StandardImage Then
                                 nodeBulb.SetAttribute("SnippitType", CInt(.SnippitInfo.SnippitType).ToString())
@@ -746,8 +819,10 @@ Public Class Coding
                                 End If
                             End If
                             If .IsImageSnippit Then
-                                nodeBulb.SetAttribute("SnippitBehindCanvas", If(.SnippitInfo.BehindCanvas, "1", "0"))
                                 nodeBulb.SetAttribute("DesignerSnippitBrightness", Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)).ToString())
+                                If .SnippitInfo.MaskEdgeSoftness <> 0 Then nodeBulb.SetAttribute("SnippitMaskEdgeSoftness", Math.Max(0, Math.Min(300, .SnippitInfo.MaskEdgeSoftness)).ToString())
+                                If .SnippitInfo.MaskOutwardDiffusion <> 0 Then nodeBulb.SetAttribute("SnippitMaskOutwardDiffusion", Math.Max(0, Math.Min(300, .SnippitInfo.MaskOutwardDiffusion)).ToString())
+                                If .SnippitInfo.MaskShiftEdge <> 0 Then nodeBulb.SetAttribute("SnippitMaskShiftEdge", Math.Max(-100, Math.Min(100, .SnippitInfo.MaskShiftEdge)).ToString())
                                 If .IsImageSnippit Then
                                     nodeBulb.SetAttribute("PivotAnimation", If(.SnippitInfo.PivotAnimationEnabled, "1", "0"))
                                     nodeBulb.SetAttribute("PivotX", .SnippitInfo.PivotX.ToString(Globalization.CultureInfo.InvariantCulture))
@@ -887,6 +962,12 @@ Public Class Coding
                             If imageinfo.OffImage IsNot Nothing Then
                                 nodeBulb.SetAttribute("OffImage", ImageToBase64(imageinfo.OffImage))
                             End If
+                            If .IsImageSnippit AndAlso .Image IsNot Nothing Then
+                                Dim designerSourceImage As String = ImageToBase64(.Image)
+                                If Not String.Equals(designerSourceImage, nodeBulb.GetAttribute("Image"), StringComparison.Ordinal) Then
+                                    nodeBulb.SetAttribute("DesignerSourceImage", designerSourceImage)
+                                End If
+                            End If
 
                             ' add additional illu info for reimport
                             nodeBulb.SetAttribute("Text", .Text)
@@ -916,10 +997,6 @@ Public Class Coding
 
                                 Dim rotationSource As Image = imageinfo.Image
                                 Dim disposeRotationSource As Boolean = False
-                                If .SnippitInfo.BehindCanvas AndAlso .Image IsNot Nothing Then
-                                    rotationSource = Illumination.Lights.CreateBrightnessAdjustedSnippet(.Image, .SnippitInfo.Brightness)
-                                    disposeRotationSource = Not Object.ReferenceEquals(rotationSource, .Image)
-                                End If
                                 Try
                                     Dim originalLocX As Integer = CInt(.LocationX.X)
                                     Dim originalLocY As Integer = CInt(.LocationX.Y)
@@ -1017,18 +1094,6 @@ Public Class Coding
             End If
 
         End With
-
-        ' Keep the complete editable project inside the one .B2SPro file.
-        ' B2S Server ignores this private node; P2B2S Pro uses it to restore
-        ' editor-only values that are not part of the runtime schema.
-        Dim designerXML As Xml.XmlDocument = Nothing
-        Dim projectSerializer As New Save()
-        projectSerializer.SaveData(Backglass.currentData, designerXML)
-        If designerXML Is Nothing Then Throw New InvalidOperationException("The embedded designer data could not be created.")
-        Dim nodeDesignerData As Xml.XmlElement = XML.CreateElement("B2SProDesignerData")
-        nodeDesignerData.SetAttribute("Encoding", "base64-utf8")
-        nodeDesignerData.InnerText = Convert.ToBase64String(Encoding.UTF8.GetBytes(designerXML.OuterXml))
-        nodeHeader.AppendChild(nodeDesignerData)
 
         ' Save beside the destination and replace it atomically. If serialization
         ' fails, the last known-good B2S Pro file remains untouched.
@@ -1155,6 +1220,17 @@ Public Class Coding
                     .ProjectGUID = topnode.SelectSingleNode("ProjectGUID").Attributes("Value").InnerText
                     .ProjectGUID2 = topnode.SelectSingleNode("ProjectGUID2").Attributes("Value").InnerText
                     .AssemblyGUID = topnode.SelectSingleNode("AssemblyGUID").Attributes("Value").InnerText
+                    Dim globalMaskNode As Xml.XmlNode = topnode.SelectSingleNode("GlobalIlluminationMask")
+                    If globalMaskNode IsNot Nothing Then
+                        If globalMaskNode.Attributes("Data") IsNot Nothing Then .GlobalIlluminationMaskData = globalMaskNode.Attributes("Data").InnerText
+                        If globalMaskNode.Attributes("SourceData") IsNot Nothing Then .GlobalIlluminationMaskSourceData = globalMaskNode.Attributes("SourceData").InnerText
+                        If globalMaskNode.Attributes("Enabled") IsNot Nothing Then .GlobalIlluminationMaskEnabled = (globalMaskNode.Attributes("Enabled").InnerText <> "0")
+                        If globalMaskNode.Attributes("Inverted") IsNot Nothing Then .GlobalIlluminationMaskInverted = (globalMaskNode.Attributes("Inverted").InnerText = "1")
+                        If globalMaskNode.Attributes("Threshold") IsNot Nothing Then
+                            Dim thresholdValue As Integer
+                            If Integer.TryParse(globalMaskNode.Attributes("Threshold").InnerText, thresholdValue) Then .GlobalIlluminationMaskThreshold = Math.Max(0, Math.Min(255, thresholdValue))
+                        End If
+                    End If
                     .Name = topnode.SelectSingleNode("Name").Attributes("Value").InnerText
                     .LoadedName = .Name
                     .VSName = IO.Path.GetFileNameWithoutExtension(filename) ' topnode.SelectSingleNode("VSName").Attributes("Value").InnerText
@@ -1274,7 +1350,7 @@ Public Class Coding
                             ElseIf innerNode.Attributes("ZOrder") IsNot Nothing Then
                                 score.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
                             End If
-                            If innerNode.Attributes("BehindCanvas") IsNot Nothing Then score.BehindCanvas = (innerNode.Attributes("BehindCanvas").InnerText = "1")
+                            If innerNode.Attributes("LayerOrder") IsNot Nothing Then score.LayerOrder = CInt(innerNode.Attributes("LayerOrder").InnerText)
                             If innerNode.Attributes("RotationAngle") IsNot Nothing Then score.RotationAngle = Single.Parse(innerNode.Attributes("RotationAngle").InnerText, Globalization.CultureInfo.InvariantCulture)
                         If innerNode.Attributes("PerspectiveDepth") IsNot Nothing Then score.PerspectiveDepth = Single.Parse(innerNode.Attributes("PerspectiveDepth").InnerText, Globalization.CultureInfo.InvariantCulture)
                         If innerNode.Attributes("PerspectiveLeftScale") IsNot Nothing Then score.PerspectiveLeftScale = Single.Parse(innerNode.Attributes("PerspectiveLeftScale").InnerText, Globalization.CultureInfo.InvariantCulture)
@@ -1429,7 +1505,19 @@ Public Class Coding
                     End If
 
                     ' get all illumination info
-                    If topnode.SelectSingleNode("Illumination") IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
+                    Dim illuminationNode As Xml.XmlElement = TryCast(topnode.SelectSingleNode("Illumination"), Xml.XmlElement)
+                    .UnifiedLayerDeck = (illuminationNode IsNot Nothing AndAlso
+                                         illuminationNode.Attributes("UnifiedLayerDeck") IsNot Nothing AndAlso
+                                         illuminationNode.Attributes("UnifiedLayerDeck").InnerText = "1")
+                    Dim hasCanvasLayerPosition As Boolean = (illuminationNode IsNot Nothing AndAlso
+                                                              illuminationNode.Attributes("CanvasLayerPosition") IsNot Nothing)
+                    If hasCanvasLayerPosition Then
+                        .CanvasLayerPosition = Math.Max(0, CInt(illuminationNode.Attributes("CanvasLayerPosition").InnerText))
+                    End If
+                    If illuminationNode IsNot Nothing AndAlso illuminationNode.Attributes("DMDCanvasLayerPosition") IsNot Nothing Then
+                        .DMDCanvasLayerPosition = Math.Max(0, CInt(illuminationNode.Attributes("DMDCanvasLayerPosition").InnerText))
+                    End If
+                    If illuminationNode IsNot Nothing AndAlso topnode.SelectNodes("Illumination/Bulb") IsNot Nothing Then
                         Dim usedfonts As String = String.Empty
                         For Each innerNode As Xml.XmlElement In topnode.SelectNodes("Illumination/Bulb")
                             If innerNode.Attributes("B2SProAutomaticRotationFrame") IsNot Nothing Then Continue For
@@ -1475,6 +1563,41 @@ Public Class Coding
                             If innerNode.Attributes("SeparateLightLayer") IsNot Nothing Then
                                 bulb.SeparateLightLayer = (innerNode.Attributes("SeparateLightLayer").InnerText = "1")
                             End If
+                            bulb.LightPurpose = CType(ReadPivotInteger(innerNode, "LightPurpose", CInt(Illumination.eLightPurpose.Lamp), 0, 1), Illumination.eLightPurpose)
+                            bulb.GlowSpread = ReadPivotInteger(innerNode, "GlowSpread", bulb.GlowSpread, 0, 1000)
+                            If innerNode.Attributes("InFrontOfGlobalMask") IsNot Nothing Then bulb.InFrontOfGlobalMask = (innerNode.Attributes("InFrontOfGlobalMask").InnerText = "1")
+                            If innerNode.Attributes("GlobalMaskLayerExplicit") IsNot Nothing Then bulb.GlobalMaskLayerExplicit = (innerNode.Attributes("GlobalMaskLayerExplicit").InnerText = "1")
+                            bulb.GlowSoftness = ReadPivotInteger(innerNode, "GlowSoftness", bulb.GlowSoftness, 0, 300)
+                            bulb.GlowFalloff = ReadPivotInteger(innerNode, "GlowFalloff", bulb.GlowFalloff, 0, 300)
+                            bulb.LightDiffusion = ReadPivotInteger(innerNode, "LightDiffusion", bulb.LightDiffusion, 0, 300)
+                            bulb.LightTemperature = ReadPivotInteger(innerNode, "LightTemperature", 4000, 2000, 6500)
+                            bulb.IlluMode = CType(ReadPivotInteger(innerNode, "IlluMode", CInt(bulb.IlluMode), 0, 1), Illumination.eIlluMode)
+                            Dim maximumGlowIntensity As Integer = If(bulb.UsesArtworkPixelRenderer OrElse Not String.IsNullOrEmpty(bulb.Text), 1600, 800)
+                            bulb.GlowIntensity = ReadPivotInteger(innerNode, "GlowIntensity", bulb.GlowIntensity, 0, maximumGlowIntensity)
+                            bulb.GlowBlendMode = ReadPivotInteger(innerNode, "GlowBlendMode", bulb.GlowBlendMode, 0, 2)
+                            bulb.GlowPreviewQuality = ReadPivotInteger(innerNode, "GlowPreviewQuality", bulb.GlowPreviewQuality, 0, 1)
+                            ' Files without these attributes (legacy directB2S and pre-current
+                            ' exports) keep the BulbInfo field defaults, as 1.0.10 imported them.
+                            bulb.FlasherStyle = ReadPivotInteger(innerNode, "FlasherStyle", bulb.FlasherStyle, 0, 2)
+                            bulb.FlasherSaturation = ReadPivotInteger(innerNode, "FlasherSaturation", bulb.FlasherSaturation, 0, 200)
+                            bulb.FlasherHighlightProtection = ReadPivotInteger(innerNode, "FlasherHighlightProtection", bulb.FlasherHighlightProtection, 0, 100)
+                            bulb.FlasherDarkAreaLift = ReadPivotInteger(innerNode, "FlasherDarkAreaLift", bulb.FlasherDarkAreaLift, 0, 100)
+                            bulb.FlasherHotspotX = ReadPivotInteger(innerNode, "FlasherHotspotX", 50, 0, 100)
+                            bulb.FlasherHotspotY = ReadPivotInteger(innerNode, "FlasherHotspotY", 50, 0, 100)
+                            bulb.FlasherPulseDuration = ReadPivotInteger(innerNode, "FlasherPulseDuration", 0, 0, 5000)
+                            If innerNode.Attributes("SelectionMaskData") IsNot Nothing Then bulb.SelectionMaskData = innerNode.Attributes("SelectionMaskData").InnerText
+                            bulb.SelectionTolerance = ReadPivotInteger(innerNode, "SelectionTolerance", 20, 0, 255)
+                            bulb.SelectionFeather = ReadPivotInteger(innerNode, "SelectionFeather", 0, 0, 100)
+                            bulb.MaskRadius = ReadPivotInteger(innerNode, "MaskRadius", 18, 0, 100)
+                            bulb.MaskSmartRadius = (ReadPivotInteger(innerNode, "MaskSmartRadius", 0, 0, 1) = 1)
+                            bulb.MaskSmooth = ReadPivotInteger(innerNode, "MaskSmooth", 50, 0, 100)
+                            bulb.MaskFeather = ReadPivotInteger(innerNode, "MaskFeather", 52, 0, 250)
+                            bulb.MaskContrast = ReadPivotInteger(innerNode, "MaskContrast", 0, 0, 100)
+                            bulb.MaskShiftEdge = ReadPivotInteger(innerNode, "MaskShiftEdge", 10, -100, 100)
+                            bulb.FlasherRadialSpikes = ReadPivotInteger(innerNode, "FlasherRadialSpikes", 0, 0, 100)
+                            bulb.ArtworkBrightness = ReadPivotInteger(innerNode, "ArtworkBrightness", 0, -150, 150)
+                            bulb.ArtworkContrast = ReadPivotInteger(innerNode, "ArtworkContrast", 0, -100, 300)
+                            bulb.ArtworkAdjustmentPasses = ReadPivotInteger(innerNode, "ArtworkAdjustmentPasses", 1, 1, 12)
                             If innerNode.Attributes("DynamicFrontLighting") IsNot Nothing Then
                                 bulb.DynamicFrontLighting = (innerNode.Attributes("DynamicFrontLighting").InnerText = "1")
                             End If
@@ -1484,6 +1607,17 @@ Public Class Coding
                             If innerNode.Attributes("DynamicFrontTargetSnippetID") IsNot Nothing Then
                                 bulb.DynamicFrontTargetSnippetID = Math.Max(0, CInt(innerNode.Attributes("DynamicFrontTargetSnippetID").InnerText))
                             End If
+                            bulb.DynamicFrontTargetSnippetIDs.Clear()
+                            bulb.DynamicFrontTargetSelectionDefined = (innerNode.Attributes("DynamicFrontTargetSnippetIDs") IsNot Nothing)
+                            If bulb.DynamicFrontTargetSelectionDefined Then
+                                For Each token As String In innerNode.Attributes("DynamicFrontTargetSnippetIDs").InnerText.Split("|"c)
+                                    Dim targetID As Integer = 0
+                                    If Integer.TryParse(token.Trim(), targetID) AndAlso targetID > 0 AndAlso
+                                       Not bulb.DynamicFrontTargetSnippetIDs.Contains(targetID) Then
+                                        bulb.DynamicFrontTargetSnippetIDs.Add(targetID)
+                                    End If
+                                Next
+                            End If
                             If innerNode.Attributes("LightColor") IsNot Nothing Then bulb.LightColor = String2Color(innerNode.Attributes("LightColor").InnerText)
                             If innerNode.Attributes("DodgeColor") IsNot Nothing Then bulb.DodgeColor = String2Color(innerNode.Attributes("DodgeColor").InnerText)
                             If innerNode.Attributes("DesignerZOrder") IsNot Nothing Then
@@ -1491,15 +1625,24 @@ Public Class Coding
                             ElseIf innerNode.Attributes("ZOrder") IsNot Nothing Then
                                 bulb.ZOrder = CInt(innerNode.Attributes("ZOrder").InnerText)
                             End If
+                            If innerNode.Attributes("LayerOrder") IsNot Nothing Then bulb.LayerOrder = CInt(innerNode.Attributes("LayerOrder").InnerText)
                             bulb.IsImageSnippit = (innerNode.Attributes("IsImageSnippit").InnerText = "1")
                             If innerNode.Attributes("BlinkEnabled") IsNot Nothing Then bulb.BlinkEnabled = (innerNode.Attributes("BlinkEnabled").InnerText = "1")
                             If innerNode.Attributes("BlinkInterval") IsNot Nothing Then bulb.BlinkInterval = Math.Max(1, Math.Min(60000, CInt(innerNode.Attributes("BlinkInterval").InnerText)))
-                            If innerNode.Attributes("LightBehindCanvas") IsNot Nothing Then bulb.LightBehindCanvas = (innerNode.Attributes("LightBehindCanvas").InnerText = "1")
-                            If bulb.IsImageSnippit Then bulb.Image = Base64ToImage(innerNode.Attributes("Image").InnerText)
-                            If innerNode.Attributes("SnippitBehindCanvas") IsNot Nothing Then bulb.SnippitInfo.BehindCanvas = (innerNode.Attributes("SnippitBehindCanvas").InnerText = "1")
+                            If bulb.IsImageSnippit Then
+                                Dim designerSourceImage As Xml.XmlAttribute = innerNode.Attributes("DesignerSourceImage")
+                                bulb.Image = Base64ToImage(If(designerSourceImage IsNot Nothing AndAlso designerSourceImage.InnerText.Length > 0,
+                                                             designerSourceImage.InnerText,
+                                                             innerNode.Attributes("Image").InnerText))
+                            End If
                             If innerNode.Attributes("DesignerSnippitBrightness") IsNot Nothing Then
                                 bulb.SnippitInfo.Brightness = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("DesignerSnippitBrightness").InnerText)))
                             End If
+                            If innerNode.Attributes("SnippitMaskEdgeSoftness") IsNot Nothing Then bulb.SnippitInfo.MaskEdgeSoftness = Math.Max(0, Math.Min(300, CInt(innerNode.Attributes("SnippitMaskEdgeSoftness").InnerText)))
+                            If innerNode.Attributes("SnippitMaskOutwardDiffusion") IsNot Nothing Then bulb.SnippitInfo.MaskOutwardDiffusion = Math.Max(0, Math.Min(300, CInt(innerNode.Attributes("SnippitMaskOutwardDiffusion").InnerText)))
+                            If innerNode.Attributes("SnippitMaskShiftEdge") IsNot Nothing Then bulb.SnippitInfo.MaskShiftEdge = Math.Max(-100, Math.Min(100, CInt(innerNode.Attributes("SnippitMaskShiftEdge").InnerText)))
+                            bulb.SnippitInfo.InfinityLightsGroup = If(innerNode.Attributes("InfinityLightsGroup") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsGroup").InnerText)
+                            bulb.SnippitInfo.InfinityLightsSettings = If(innerNode.Attributes("InfinityLightsSettings") Is Nothing, String.Empty, innerNode.Attributes("InfinityLightsSettings").InnerText)
                             bulb.SnippitInfo.PivotAnimationEnabled = (innerNode.Attributes("PivotAnimation") IsNot Nothing AndAlso innerNode.Attributes("PivotAnimation").InnerText = "1")
                             bulb.SnippitInfo.PivotX = ReadPivotSingle(innerNode, "PivotX", 0.5F, -100000.0F, 100000.0F)
                             bulb.SnippitInfo.PivotY = ReadPivotSingle(innerNode, "PivotY", 0.5F, -100000.0F, 100000.0F)
@@ -1740,6 +1883,7 @@ Public Class Coding
                         ' unique runtime ranks. Legacy files without that complete
                         ' metadata are deliberately left in their imported order.
                         RestoreBulbStackFromRuntimeData(_backglassData, topnode)
+                        .EnsureUnifiedLayerDeck()
                         ' check fonts
                         If Not String.IsNullOrEmpty(usedfonts) Then
                             Dim notfound As String = String.Empty
@@ -1769,6 +1913,7 @@ Public Class Coding
                             End If
                         End If
                     End If
+                    .EnsureUnifiedLayerDeck()
 
                     ' get standard thumbnail image
                     If topnode.SelectSingleNode("Images/ThumbnailImage") IsNot Nothing Then
@@ -1940,63 +2085,6 @@ Public Class Coding
         Next
         Return ret
     End Function
-    Private Sub AddIntermediates(ByVal nodeReelImage As Xml.XmlElement,
-                                 ByVal nodeReelIlluImage As Xml.XmlElement(),
-                                 ByVal reelImage As Image,
-                                 ByVal lastReelImage As Image,
-                                 ByVal countOfIntermediates As Integer,
-                                 ByVal rollingUp As Boolean,
-                                 ByVal scoreimagesets As Generic.Dictionary(Of String, Integer))
-        Dim size As Size = reelImage.Size
-        Dim cutat As Integer = CInt(size.Height / (countOfIntermediates + 1))
-        Dim currentcutat As Integer = cutat
-        For i As Integer = 0 To (countOfIntermediates - 1)
-            Dim lastimage As Image = Nothing
-            Dim currentimage As Image = Nothing
-            Dim intermediateimage As Image = New Bitmap(size.Width, size.Height)
-            If rollingUp Then
-                lastimage = lastReelImage.PartFromImage(New Rectangle(New Point(0, currentcutat), New Size(size.Width, size.Height - currentcutat)))
-                currentimage = reelImage.PartFromImage(New Rectangle(New Point(0, 0), New Size(size.Width, currentcutat)))
-                Using gr As Graphics = Graphics.FromImage(intermediateimage)
-                    gr.PageUnit = GraphicsUnit.Pixel
-                    gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-                    gr.DrawImage(lastimage, New Rectangle(0, 0, lastimage.Width, lastimage.Height))
-                    gr.DrawImage(currentimage, New Rectangle(0, lastimage.Height, currentimage.Width, currentimage.Height))
-                End Using
-            Else
-                currentimage = reelImage.PartFromImage(New Rectangle(New Point(0, size.Height - currentcutat), New Size(size.Width, currentcutat)))
-                lastimage = lastReelImage.PartFromImage(New Rectangle(New Point(0, 0), New Size(size.Width, size.Height - currentcutat)))
-                Using gr As Graphics = Graphics.FromImage(intermediateimage)
-                    gr.PageUnit = GraphicsUnit.Pixel
-                    gr.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-                    gr.DrawImage(currentimage, New Rectangle(0, 0, currentimage.Width, currentimage.Height))
-                    gr.DrawImage(lastimage, New Rectangle(0, currentimage.Height, lastimage.Width, lastimage.Height))
-                End Using
-            End If
-            nodeReelImage.SetAttribute("IntermediateImage" & (i + 1).ToString(), ImageToBase64(intermediateimage))
-            For j As Integer = 0 To nodeReelIlluImage.Count - 1
-                Dim key As String = scoreimagesets.Keys(j)
-                Dim keyinfo As String() = key.Split(Chr(1))
-                Dim reelintensity As Integer = CInt(keyinfo(keyinfo.Length - 2))
-                Dim reelillulocation As Integer = CInt(keyinfo(keyinfo.Length - 1))
-                Dim illuminatedIntermediate As Image = Backglass.currentTabPage.DrawIlluminatedReelImage(intermediateimage, reelintensity, reelillulocation)
-                Try
-                    nodeReelIlluImage(j).SetAttribute("IntermediateImage" & (i + 1).ToString(), ImageToBase64(illuminatedIntermediate))
-                Finally
-                    If illuminatedIntermediate IsNot Nothing AndAlso Not Object.ReferenceEquals(illuminatedIntermediate, intermediateimage) Then
-                        illuminatedIntermediate.Dispose()
-                    End If
-                End Try
-            Next
-            intermediateimage.Dispose()
-            lastimage.Dispose()
-            currentimage.Dispose()
-            intermediateimage = Nothing
-            lastimage = Nothing
-            currentimage = Nothing
-            currentcutat += cutat
-        Next
-    End Sub
 
 #End Region
 
@@ -2772,7 +2860,7 @@ Public Class Coding
                         ' the generated backglass ran. Also preserve all glow and mask options
                         ' so runtime output matches the designer preview.
                         Dim runtimeRect As New Rectangle(.LocationX, .SizeX)
-                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer)))
+                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer)))
                         If font IsNot Nothing Then font.Dispose()
                     End If
                 End If
@@ -3133,29 +3221,30 @@ Public Class Coding
         Return ret
     End Function
 
-    Private Function BuildRuntimeBulbZOrders(ByVal bulbs As Generic.IEnumerable(Of Illumination.BulbInfo)) As Generic.Dictionary(Of Illumination.BulbInfo, Integer)
-        Dim result As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
-        If bulbs Is Nothing Then Return result
-
-        Dim ordered As New Generic.List(Of Illumination.BulbInfo)()
-        Dim stableIndexes As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
-        For Each bulb As Illumination.BulbInfo In bulbs
-            If bulb Is Nothing Then Continue For
-            stableIndexes(bulb) = ordered.Count
-            ordered.Add(bulb)
-        Next
-
-        ' Match the designer preview: lower Z is farther back. When two objects
-        ' share a Z value, the later collection item is behind the earlier item.
-        ordered.Sort(Function(left As Illumination.BulbInfo, right As Illumination.BulbInfo)
-                         Dim compare As Integer = left.ZOrder.CompareTo(right.ZOrder)
-                         If compare <> 0 Then Return compare
-                         Return stableIndexes(right).CompareTo(stableIndexes(left))
+    Private Function BuildRuntimeVisualZOrders(ByVal bulbs As Generic.IEnumerable(Of Illumination.BulbInfo),
+                                               ByVal scores As Generic.IEnumerable(Of ReelAndLED.ScoreInfo)) As Generic.Dictionary(Of Object, Integer)
+        Dim result As New Generic.Dictionary(Of Object, Integer)()
+        Dim ordered As New Generic.List(Of Object)()
+        If bulbs IsNot Nothing Then
+            For Each bulb As Illumination.BulbInfo In bulbs
+                If bulb IsNot Nothing Then ordered.Add(bulb)
+            Next
+        End If
+        If scores IsNot Nothing Then
+            For Each score As ReelAndLED.ScoreInfo In scores
+                If score IsNot Nothing Then ordered.Add(score)
+            Next
+        End If
+        ordered.Sort(Function(left As Object, right As Object)
+                         Dim leftOrder As Integer = If(TypeOf left Is Illumination.BulbInfo,
+                                                       DirectCast(left, Illumination.BulbInfo).LayerOrder,
+                                                       DirectCast(left, ReelAndLED.ScoreInfo).LayerOrder)
+                         Dim rightOrder As Integer = If(TypeOf right Is Illumination.BulbInfo,
+                                                        DirectCast(right, Illumination.BulbInfo).LayerOrder,
+                                                        DirectCast(right, ReelAndLED.ScoreInfo).LayerOrder)
+                         Return rightOrder.CompareTo(leftOrder)
                      End Function)
-
         For index As Integer = 0 To ordered.Count - 1
-            ' Server 2.1.6 ignores ZOrder <= 0. Unique ranks also keep equal-Z
-            ' objects deterministic instead of letting XML/name order decide.
             result(ordered(index)) = index + 1
         Next
         Return result
@@ -3229,55 +3318,6 @@ Public Class Coding
                    End Function)
     End Sub
 
-    Private Sub AppendAutomaticRotationAnimation(ByVal xml As Xml.XmlDocument,
-                                                  ByVal animationsNode As Xml.XmlElement,
-                                                  ByVal bulb As Illumination.BulbInfo)
-        If bulb Is Nothing OrElse Not bulb.IsImageSnippit OrElse bulb.SnippitInfo.SnippitType <> eSnippitType.StandardImage OrElse Not bulb.SnippitInfo.AutomaticRotationEnabled Then Return
-        If bulb.InitialState = 2 OrElse bulb.Image Is Nothing OrElse String.IsNullOrEmpty(bulb.Name) Then Return
-
-        Dim requestedFrameCount As Integer = Math.Max(4, Math.Min(90, bulb.SnippitInfo.AutomaticRotationSteps))
-        Dim frameCount As Integer = AutomaticRotationExportFrameCount(requestedFrameCount)
-        Dim animationNode As Xml.XmlElement = xml.CreateElement("Animation")
-        animationsNode.AppendChild(animationNode)
-        animationNode.SetAttribute("Name", AutomaticRotationAnimationName(bulb.ParentForm, bulb.ID))
-        animationNode.SetAttribute("Parent", If(bulb.ParentForm = eParentForm.DMD, "DMD", "Backglass"))
-        animationNode.SetAttribute("DualMode", CInt(bulb.DualMode).ToString())
-        ' Preserve the requested revolution duration when a high editor step
-        ' count is reduced to the compact runtime frame set.
-        Dim requestedInterval As Integer = Math.Max(10, Math.Min(500, bulb.SnippitInfo.AutomaticRotationInterval))
-        Dim runtimeInterval As Integer = CInt(Math.Round((requestedFrameCount * CDbl(requestedInterval)) / frameCount))
-        animationNode.SetAttribute("Interval", Math.Max(10, Math.Min(500, runtimeInterval)).ToString())
-        animationNode.SetAttribute("Loops", "0")
-        Dim continuous As Boolean = bulb.SnippitInfo.AutomaticRotationContinuous OrElse bulb.SnippitInfo.AutomaticRotationTriggerID <= 0
-        Dim triggerPrefix As String = If(bulb.SnippitInfo.AutomaticRotationTriggerType = eRomIDType.B2SCommand, "", If(bulb.SnippitInfo.AutomaticRotationTriggerType = eRomIDType.Switch, "W", If(bulb.SnippitInfo.AutomaticRotationTriggerType = eRomIDType.Solenoid, "S", "L")))
-        animationNode.SetAttribute("IDJoin", If(continuous, "", triggerPrefix & bulb.SnippitInfo.AutomaticRotationTriggerID.ToString()))
-        animationNode.SetAttribute("StartAnimationAtBackglassStartup", If(continuous, "1", "0"))
-        animationNode.SetAttribute("LightsStateAtAnimationStart", CInt(Animation.AnimationHeader.eLightsStateAtAnimationStart.InvolvedLightsOff).ToString())
-        animationNode.SetAttribute("LightsStateAtAnimationEnd", CInt(Animation.AnimationHeader.eLightsStateAtAnimationEnd.InvolvedLightsOff).ToString())
-        animationNode.SetAttribute("AnimationStopBehaviour", CInt(Animation.AnimationHeader.eAnimationStopBehaviour.StopImmediatelly).ToString())
-        animationNode.SetAttribute("LockInvolvedLamps", "0")
-        animationNode.SetAttribute("HideScoreDisplays", "0")
-        ' Every generated rotation frame carries the source snippet's translated
-        ' runtime Z rank. Visibility changes must not override the Layers stack.
-        animationNode.SetAttribute("BringToFront", "0")
-
-        For frameIndex As Integer = 0 To frameCount - 1
-            Dim frameName As String = If(frameIndex = 0, bulb.Name, AutomaticRotationFrameName(bulb.ParentForm, bulb.ID, frameIndex))
-            Dim previousFrameIndex As Integer = If(frameIndex = 0, frameCount - 1, frameIndex - 1)
-            Dim previousFrameName As String = If(previousFrameIndex = 0, bulb.Name, AutomaticRotationFrameName(bulb.ParentForm, bulb.ID, previousFrameIndex))
-            Dim stepNode As Xml.XmlElement = xml.CreateElement("AnimationStep")
-            animationNode.AppendChild(stepNode)
-            stepNode.SetAttribute("Step", (frameIndex + 1).ToString())
-            stepNode.SetAttribute("On", frameName)
-            ' Turn the new frame on and the previous frame off in the same timer
-            ' pass, then hold.  One frame therefore remains visible across the
-            ' final-to-first loop boundary instead of flashing the background.
-            stepNode.SetAttribute("WaitLoopsAfterOn", "0")
-            stepNode.SetAttribute("Off", previousFrameName)
-            stepNode.SetAttribute("WaitLoopsAfterOff", "1")
-        Next
-    End Sub
-
     Private Sub AppendBlinkAnimation(ByVal xml As Xml.XmlDocument,
                                      ByVal animationsNode As Xml.XmlElement,
                                      ByVal bulb As Illumination.BulbInfo)
@@ -3328,36 +3368,6 @@ Public Class Coding
 
     Private Function BlinkRuntimeLightName(ByVal parentForm As eParentForm, ByVal bulbID As Integer) As String
         Return "__B2SPro_BlinkLight_" & If(parentForm = eParentForm.DMD, "DMD_", "BG_") & bulbID.ToString()
-    End Function
-
-    Private Function AutomaticRotationAnimationName(ByVal parentForm As eParentForm, ByVal bulbID As Integer) As String
-        Return "__B2SPro_AutomaticRotation_" & If(parentForm = eParentForm.DMD, "DMD_", "BG_") & bulbID.ToString()
-    End Function
-
-    Private Function AutomaticRotationFrameName(ByVal parentForm As eParentForm, ByVal bulbID As Integer, ByVal frameIndex As Integer) As String
-        Return "__B2SPro_AutomaticRotationFrame_" & If(parentForm = eParentForm.DMD, "DMD_", "BG_") & bulbID.ToString() & "_" & frameIndex.ToString()
-    End Function
-
-    Private Function AutomaticRotationExportFrameCount(ByVal requestedSteps As Integer) As Integer
-        ' DirectB2S stores every rotation frame as a complete embedded PNG.
-        ' Above 24 frames, file size and load time grow sharply for little
-        ' visible benefit at normal animation intervals.
-        Return Math.Max(4, Math.Min(24, requestedSteps))
-    End Function
-
-    Private Function CreateAutomaticRotationFrame(ByVal source As Image, ByVal angle As Integer) As Image
-        Dim frame As New Bitmap(source.Width, source.Height, Imaging.PixelFormat.Format32bppArgb)
-        Using graphics As Graphics = Graphics.FromImage(frame)
-            graphics.PageUnit = GraphicsUnit.Pixel
-            graphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
-            graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
-            graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
-            graphics.TranslateTransform(source.Width / 2.0F, source.Height / 2.0F)
-            graphics.RotateTransform(angle * -1.0F)
-            graphics.TranslateTransform(source.Width / -2.0F, source.Height / -2.0F)
-            graphics.DrawImage(source, New Rectangle(0, 0, source.Width, source.Height))
-        End Using
-        Return frame
     End Function
 
     Private Function CreateRuntimeSizedRotationSource(ByVal source As Image, ByVal width As Integer, ByVal height As Integer) As Image

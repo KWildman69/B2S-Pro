@@ -104,6 +104,27 @@ Public Class Mouse
         Return True
     End Function
 
+    Private Function MotionPathSequenceGroup(ByVal bulb As Illumination.BulbInfo) As String
+        If bulb Is Nothing OrElse Not bulb.IsImageSnippit OrElse bulb.SnippitInfo Is Nothing OrElse
+           bulb.SnippitInfo.MotionPathSequenceOrder <= 0 Then Return String.Empty
+        Return If(bulb.SnippitInfo.MotionPathSequenceGroup, String.Empty).Trim()
+    End Function
+
+    Private Function IsSelectedMotionPathGroup(ByVal primary As Illumination.BulbInfo) As Boolean
+        Dim groupName As String = MotionPathSequenceGroup(primary)
+        If groupName.Length = 0 OrElse _selectedItems.Count < 2 Then Return False
+        For Each item As InfoBase In _selectedItems
+            Dim bulb As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+            If bulb Is Nothing OrElse
+               Not String.Equals(MotionPathSequenceGroup(bulb), groupName, StringComparison.OrdinalIgnoreCase) Then Return False
+        Next
+        Return True
+    End Function
+
+    Private Function IsSelectedSynchronizedResizeGroup(ByVal primary As Illumination.BulbInfo) As Boolean
+        Return IsSelectedPictureAnimationGroup(primary) OrElse IsSelectedMotionPathGroup(primary)
+    End Function
+
     Private Function IsSelectedSnippetTransform(ByVal primary As Illumination.BulbInfo) As Boolean
         If primary Is Nothing OrElse Not primary.IsImageSnippit Then Return False
         Return IsSelectedPictureAnimationGroup(primary) OrElse (_selectedItems.Count = 1 AndAlso IsSelected(primary))
@@ -951,10 +972,10 @@ Public Class Mouse
                     End If
                     currentScore.ReelDigitWidth = Math.Max(1, digitWidth)
                 End If
-                ' Imported picture-sequence frames occupy one shared rectangle.
-                ' Resizing any frame therefore resizes and repositions the whole
-                ' automatically selected PA_ group as one editor object.
-                If currentBulb IsNot Nothing AndAlso IsSelectedPictureAnimationGroup(currentBulb) Then
+                ' Imported picture-sequence frames and collapsed motion groups
+                ' each occupy one authored rectangle. Resizing the representative
+                ' therefore resizes every selected member as one editor object.
+                If currentBulb IsNot Nothing AndAlso IsSelectedSynchronizedResizeGroup(currentBulb) Then
                     For Each selected As InfoBase In _selectedItems
                         selected.Location = current.Location
                         selected.Size = current.Size
@@ -1016,6 +1037,16 @@ Public Class Mouse
     Private Sub Parent_MouseDown(sender As Object, e As System.Windows.Forms.MouseEventArgs)
         If e.Button = MouseButtons.Left Then
             parent.Cursor = CalcMouseLocation(e.X, e.Y, currentBulb, currentScore, currentDMDCopyArea)
+            If Not My.Computer.Keyboard.CtrlKeyDown Then
+                Dim selectedCursor As Cursor = Cursors.Default
+                Dim selectedBulb As Illumination.BulbInfo = SelectedBulbAtPoint(e.X, e.Y, selectedCursor)
+                If selectedBulb IsNot Nothing Then
+                    currentBulb = selectedBulb
+                    currentScore = Nothing
+                    currentDMDCopyArea = Nothing
+                    parent.Cursor = selectedCursor
+                End If
+            End If
             If currentBulb IsNot Nothing AndAlso LayerManager.IsLocked(currentBulb) Then currentBulb = Nothing
             If currentScore IsNot Nothing AndAlso LayerManager.IsLocked(currentScore) Then currentScore = Nothing
             ' remember whether the DMD copy rectangle was clicked
@@ -1133,7 +1164,7 @@ Public Class Mouse
     Private Sub Parent_MouseUp(sender As Object, e As System.Windows.Forms.MouseEventArgs)
         ' Only commit movement, settings and undo when a real drag occurred.
         If dragStarted Then
-            If currentBulb IsNot Nothing AndAlso IsSelectedPictureAnimationGroup(currentBulb) AndAlso
+            If currentBulb IsNot Nothing AndAlso IsSelectedSynchronizedResizeGroup(currentBulb) AndAlso
                (IsMatchingLeft OrElse IsMatchingRight OrElse IsMatchingTop OrElse IsMatchingBottom) Then
                 For Each selected As InfoBase In _selectedItems
                     Dim oldLocation As Point = If(groupStartLocations.ContainsKey(selected), groupStartLocations(selected), currentStartLocation)
@@ -1223,6 +1254,12 @@ Public Class Mouse
         Dim clickedDMD As InfoBase = Nothing
         CalcMouseLocation(e.X, e.Y, clickedBulb, clickedScore, clickedDMD, False)
 
+        ' A highlighted layer object remains the intended edit target even when
+        ' a higher object overlaps it. Normal unselected clicks still use visual
+        ' Z order; this preference applies only to the current selection.
+        Dim selectedBulb As Illumination.BulbInfo = SelectedBulbAtPoint(e.X, e.Y)
+        If selectedBulb IsNot Nothing Then clickedBulb = selectedBulb
+
         ' A double-click on the blue center handle restores the complete score
         ' transform to a normal rectangular display. A single drag on the same
         ' handle retains its existing left/right depth behavior.
@@ -1247,6 +1284,30 @@ Public Class Mouse
         parent.BeginInvoke(New MethodInvoker(Sub() OpenBulbSettingsShortcut(clickedBulb)))
     End Sub
 
+    Private Function SelectedBulbAtPoint(ByVal x As Integer,
+                                         ByVal y As Integer,
+                                         Optional ByRef hitCursor As Cursor = Nothing) As Illumination.BulbInfo
+        Dim candidates As New Generic.List(Of Illumination.BulbInfo)()
+        If SelectedBulb IsNot Nothing AndAlso IsSelected(SelectedBulb) Then candidates.Add(SelectedBulb)
+        For Each item As InfoBase In _selectedItems
+            Dim bulb As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+            If bulb IsNot Nothing AndAlso Not candidates.Contains(bulb) Then candidates.Add(bulb)
+        Next
+
+        Dim designX As Single = CSng(x / factor)
+        Dim designY As Single = CSng(y / factor)
+        For Each bulb As Illumination.BulbInfo In candidates
+            If LayerManager.IsLocked(bulb) OrElse Not LayerManager.IsVisible(bulb) Then Continue For
+            Dim hit As InfoBase = Nothing
+            Dim cursor As Cursor = CalcItem(bulb, designX, designY, hit, False)
+            If cursor <> Cursors.Default AndAlso Object.ReferenceEquals(hit, bulb) Then
+                hitCursor = cursor
+                Return bulb
+            End If
+        Next
+        Return Nothing
+    End Function
+
     Private Sub ResetScoreTransform(ByVal score As ReelAndLED.ScoreInfo)
         If score Is Nothing Then Return
         score.RotationAngle = 0.0F
@@ -1267,96 +1328,13 @@ Public Class Mouse
         B2SBackglassDesigner.formDesigner.OpenSelectedObjectSettings()
     End Sub
 
-    Private Function ClickMatchingControl(ByVal root As Control,
-                                          ByVal preferredTexts() As String,
-                                          ByVal preferredNames() As String) As Boolean
-        For Each wanted As String In preferredTexts
-            For Each child As Control In AllChildControls(root)
-                If String.Equals(child.Text.Trim(), wanted, StringComparison.OrdinalIgnoreCase) Then
-                    If PerformControlClick(child) Then Return True
-                End If
-            Next
-        Next
-        For Each wanted As String In preferredNames
-            For Each child As Control In AllChildControls(root)
-                If child.Name.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0 Then
-                    If PerformControlClick(child) Then Return True
-                End If
-            Next
-        Next
-        Return False
-    End Function
-
-    Private Function AllChildControls(ByVal root As Control) As Generic.List(Of Control)
-        Dim result As New Generic.List(Of Control)()
-        For Each child As Control In root.Controls
-            result.Add(child)
-            result.AddRange(AllChildControls(child))
-        Next
-        Return result
-    End Function
-
-    Private Function PerformControlClick(ByVal control As Control) As Boolean
-        If Not control.Enabled Then Return False
-        Dim clickable As IButtonControl = TryCast(control, IButtonControl)
-        If clickable IsNot Nothing Then
-            clickable.PerformClick()
-            Return True
-        End If
-        Dim clickMethod = control.GetType().GetMethod("PerformClick", Reflection.BindingFlags.Instance Or Reflection.BindingFlags.Public)
-        If clickMethod IsNot Nothing Then
-            clickMethod.Invoke(control, Nothing)
-            Return True
-        End If
-        Return False
-    End Function
-
-    Private Function ClickMatchingToolStripItem(ByVal root As Control,
-                                                ByVal preferredTexts() As String,
-                                                ByVal preferredNames() As String) As Boolean
-        For Each child As Control In AllChildControls(root)
-            If Not TypeOf child Is ToolStrip Then Continue For
-            Dim strip As ToolStrip = DirectCast(child, ToolStrip)
-            If ClickMatchingToolStripItems(strip.Items, preferredTexts, preferredNames) Then Return True
-        Next
-        Return False
-    End Function
-
-    Private Function ClickMatchingToolStripItems(ByVal items As ToolStripItemCollection,
-                                                 ByVal preferredTexts() As String,
-                                                 ByVal preferredNames() As String) As Boolean
-        For Each wanted As String In preferredTexts
-            For Each item As ToolStripItem In items
-                If String.Equals(item.Text.Replace("&", "").Trim(), wanted, StringComparison.OrdinalIgnoreCase) AndAlso item.Enabled Then
-                    item.PerformClick()
-                    Return True
-                End If
-            Next
-        Next
-        For Each wanted As String In preferredNames
-            For Each item As ToolStripItem In items
-                If item.Name.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0 AndAlso item.Enabled Then
-                    item.PerformClick()
-                    Return True
-                End If
-                Dim dropDown As ToolStripDropDownItem = TryCast(item, ToolStripDropDownItem)
-                If dropDown IsNot Nothing AndAlso ClickMatchingToolStripItems(dropDown.DropDownItems, preferredTexts, preferredNames) Then Return True
-            Next
-        Next
-        Return False
-    End Function
-
 
     Private Sub ContextMenuItems_ItemClicked(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolStripItemClickedEventArgs)
         If e.ClickedItem.Tag IsNot Nothing Then
             If TypeOf e.ClickedItem.Tag Is Illumination.BulbInfo Then
                 SelectedBulb = e.ClickedItem.Tag
-                bulbs.Remove(SelectedBulb)
-                bulbs.Insert(0, SelectedBulb)
             ElseIf TypeOf e.ClickedItem.Tag Is ReelAndLED.ScoreInfo Then
                 SelectedScore = e.ClickedItem.Tag
-                scores.Remove(SelectedScore)
-                scores.Insert(0, SelectedScore)
             End If
         End If
         parent.Invalidate()
@@ -1694,7 +1672,6 @@ Public Class Mouse
                 LastScoreReelType = .ReelType
                 LastScoreReelColor = .ReelColor
                 ' maybe set dirty flag for a reel recalculation
-                .IsSingleReelSizeDirty = True
             End With
         End If
     End Sub

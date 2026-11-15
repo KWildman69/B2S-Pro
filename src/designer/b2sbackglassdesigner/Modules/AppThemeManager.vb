@@ -59,8 +59,6 @@ Public Module AppThemeManager
 
     ' Phase 1 shared visual tokens. Keep the modern UI consistent everywhere.
     Private ReadOnly SurfaceDark As Color = Color.FromArgb(2, 4, 7)
-    Private ReadOnly SurfaceMid As Color = Color.FromArgb(5, 7, 12)
-    Private ReadOnly SurfaceRaised As Color = Color.FromArgb(10, 13, 20)
     Private ReadOnly FieldBack As Color = Color.FromArgb(3, 5, 9)
     Private ReadOnly TextPrimary As Color = Color.FromArgb(244, 246, 252)
     Private ReadOnly TextMuted As Color = Color.FromArgb(177, 183, 197)
@@ -75,7 +73,6 @@ Public Module AppThemeManager
     Private Const DWMWA_BORDER_COLOR As Integer = 34
     Private Const DWMWA_CAPTION_COLOR As Integer = 35
     Private Const DWMWA_TEXT_COLOR As Integer = 36
-    Private Const DWMWA_COLOR_DEFAULT As Integer = -1
 
     <DllImport("dwmapi.dll", PreserveSig:=True)>
     Private Function DwmSetWindowAttribute(hwnd As IntPtr, attribute As Integer, ByRef value As Integer, valueSize As Integer) As Integer

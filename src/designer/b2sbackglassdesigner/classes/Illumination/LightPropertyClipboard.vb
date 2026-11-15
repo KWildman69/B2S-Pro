@@ -5,14 +5,10 @@
     Private Shared maskSmartRadius As Boolean
     Private Shared flasherStyle, flasherSaturation, flasherHighlightProtection, flasherDarkAreaLift, flasherHotspotX, flasherHotspotY, flasherPulseDuration As Integer
     Private Shared dynamicFrontTargetSnippetID As Integer
-    Private Shared inFrontOfGlobalMask, lightBehindCanvas, artworkPixelLighting, separateLightLayer, dynamicFrontLighting, dynamicFrontShowLight As Boolean
+    Private Shared dynamicFrontTargetSnippetIDs As New List(Of Integer)()
+    Private Shared inFrontOfGlobalMask, artworkPixelLighting, separateLightLayer, dynamicFrontLighting, dynamicFrontShowLight, dynamicFrontTargetSelectionDefined As Boolean
     Private Sub New()
     End Sub
-    Public Shared ReadOnly Property CanPaste As Boolean
-        Get
-            Return hasValue
-        End Get
-    End Property
     Public Shared Sub CopyFrom(ByVal bulb As Illumination.BulbInfo)
         If bulb Is Nothing Then Return
         spread=bulb.GlowSpread : softness=bulb.GlowSoftness : intensity=bulb.GlowIntensity
@@ -23,12 +19,13 @@
         flasherRadialSpikes=bulb.FlasherRadialSpikes
         flasherStyle=bulb.FlasherStyle : flasherSaturation=bulb.FlasherSaturation : flasherHighlightProtection=bulb.FlasherHighlightProtection : flasherDarkAreaLift=bulb.FlasherDarkAreaLift : flasherHotspotX=bulb.FlasherHotspotX : flasherHotspotY=bulb.FlasherHotspotY : flasherPulseDuration=bulb.FlasherPulseDuration
         inFrontOfGlobalMask=bulb.InFrontOfGlobalMask
-        lightBehindCanvas=bulb.LightBehindCanvas
         artworkPixelLighting=bulb.ArtworkPixelLighting
         separateLightLayer=bulb.SeparateLightLayer
         dynamicFrontLighting=bulb.DynamicFrontLighting
         dynamicFrontShowLight=bulb.DynamicFrontShowLight
         dynamicFrontTargetSnippetID=bulb.DynamicFrontTargetSnippetID
+        dynamicFrontTargetSnippetIDs = New List(Of Integer)(bulb.DynamicFrontTargetSnippetIDs)
+        dynamicFrontTargetSelectionDefined = bulb.DynamicFrontTargetSelectionDefined
         hasValue=True
     End Sub
     Public Shared Sub PasteTo(ByVal bulb As Illumination.BulbInfo)
@@ -46,12 +43,14 @@
         bulb.FlasherRadialSpikes=flasherRadialSpikes
         bulb.FlasherStyle=flasherStyle : bulb.FlasherSaturation=flasherSaturation : bulb.FlasherHighlightProtection=flasherHighlightProtection : bulb.FlasherDarkAreaLift=flasherDarkAreaLift : bulb.FlasherHotspotX=flasherHotspotX : bulb.FlasherHotspotY=flasherHotspotY : bulb.FlasherPulseDuration=flasherPulseDuration
         bulb.InFrontOfGlobalMask=inFrontOfGlobalMask
-        bulb.LightBehindCanvas=lightBehindCanvas
         bulb.ArtworkPixelLighting=artworkPixelLighting
         bulb.SeparateLightLayer=separateLightLayer
         bulb.DynamicFrontLighting=dynamicFrontLighting
         bulb.DynamicFrontShowLight=dynamicFrontShowLight
         bulb.DynamicFrontTargetSnippetID=dynamicFrontTargetSnippetID
+        bulb.DynamicFrontTargetSnippetIDs.Clear()
+        bulb.DynamicFrontTargetSnippetIDs.AddRange(dynamicFrontTargetSnippetIDs)
+        bulb.DynamicFrontTargetSelectionDefined=dynamicFrontTargetSelectionDefined
         bulb.IsIlluminatedImageDirty=True
     End Sub
 End Class

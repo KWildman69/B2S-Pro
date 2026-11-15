@@ -36,9 +36,8 @@ Namespace Illumination
                                       Optional ByVal smartRadius As Boolean = False,
                                       Optional ByVal maskSmooth As Integer = 0,
                                       Optional ByVal maskFeather As Integer = 0,
-                                      Optional ByVal maskContrast As Integer = 0,
-                                      Optional ByVal maskShiftEdge As Integer = 0,
-                                      Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
+                                       Optional ByVal maskContrast As Integer = 0,
+                                       Optional ByVal maskShiftEdge As Integer = 0) As Bitmap
             If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) Then Return Nothing
             If source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
 
@@ -68,13 +67,11 @@ Namespace Illumination
                 lightField(i) = CByte((CInt(lightField(i)) * CInt(mask(i)) + 127) \ 255)
             Next
 
-            Dim transmissionMap As Double() =
-                BuildTransmissionMap(source, transmissionContrast, transmitTransparentCanvas)
+            Dim transmissionMap As Double() = BuildTransmissionMap(source, transmissionContrast)
 
             Return RenderPixels(source, lightField, transmissionMap,
                                 intensity, lightColor, flasherStyle,
-                                saturation, highlightProtection, darkAreaLift,
-                                transmitTransparentCanvas)
+                                saturation, highlightProtection, darkAreaLift)
         End Function
 
         ' Infinity lights are stored as transparent image snippets. Reuse the
@@ -167,9 +164,12 @@ Namespace Illumination
                                            ByVal radius As Integer,
                                            ByVal smooth As Integer,
                                            ByVal feather As Integer,
-                                           ByVal shiftEdge As Integer)
+                                           ByVal shiftEdge As Integer,
+                                           Optional ByVal edgeSoftness As Integer = 0,
+                                           Optional ByVal outwardDiffusion As Integer = 0)
             If mask Is Nothing OrElse mask.Width <= 0 OrElse mask.Height <= 0 Then Return
-            If radius = 0 AndAlso smooth = 0 AndAlso feather = 0 AndAlso shiftEdge = 0 Then Return
+            If radius = 0 AndAlso smooth = 0 AndAlso feather = 0 AndAlso shiftEdge = 0 AndAlso
+               edgeSoftness = 0 AndAlso outwardDiffusion = 0 Then Return
 
             Dim bounds As New Rectangle(0, 0, mask.Width, mask.Height)
             Dim data As BitmapData = mask.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
@@ -185,6 +185,11 @@ Namespace Illumination
                     Next
                 Next
                 ApplyPhotoshopMaskRefinement(alpha, mask.Width, mask.Height, radius, False, smooth, feather, 0, shiftEdge)
+                ApplyNaturalEdgeSoftness(alpha, mask.Width, mask.Height, edgeSoftness)
+                If outwardDiffusion > 0 Then
+                    Dim diffused As Byte() = BuildSingleLightField(alpha, mask.Width, mask.Height, 0, outwardDiffusion, edgeSoftness)
+                    If diffused IsNot Nothing Then alpha = diffused
+                End If
                 For y As Integer = 0 To mask.Height - 1
                     Dim row As Integer = If(data.Stride >= 0, y, mask.Height - 1 - y) * stride
                     For x As Integer = 0 To mask.Width - 1
@@ -215,9 +220,8 @@ Namespace Illumination
                                                     Optional ByVal maskSmooth As Integer = 0,
                                                     Optional ByVal maskFeather As Integer = 0,
                                                     Optional ByVal maskContrast As Integer = 0,
-                                                    Optional ByVal maskShiftEdge As Integer = 0,
-                                                    Optional ByVal radialSpikes As Integer = 0,
-                                                    Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
+                                                     Optional ByVal maskShiftEdge As Integer = 0,
+                                                     Optional ByVal radialSpikes As Integer = 0) As Bitmap
             If source Is Nothing OrElse lightTemplate Is Nothing Then Return Nothing
             If source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
             If source.Size <> lightTemplate.Size Then Return Nothing
@@ -248,11 +252,10 @@ Namespace Illumination
                                    maskContrast, maskShiftEdge)
             ApplyRadialSpikes(lightField, width, height, radialSpikes)
             If Not HasVisiblePixels(lightField) Then Return Nothing
-            Dim transmissionMap As Double() = BuildTransmissionMap(source, transmissionContrast, transmitTransparentCanvas)
+            Dim transmissionMap As Double() = BuildTransmissionMap(source, transmissionContrast)
             Return RenderPixels(source, lightField, transmissionMap,
                                 intensity, lightColor, flasherStyle,
-                                saturation, highlightProtection, darkAreaLift,
-                                transmitTransparentCanvas)
+                                saturation, highlightProtection, darkAreaLift)
         End Function
 
         ' Builds the authored light field without sampling the stationary artwork.
@@ -832,45 +835,13 @@ Namespace Illumination
             Array.Copy(output, alpha, alpha.Length)
         End Sub
 
-        Private Shared Function BuildTransitionMask(ByVal mask As Byte(),
-                                                          ByVal width As Integer,
-                                                          ByVal height As Integer,
-                                                          ByVal edgeSoftness As Integer,
-                                                          ByVal glowStrength As Integer) As Byte()
-            If mask Is Nothing Then Return Nothing
-
-            Dim transition(mask.Length - 1) As Byte
-            Array.Copy(mask, transition, mask.Length)
-
-            Dim minDimension As Integer = Math.Max(1, Math.Min(width, height))
-            Dim softnessScale As Double = Math.Max(0.0, Math.Min(3.0, edgeSoftness / 100.0))
-            Dim diffusionScale As Double = Math.Max(0.0, Math.Min(3.0, glowStrength / 100.0))
-
-            ' About 3–12% of the selected artwork size.  This gives the two
-            ' lighting regions a real overlap band without visibly blurring RGB.
-            Dim radius As Integer =
-                CInt(Math.Round(minDimension *
-                                (0.025 + softnessScale * 0.018 + diffusionScale * 0.012)))
-            radius = Math.Max(3, Math.Min(Math.Max(6, minDimension \ 7), radius))
-
-            ' Multiple smaller passes produce a smooth, seam-free transition.
-            Dim passes As Integer = 3
-            Dim passRadius As Integer = Math.Max(1, CInt(Math.Ceiling(radius / CDbl(passes))))
-            For pass As Integer = 1 To passes
-                BlurAlpha(transition, width, height, passRadius)
-            Next
-
-            Return transition
-        End Function
-
         Private Shared Function SmoothStep(ByVal value As Double) As Double
             Dim t As Double = Math.Max(0.0, Math.Min(1.0, value))
             Return t * t * (3.0 - 2.0 * t)
         End Function
 
         Private Shared Function BuildTransmissionMap(ByVal source As Bitmap,
-                                                     ByVal contrastPercent As Integer,
-                                                     Optional ByVal transmitTransparentCanvas As Boolean = False) As Double()
+                                                     ByVal contrastPercent As Integer) As Double()
             Dim width As Integer = source.Width
             Dim height As Integer = source.Height
             Dim count As Integer = width * height
@@ -891,16 +862,6 @@ Namespace Illumination
                         Dim b As Double = pixels(p)
                         Dim g As Double = pixels(p + 1)
                         Dim r As Double = pixels(p + 2)
-                        If transmitTransparentCanvas Then
-                            ' PNG transparency commonly carries black RGB even though
-                            ' the artwork is physically absent. For a light placed behind
-                            ' the canvas, calculate that opening as white transmissive
-                            ' material. Opaque black artwork remains black and protected.
-                            Dim alpha As Double = pixels(p + 3) / 255.0
-                            b = b * alpha + 255.0 * (1.0 - alpha)
-                            g = g * alpha + 255.0 * (1.0 - alpha)
-                            r = r * alpha + 255.0 * (1.0 - alpha)
-                        End If
                         luminance(y * width + x) =
                             Math.Max(0.0, Math.Min(1.0,
                                 (r * 0.299 + g * 0.587 + b * 0.114) / 255.0))
@@ -1009,8 +970,7 @@ Namespace Illumination
                                              ByVal flasherStyle As Integer,
                                              ByVal saturation As Integer,
                                              ByVal highlightProtection As Integer,
-                                             ByVal darkAreaLift As Integer,
-                                             Optional ByVal transmitTransparentCanvas As Boolean = False) As Bitmap
+                                             ByVal darkAreaLift As Integer) As Bitmap
             Dim width As Integer = source.Width
             Dim height As Integer = source.Height
             Dim result As New Bitmap(width, height, PixelFormat.Format32bppArgb)
@@ -1047,15 +1007,6 @@ Namespace Illumination
                         Dim g As Double = sourcePixels(sp + 1)
                         Dim r As Double = sourcePixels(sp + 2)
                         Dim sourceAlpha As Double = sourcePixels(sp + 3) / 255.0
-                        If transmitTransparentCanvas Then
-                            ' This white exists only in the light calculation. The canvas
-                            ' bitmap and its alpha are never changed. The caller applies
-                            ' the inverse canvas alpha afterward, so only the transparent
-                            ' opening receives the transmitted light.
-                            b = b * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
-                            g = g * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
-                            r = r * sourceAlpha + 255.0 * (1.0 - sourceAlpha)
-                        End If
                         Dim transmission As Double = If(transmissionMap Is Nothing, 1.0, transmissionMap(index))
                         Dim luminance As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
 
@@ -1128,7 +1079,7 @@ Namespace Illumination
                         gg = litLum + (gg - litLum) * sat
                         bb = litLum + (bb - litLum) * sat
 
-                        Dim sourceCoverage As Double = If(transmitTransparentCanvas, 1.0, sourceAlpha)
+                        Dim sourceCoverage As Double = sourceAlpha
                         Dim finalAlpha As Double = field * sourceCoverage * blackProtection
                         If flasherStyle = 2 Then
                             rr = lightColor.R

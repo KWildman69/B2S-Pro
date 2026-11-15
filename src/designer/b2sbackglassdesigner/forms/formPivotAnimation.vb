@@ -24,6 +24,10 @@ Public Class formPivotAnimation
     Private previewStartAngle As Single
     Private previewTargetAngle As Single
     Private previewRunning As Boolean
+    Private previewLoops As Boolean
+    ' Which one-time position preview is playing (True = Up, False = Down).
+    Private previewOneShotUp As Boolean
+    Private previewCurrentAngle As Single
 
     Public Sub New(ByVal source As Illumination.BulbInfo, ByVal backglassImage As Image)
         snippet = source
@@ -79,14 +83,10 @@ Public Class formPivotAnimation
         fields.Controls.Add(zoomIn) : fields.Controls.Add(zoomOut)
         Dim previewDown As New Button With {.Text = "Preview Down Position", .Width = 310, .Height = 31}
         Dim previewUp As New Button With {.Text = "Preview Up Position", .Width = 310, .Height = 31}
-        AddHandler previewDown.Click, Sub()
-                                          StopAutomaticPreview()
-                                          canvas.PreviewAngle = CSng(downAngle.Value)
-                                      End Sub
+        AddHandler previewDown.Click, Sub() StartPositionPreview(CSng(downAngle.Value), False)
         AddHandler previewUp.Click, Sub()
-                                            StopAutomaticPreview()
                                             If Not automaticBox.Checked Then upAngle.Value = CDec(DirectedUpAngle())
-                                            canvas.PreviewAngle = CSng(upAngle.Value)
+                                            StartPositionPreview(CSng(upAngle.Value), True)
                                         End Sub
         fields.Controls.Add(previewDown) : fields.Controls.Add(previewUp) : fields.Controls.Add(automaticPreview)
         automaticPreview.Visible = automaticBox.Checked
@@ -103,6 +103,8 @@ Public Class formPivotAnimation
         fields.Controls.Add(SectionHeader("TRIGGER"))
         fields.Controls.Add(FieldRow("Trigger type", triggerType))
         fields.Controls.Add(FieldRow("Trigger ID", triggerID))
+        fields.Controls.Add(FieldRow("Down command", downTrigger))
+        fields.Controls.Add(FieldRow("Up command", upTrigger))
         Dim save As New Button With {.Text = "Save Pivot Animation", .DialogResult = DialogResult.OK, .Width = 310, .Height = 32}
         Dim cancel As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .Width = 310, .Height = 32}
         Dim actions As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .Height = 44, .ColumnCount = 2,
@@ -149,11 +151,13 @@ Public Class formPivotAnimation
     Private Sub CanvasPointEditStarted(ByVal sender As Object, ByVal e As MouseEventArgs)
         If e.Button <> MouseButtons.Left Then Return
         StopAutomaticPreview()
-        canvas.PreviewAngle = 0.0F
+        SetPreviewAngle(0.0F)
     End Sub
 
     Private Sub ToggleAutomaticPreview(ByVal sender As Object, ByVal e As EventArgs)
-        If previewRunning Then
+        ' Only a running automatic swing is stopped here. A one-time Down/Up
+        ' position preview falls through so the automatic swing starts.
+        If previewRunning AndAlso previewLoops Then
             StopAutomaticPreview()
             Return
         End If
@@ -163,9 +167,20 @@ Public Class formPivotAnimation
             Return
         End If
         previewRunning = True
+        previewLoops = True
         automaticPreview.Text = "Stop Automatic Preview"
-        canvas.PreviewAngle = CSng(downAngle.Value)
+        SetPreviewAngle(CSng(downAngle.Value))
         StartPreviewLeg(CSng(downAngle.Value), CSng(upAngle.Value))
+    End Sub
+
+    Private Sub StartPositionPreview(ByVal targetAngle As Single, ByVal isUp As Boolean)
+        previewTimer.Stop()
+        previewClock.Reset()
+        previewRunning = True
+        previewLoops = False
+        previewOneShotUp = isUp
+        automaticPreview.Text = "Automatic Preview"
+        StartPreviewLeg(previewCurrentAngle, targetAngle)
     End Sub
 
     Private Sub StartPreviewLeg(ByVal startAngle As Single, ByVal targetAngle As Single)
@@ -178,18 +193,31 @@ Public Class formPivotAnimation
     Private Sub AutomaticPreviewTick(ByVal sender As Object, ByVal e As EventArgs)
         Dim progress As Single = CSng(Math.Min(1.0R, previewClock.Elapsed.TotalMilliseconds / CDbl(duration.Value)))
         Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
-        canvas.PreviewAngle = previewStartAngle + (previewTargetAngle - previewStartAngle) * eased
+        SetPreviewAngle(previewStartAngle + (previewTargetAngle - previewStartAngle) * eased)
         If progress >= 1.0F Then
-            canvas.PreviewAngle = previewTargetAngle
-            StartPreviewLeg(previewTargetAngle, If(Math.Abs(previewTargetAngle - CSng(upAngle.Value)) < 0.01F,
-                                                    CSng(downAngle.Value), CSng(upAngle.Value)))
+            SetPreviewAngle(previewTargetAngle)
+            If previewLoops Then
+                StartPreviewLeg(previewTargetAngle, If(Math.Abs(previewTargetAngle - CSng(upAngle.Value)) < 0.01F,
+                                                        CSng(downAngle.Value), CSng(upAngle.Value)))
+            Else
+                previewTimer.Stop()
+                previewClock.Reset()
+                previewRunning = False
+            End If
         End If
     End Sub
 
     Private Sub PreviewSettingsChanged(ByVal sender As Object, ByVal e As EventArgs)
         If Not previewRunning Then Return
+        If Not previewLoops Then
+            ' One-time Down/Up preview: continue from the current angle to the
+            ' requested position using the changed values.
+            previewTimer.Stop()
+            StartPreviewLeg(previewCurrentAngle, If(previewOneShotUp, CSng(upAngle.Value), CSng(downAngle.Value)))
+            Return
+        End If
         previewTimer.Stop()
-        canvas.PreviewAngle = CSng(downAngle.Value)
+        SetPreviewAngle(CSng(downAngle.Value))
         If downAngle.Value = upAngle.Value Then
             StopAutomaticPreview()
         Else
@@ -201,8 +229,14 @@ Public Class formPivotAnimation
         previewTimer.Stop()
         previewClock.Reset()
         previewRunning = False
+        previewLoops = False
         automaticPreview.Text = "Automatic Preview"
-        canvas.PreviewAngle = 0.0F
+        SetPreviewAngle(0.0F)
+    End Sub
+
+    Private Sub SetPreviewAngle(ByVal angle As Single)
+        previewCurrentAngle = angle
+        canvas.PreviewAngle = angle
     End Sub
 
     Protected Overrides Sub OnFormClosed(ByVal e As FormClosedEventArgs)

@@ -5,6 +5,8 @@ Imports System.Xml
 Module moduleB2S
 
     Public Const AppTitle As String = "B2S Pro"
+    Public Const B2SProjectFileExtension As String = ".b2s"
+    Public Const B2SBackupFileExtension As String = ".b2b"
     Public Const B2SProFileExtension As String = ".B2SPro"
     Public Const LegacyDirectB2SFileExtension As String = ".directb2s"
 
@@ -13,7 +15,9 @@ Module moduleB2S
     Public Function IsSupportedBackglassFile(ByVal filename As String) As Boolean
         If String.IsNullOrWhiteSpace(filename) Then Return False
         Dim extension As String = IO.Path.GetExtension(filename)
-        Return extension.Equals(B2SProFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+        Return extension.Equals(B2SProjectFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+               extension.Equals(B2SBackupFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
+               extension.Equals(B2SProFileExtension, StringComparison.OrdinalIgnoreCase) OrElse
                extension.Equals(LegacyDirectB2SFileExtension, StringComparison.OrdinalIgnoreCase)
     End Function
 
@@ -40,11 +44,6 @@ Module moduleB2S
     Public ReadOnly Property ProjectPath() As String
         Get
             Return IO.Path.Combine(BackglassProjectsPath, Backglass.currentData.Name)
-        End Get
-    End Property
-    Public ReadOnly Property ProjectImagesPath() As String
-        Get
-            Return IO.Path.Combine(ProjectPath, "My Resources")
         End Get
     End Property
     Public ReadOnly Property SettingsFileName As String
@@ -399,18 +398,6 @@ Module moduleB2S
         Return image
     End Function
 
-    Public Function WavToBase64(stream As IO.Stream) As String
-        If stream IsNot Nothing Then
-            Dim bytes() As Byte
-            ReDim bytes(stream.Length - 1)
-            Using reader As IO.BinaryReader = New IO.BinaryReader(stream)
-                Dim length As Integer = reader.Read(bytes, 0, stream.Length)
-            End Using
-            Return Convert.ToBase64String(bytes, Base64FormattingOptions.None)
-        Else
-            Return String.Empty
-        End If
-    End Function
     Public Function Base64ToWav(data As String) As IO.Stream
         If data.Length > 0 Then
             Dim bytes() As Byte = Convert.FromBase64String(data)
@@ -571,7 +558,7 @@ Module moduleB2S
                 ' Locate the node
                 Dim node As XmlNode = doc.SelectSingleNode(_nodeName)
                 If node Is Nothing Then
-                    B2SMessageBox.Show("{_nodeName} node Not found in the XML file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    B2SMessageBox.Show($"{_nodeName} node not found in the XML file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
                     Return False
                 End If
 
@@ -665,6 +652,7 @@ Module moduleB2S
                     stepItem.WaitLoopsAfterOn = SafeParseInt(stepNode.Attributes("WaitLoopsAfterOn")?.Value, 0)
                     stepItem.Off = If(stepNode.Attributes("Off")?.Value, String.Empty)
                     stepItem.WaitLoopsAfterOff = SafeParseInt(stepNode.Attributes("WaitLoopsAfterOff")?.Value, 0)
+                    stepItem.PulseSwitch = SafeParseInt(stepNode.Attributes("PulseSwitch")?.Value, 0)
                     animation.AnimationSteps.Add(stepItem)
                 Next
 
@@ -709,6 +697,7 @@ Module moduleB2S
             stepNode.SetAttribute("WaitLoopsAfterOn", stepItem.WaitLoopsAfterOn.ToString())
             stepNode.SetAttribute("Off", stepItem.Off)
             stepNode.SetAttribute("WaitLoopsAfterOff", stepItem.WaitLoopsAfterOff.ToString())
+            If stepItem.PulseSwitch > 0 Then stepNode.SetAttribute("PulseSwitch", stepItem.PulseSwitch.ToString())
             animationNode.AppendChild(stepNode)
         Next
 

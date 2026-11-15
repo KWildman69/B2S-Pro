@@ -135,12 +135,11 @@ Public Class B2SPictureBox
         End If
         sparseAnimationSourceSizeValue = Size.Empty
     End Sub
-    ' Retained only so older DirectB2S files can still be read. New exports and
-    ' rendering do not use the removed behind-light path.
-    Public Property LightBehindCanvas() As Boolean = False
     Public Property DynamicFrontLighting() As Boolean = False
     Public Property DynamicFrontShowLight() As Boolean = False
     Public Property DynamicFrontTargetSnippetID() As Integer = 0
+    Public ReadOnly DynamicFrontTargetSnippetIDs As New Generic.HashSet(Of Integer)()
+    Public Property DynamicFrontTargetSelectionDefined() As Boolean = False
     Public Property DynamicFrontLightField() As Image = Nothing
     Public Property DynamicLightExposure() As Integer = 100
     Public Property DynamicLightColor() As Color = Color.White
@@ -224,7 +223,6 @@ Public Class B2SPictureBox
     Public Property RotationPivotY() As Single = 0.5F
     Public Property RotationTipX() As Single = 0.9F
     Public Property RotationTipY() As Single = 0.5F
-    Public Property BehindCanvas() As Boolean = False
 
     Public Sub ConfigurePhysicsCollisionOutline(ByVal source As Image)
         PhysicsCollisionMaskAlpha = Nothing
@@ -331,11 +329,6 @@ Public Class B2SPictureBox
             Return _motionPathExitPoints
         End Get
     End Property
-    Public ReadOnly Property IsMotionPathActive() As Boolean
-        Get
-            Return motionPathTimer IsNot Nothing AndAlso (motionPathTimer.Enabled OrElse motionPathPaused)
-        End Get
-    End Property
     Public ReadOnly Property MotionPathArrivalSpeed() As Single
         Get
             Return _motionPathArrivalSpeed
@@ -377,11 +370,6 @@ Public Class B2SPictureBox
                    Math.Abs(source.Top - Me.RectangleF.Top) > 0.5F OrElse
                    Math.Abs(source.Width - Me.RectangleF.Width) > 0.5F OrElse
                    Math.Abs(source.Height - Me.RectangleF.Height) > 0.5F
-        End Get
-    End Property
-    Public ReadOnly Property IsMotionPathSequenceSourceVisible() As Boolean
-        Get
-            Return HasPersistentMotionPathSource AndAlso motionPathSequenceSourceVisible
         End Get
     End Property
     Public Event MotionPathCompleted As EventHandler

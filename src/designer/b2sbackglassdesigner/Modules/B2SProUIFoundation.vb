@@ -67,25 +67,6 @@ Public Module B2SProUIFoundation
         End Sub
     End Class
 
-    Public Function AccentFor(group As CommandGroup) As Color
-        Select Case group
-            Case CommandGroup.File
-                Return Palette.Cyan
-            Case CommandGroup.Edit
-                Return Palette.Magenta
-            Case CommandGroup.View
-                Return Palette.Blue
-            Case CommandGroup.Lighting
-                Return Palette.Amber
-            Case CommandGroup.Artwork
-                Return Palette.Purple
-            Case CommandGroup.PlayExport
-                Return Palette.Green
-            Case Else
-                Return Palette.Border
-        End Select
-    End Function
-
     Public Function CommandGroupForItem(item As ToolStripItem) As CommandGroup
         If item Is Nothing Then Return CommandGroup.Neutral
 
@@ -98,20 +79,6 @@ Public Module B2SProUIFoundation
         If key.Contains("image") OrElse key.Contains("snippet") OrElse key.Contains("snippit") OrElse key.Contains("reel") Then Return CommandGroup.Artwork
         If key.Contains("play") OrElse key.Contains("preview") OrElse key.Contains("export") OrElse key.Contains("create") Then Return CommandGroup.PlayExport
         Return CommandGroup.Neutral
-    End Function
-
-    Public Function AccentForForm(form As Form) As Color
-        If form Is Nothing Then Return Palette.Cyan
-
-        Dim key As String = (form.Name & " " & form.Text).ToLowerInvariant()
-        If key.Contains("illumination") OrElse key.Contains("light") OrElse key.Contains("flash") Then Return Palette.Amber
-        If key.Contains("layer") Then Return Palette.Purple
-        If key.Contains("reel") OrElse key.Contains("led") Then Return Palette.Green
-        If key.Contains("resource") OrElse key.Contains("image") Then Return Palette.Cyan
-        If key.Contains("animation") Then Return Palette.Green
-        If key.Contains("snippet") OrElse key.Contains("snippit") Then Return Palette.Magenta
-        If key.Contains("history") OrElse key.Contains("undo") Then Return Palette.Blue
-        Return Palette.Cyan
     End Function
 
 End Module

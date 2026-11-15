@@ -79,11 +79,6 @@ Public Class B2SPictureBox
         Me.UpdateStyles()
     End Sub
 
-    ' Canvas illumination stays steady; blinking belongs to the dialog/runtime.
-    Private Function IsBlinkPhaseOn(ByVal bulb As Illumination.BulbInfo) As Boolean
-        Return True
-    End Function
-
     Private helper As HelperBase = New HelperBase()
 
     Public Event MyMouseDown(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs)
@@ -153,8 +148,6 @@ Public Class B2SPictureBox
     ' paints then draw only lightweight previews at their current positions.
     Private dragPreviewActive As Boolean = False
     Private dragPreviewBase As Bitmap = Nothing
-    Private dragPreviewCanvasPixels As Byte()
-    Private dragPreviewCanvasSize As Size
     Private ReadOnly dragPreviewBulbs As New Generic.List(Of Illumination.BulbInfo)()
     Private ReadOnly dragPreviewScores As New Generic.List(Of ReelAndLED.ScoreInfo)()
 
@@ -199,19 +192,37 @@ Public Class B2SPictureBox
         Return bulb.Name.Substring(0, separator + 1)
     End Function
 
+    ' Rendering and export can address the main and DMD picture boxes in the
+    ' same operation.  Use the collection owned by this picture box instead of
+    ' the collection selected by the editor's currently visible canvas.
+    Private ReadOnly Property OwningBulbs() As Illumination.BulbCollection
+        Get
+            If Backglass.currentData Is Nothing Then Return Nothing
+            Return If(IsDMDPictureBox, Backglass.currentData.DMDBulbs, Backglass.currentData.Bulbs)
+        End Get
+    End Property
+
+    Private ReadOnly Property OwningScores() As ReelAndLED.ScoreCollection
+        Get
+            If Backglass.currentData Is Nothing Then Return Nothing
+            Return If(IsDMDPictureBox, Backglass.currentData.DMDScores, Backglass.currentData.Scores)
+        End Get
+    End Property
+
     ' The normal editor uses one frame as a lightweight visual reference for a
     ' grouped picture animation. Actual animation preview has a separate
     ' step-driven renderer and therefore continues to display every frame at
     ' its proper time.
     Private Function IsPictureAnimationReferenceFrame(ByVal bulb As Illumination.BulbInfo) As Boolean
         Dim prefix As String = PictureAnimationPrefix(bulb)
-        If prefix.Length = 0 OrElse Backglass.currentBulbs Is Nothing Then Return True
+        Dim visualBulbs As Illumination.BulbCollection = OwningBulbs
+        If prefix.Length = 0 OrElse visualBulbs Is Nothing Then Return True
 
         Dim separator As Integer = bulb.Name.LastIndexOf("_"c)
         Dim currentFrame As Integer
         Integer.TryParse(bulb.Name.Substring(separator + 1), currentFrame)
         Dim lowestFrame As Integer = currentFrame
-        For Each candidate As Illumination.BulbInfo In Backglass.currentBulbs
+        For Each candidate As Illumination.BulbInfo In visualBulbs
             If candidate Is Nothing OrElse Not candidate.IsImageSnippit OrElse String.IsNullOrEmpty(candidate.Name) OrElse
                Not candidate.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then Continue For
             Dim candidateSeparator As Integer = candidate.Name.LastIndexOf("_"c)
@@ -294,9 +305,14 @@ Public Class B2SPictureBox
                 layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                 layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
 
-                DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
                 Dim ordered As Generic.IList(Of Object) = OrderedVisualItems()
+                Dim belowRemaining As Integer = If(Backglass.currentData Is Nothing, 0, Backglass.currentData.CanvasLayerPositionFor(IsDMDPictureBox))
+                Dim canvasDrawn As Boolean = False
                 For Each item As Object In ordered
+                    If Not canvasDrawn AndAlso belowRemaining <= 0 Then
+                        DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
+                        canvasDrawn = True
+                    End If
                     If TypeOf item Is Illumination.BulbInfo Then
                         Dim bulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
                         If Not IsDragPreviewBulb(bulb) Then DrawUnifiedBulbOrSnippetNative(layerGraphics, previewBase, bulb)
@@ -304,9 +320,10 @@ Public Class B2SPictureBox
                         Dim score As ReelAndLED.ScoreInfo = DirectCast(item, ReelAndLED.ScoreInfo)
                         If Not dragPreviewScoreImages.Any(Function(preview) Object.ReferenceEquals(preview.Score, score)) Then DrawScoreLayerNative(layerGraphics, score)
                     End If
+                    If Not canvasDrawn AndAlso belowRemaining > 0 Then belowRemaining -= 1
                 Next
+                If Not canvasDrawn Then DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
             End Using
-            If dragPreviewScores.Any(Function(score) score.BehindCanvas) Then CacheScoreDragCanvas()
             If dragPreviewScores.Count > 0 Then
             dragPreviewBase = New Bitmap(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height), PixelFormat.Format32bppArgb)
             Using displayGraphics As Graphics = Graphics.FromImage(dragPreviewBase)
@@ -324,7 +341,6 @@ Public Class B2SPictureBox
 
     Public Sub EndDragPreview(Optional ByVal invalidateCanvas As Boolean = True)
         dragPreviewActive = False
-        dragPreviewCanvasPixels = Nothing
         dragPreviewBulbs.Clear()
         dragPreviewScores.Clear()
         For Each preview As ScoreDragPreview In dragPreviewScoreImages
@@ -423,10 +439,6 @@ Public Class B2SPictureBox
                         graphics.DrawImage(bulb.Image, target, 0, 0, bulb.Image.Width, bulb.Image.Height, GraphicsUnit.Pixel, attributes)
                     End Using
                 Else
-                    ' Cached illumination contains artwork sampled at the old
-                    ' position. Never move/rotate that artwork with the handle.
-                    ' Use the same immediate circle for lamps and flashers; the
-                    ' compositor resamples the artwork after the drag finishes.
                     Using brush As New SolidBrush(Color.FromArgb(110, bulb.LightColor))
                         graphics.FillEllipse(brush, target)
                     End Using
@@ -446,6 +458,7 @@ Public Class B2SPictureBox
         Dim hash As Long = 216613626L
         hash = MixVisualHash(hash, bulb.ID)
         hash = MixVisualHash(hash, bulb.ZOrder)
+        hash = MixVisualHash(hash, bulb.LayerOrder)
         hash = MixVisualHash(hash, bulb.Location.X)
         hash = MixVisualHash(hash, bulb.Location.Y)
         hash = MixVisualHash(hash, bulb.Size.Width)
@@ -457,7 +470,11 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, If(bulb.IsImageSnippit, 1, 0))
         hash = MixVisualHash(hash, If(bulb.Image Is Nothing, 0, bulb.Image.GetHashCode()))
         hash = MixVisualHash(hash, If(bulb.SnippitInfo Is Nothing, 100, bulb.SnippitInfo.Brightness))
-        hash = MixVisualHash(hash, If(bulb.SnippitInfo IsNot Nothing AndAlso bulb.SnippitInfo.BehindCanvas, 1, 0))
+        If bulb.SnippitInfo IsNot Nothing Then
+            hash = MixVisualHash(hash, bulb.SnippitInfo.MaskEdgeSoftness)
+            hash = MixVisualHash(hash, bulb.SnippitInfo.MaskOutwardDiffusion)
+            hash = MixVisualHash(hash, bulb.SnippitInfo.MaskShiftEdge)
+        End If
         hash = MixVisualHash(hash, bulb.Intensity)
         hash = MixVisualHash(hash, If(bulb.BlinkEnabled, 1, 0))
         hash = MixVisualHash(hash, bulb.BlinkInterval)
@@ -491,7 +508,6 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, bulb.FlasherRadialSpikes)
         hash = MixVisualHash(hash, If(bulb.GlobalMaskLayerExplicit, 1, 0))
         hash = MixVisualHash(hash, If(bulb.InFrontOfGlobalMask, 1, 0))
-        hash = MixVisualHash(hash, If(bulb.LightBehindCanvas, 1, 0))
         hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.SelectionMaskData), 0, bulb.SelectionMaskData.GetHashCode()))
         hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.Text), 0, bulb.Text.GetHashCode()))
         hash = MixVisualHash(hash, If(String.IsNullOrEmpty(bulb.FontName), 0, bulb.FontName.GetHashCode()))
@@ -504,6 +520,11 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, If(bulb.SeparateLightLayer, 1, 0))
         hash = MixVisualHash(hash, If(bulb.DynamicFrontLighting, 1, 0))
         hash = MixVisualHash(hash, If(bulb.DynamicFrontShowLight, 1, 0))
+        hash = MixVisualHash(hash, bulb.DynamicFrontTargetSnippetID)
+        hash = MixVisualHash(hash, If(bulb.DynamicFrontTargetSelectionDefined, 1, 0))
+        For Each targetID As Integer In bulb.DynamicFrontTargetSnippetIDs.OrderBy(Function(value) value)
+            hash = MixVisualHash(hash, targetID)
+        Next
         If Backglass.currentData IsNot Nothing Then
             hash = MixVisualHash(hash, If(Backglass.currentData.GlobalIlluminationMaskEnabled, 1, 0))
             hash = MixVisualHash(hash, If(Backglass.currentData.GlobalIlluminationMaskInverted, 1, 0))
@@ -521,20 +542,23 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, If(ShowIllumination, 1, 0))
         hash = MixVisualHash(hash, If(IsExternalIlluminationImageIlluminated, 1, 0))
         hash = MixVisualHash(hash, If(String.IsNullOrEmpty(RomInfoFilter), 0, RomInfoFilter.GetHashCode()))
-        If Backglass.currentBulbs IsNot Nothing Then
-            hash = MixVisualHash(hash, Backglass.currentBulbs.Count)
-            For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
+        If Backglass.currentData IsNot Nothing Then hash = MixVisualHash(hash, Backglass.currentData.CanvasLayerPositionFor(IsDMDPictureBox))
+        Dim visualBulbs As Illumination.BulbCollection = OwningBulbs
+        If visualBulbs IsNot Nothing Then
+            hash = MixVisualHash(hash, visualBulbs.Count)
+            For Each bulb As Illumination.BulbInfo In visualBulbs
                 If bulb Is Nothing Then Continue For
                 hash = MixVisualHash(hash, CInt(BulbVisualSignature(bulb)))
             Next
         End If
-        If Backglass.currentScores IsNot Nothing Then
-            hash = MixVisualHash(hash, Backglass.currentScores.Count)
-            For Each score As ReelAndLED.ScoreInfo In Backglass.currentScores
+        Dim visualScores As ReelAndLED.ScoreCollection = OwningScores
+        If visualScores IsNot Nothing Then
+            hash = MixVisualHash(hash, visualScores.Count)
+            For Each score As ReelAndLED.ScoreInfo In visualScores
                 If score Is Nothing Then Continue For
                 hash = MixVisualHash(hash, score.ID)
                 hash = MixVisualHash(hash, score.ZOrder)
-                hash = MixVisualHash(hash, If(score.BehindCanvas, 1, 0))
+                hash = MixVisualHash(hash, score.LayerOrder)
                 hash = MixVisualHash(hash, score.Location.X)
                 hash = MixVisualHash(hash, score.Location.Y)
                 hash = MixVisualHash(hash, score.Size.Width)
@@ -571,29 +595,28 @@ Public Class B2SPictureBox
 
 
     Private Function OrderedVisualItems() As Generic.IList(Of Object)
+        If Backglass.currentData IsNot Nothing Then Backglass.currentData.EnsureUnifiedLayerDeck()
         Dim items As New Generic.List(Of Object)()
-        If Backglass.currentBulbs IsNot Nothing Then
-            For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
+        Dim visualBulbs As Illumination.BulbCollection = OwningBulbs
+        Dim visualScores As ReelAndLED.ScoreCollection = OwningScores
+        If visualBulbs IsNot Nothing Then
+            For Each bulb As Illumination.BulbInfo In visualBulbs
                 items.Add(bulb)
             Next
         End If
-        If Backglass.currentScores IsNot Nothing Then
-            For Each score As ReelAndLED.ScoreInfo In Backglass.currentScores
+        If visualScores IsNot Nothing Then
+            For Each score As ReelAndLED.ScoreInfo In visualScores
                 items.Add(score)
             Next
         End If
         items.Sort(Function(left As Object, right As Object)
-                       Dim leftZ As Integer = If(TypeOf left Is Illumination.BulbInfo, DirectCast(left, Illumination.BulbInfo).ZOrder, DirectCast(left, ReelAndLED.ScoreInfo).ZOrder)
-                       Dim rightZ As Integer = If(TypeOf right Is Illumination.BulbInfo, DirectCast(right, Illumination.BulbInfo).ZOrder, DirectCast(right, ReelAndLED.ScoreInfo).ZOrder)
-                       Dim result As Integer = leftZ.CompareTo(rightZ)
-                       If result <> 0 Then Return result
-                       If TypeOf left Is Illumination.BulbInfo AndAlso TypeOf right Is Illumination.BulbInfo Then
-                           Return Backglass.currentBulbs.IndexOf(DirectCast(right, Illumination.BulbInfo)).CompareTo(Backglass.currentBulbs.IndexOf(DirectCast(left, Illumination.BulbInfo)))
-                       End If
-                       If TypeOf left Is ReelAndLED.ScoreInfo AndAlso TypeOf right Is ReelAndLED.ScoreInfo Then
-                           Return Backglass.currentScores.IndexOf(DirectCast(right, ReelAndLED.ScoreInfo)).CompareTo(Backglass.currentScores.IndexOf(DirectCast(left, ReelAndLED.ScoreInfo)))
-                       End If
-                       Return If(TypeOf left Is Illumination.BulbInfo, -1, 1)
+                       Dim leftOrder As Integer = If(TypeOf left Is Illumination.BulbInfo,
+                                                     DirectCast(left, Illumination.BulbInfo).LayerOrder,
+                                                     DirectCast(left, ReelAndLED.ScoreInfo).LayerOrder)
+                       Dim rightOrder As Integer = If(TypeOf right Is Illumination.BulbInfo,
+                                                      DirectCast(right, Illumination.BulbInfo).LayerOrder,
+                                                      DirectCast(right, ReelAndLED.ScoreInfo).LayerOrder)
+                       Return rightOrder.CompareTo(leftOrder)
                    End Function)
         Return items
     End Function
@@ -968,35 +991,6 @@ Public Class B2SPictureBox
                     pe.Graphics.RotateTransform(.RotationAngle)
                     pe.Graphics.TranslateTransform(-scoreCenterX, -scoreCenterY)
                     ' draw images for score reels
-                    If False AndAlso .Digits > 0 Then
-                        If .IsSingleReelSizeDirty OrElse .SingleReelFactor <> factor Then
-                            Dim width As Single = ((rect.Width - .Spacing * factor / 2 * (.Digits - 1)) / .Digits)
-                            Do While width * .Digits > rect.Width - 1
-                                width -= 1
-                            Loop
-                            Dim height As Integer = rect.Height - 1
-                            If .PerfectScaleWidthFix Then
-                                height = CInt(My.Resources.LED_0.Height / My.Resources.LED_0.Width * width)
-                                .Size.Height = CInt(height / factor) + 1
-                                .PerfectScaleWidthFix = False
-                                Me.Invalidate()
-                            End If
-                            .SingleReelSize = New SizeF(width, height)
-                            .IsSingleReelSizeDirty = False
-                            .SingleReelFactor = factor
-                        End If
-                        Dim x As Single = rect.X + 1
-                        Dim y As Integer = rect.Y + 1
-                        Dim newsize As Size = New Size(.SingleReelSize.Width, .SingleReelSize.Height)
-                        Dim image As Image = ResizeScoreReel(GetReelImage(.ReelType, .ReelColor, Backglass.currentData.UseDream7LEDs, Backglass.currentData.D7Thickness, Backglass.currentData.D7Shear, Backglass.currentData.D7Glow, newsize), newsize, Backglass.currentScores(index))
-                        If image IsNot Nothing Then
-                            For i As Integer = 1 To .Digits
-                                pe.Graphics.DrawImage(image, New Point(x, y))
-                                x += .SingleReelSize.Width + .Spacing * factor / 2
-                            Next
-                            image.Dispose()
-                        End If
-                    End If
                     ' draw marker frame
                     If ShowScoreFrames Then
                         pe.Graphics.DrawRectangle(pen, rect)
@@ -1195,15 +1189,22 @@ Public Class B2SPictureBox
                     layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                     layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
 
-                    DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
                     Dim ordered As Generic.IList(Of Object) = OrderedVisualItems()
+                    Dim belowRemaining As Integer = If(Backglass.currentData Is Nothing, 0, Backglass.currentData.CanvasLayerPositionFor(IsDMDPictureBox))
+                    Dim canvasDrawn As Boolean = False
                     For Each item As Object In ordered
+                        If Not canvasDrawn AndAlso belowRemaining <= 0 Then
+                            DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
+                            canvasDrawn = True
+                        End If
                         If TypeOf item Is Illumination.BulbInfo Then
                             DrawUnifiedBulbOrSnippetNative(layerGraphics, nextComposite, DirectCast(item, Illumination.BulbInfo))
                         ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
                             DrawScoreLayerNative(layerGraphics, DirectCast(item, ReelAndLED.ScoreInfo))
                         End If
+                        If Not canvasDrawn AndAlso belowRemaining > 0 Then belowRemaining -= 1
                     Next
+                    If Not canvasDrawn Then DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
                 End Using
                 unifiedCompositeCache = nextComposite
                 unifiedCompositeSignature = signature
@@ -1235,14 +1236,16 @@ Public Class B2SPictureBox
     ' Nothing means the original canvas-only path is sufficient.
     Friend Function CreateLightArtworkBackdrop(ByVal target As Illumination.BulbInfo,
                                                 ByVal background As Image) As Bitmap
-        If target Is Nothing OrElse background Is Nothing OrElse target.LightBehindCanvas OrElse
+        If target Is Nothing OrElse background Is Nothing OrElse
            Not target.UsesArtworkPixelRenderer Then Return Nothing
+        Dim targetBelowCanvas As Boolean = IsBulbBelowCanvas(target)
         Dim lower As New Generic.List(Of Illumination.BulbInfo)()
         For Each item As Object In OrderedVisualItems()
             If Object.ReferenceEquals(item, target) Then Exit For
             Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
             If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
-               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) Then lower.Add(snippet)
+               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) AndAlso
+               IsBulbBelowCanvas(snippet) = targetBelowCanvas Then lower.Add(snippet)
         Next
         If lower.Count = 0 Then Return Nothing
         Dim result As New Bitmap(background)
@@ -1265,19 +1268,30 @@ Public Class B2SPictureBox
     ' light.  Lights.DrawImages uses this key to share one native canvas during
     ' a render pass instead of cloning the full backglass once per light.
     Friend Function LightArtworkBackdropKey(ByVal target As Illumination.BulbInfo) As String
-        If target Is Nothing OrElse target.LightBehindCanvas OrElse
-           Not target.UsesArtworkPixelRenderer Then Return String.Empty
+        If target Is Nothing OrElse Not target.UsesArtworkPixelRenderer Then Return String.Empty
 
         Dim key As New Text.StringBuilder()
+        Dim targetBelowCanvas As Boolean = IsBulbBelowCanvas(target)
         For Each item As Object In OrderedVisualItems()
             If Object.ReferenceEquals(item, target) Then Exit For
             Dim snippet As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
             If snippet IsNot Nothing AndAlso snippet.IsImageSnippit AndAlso snippet.Image IsNot Nothing AndAlso
-               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) AndAlso IsPictureAnimationReferenceFrame(snippet) Then
+               Not snippet.SnippitInfo.PhysicsBall AndAlso LayerManager.IsVisible(snippet) AndAlso
+               IsBulbBelowCanvas(snippet) = targetBelowCanvas AndAlso IsPictureAnimationReferenceFrame(snippet) Then
                 key.Append(snippet.ID).Append(":"c)
             End If
         Next
         Return key.ToString()
+    End Function
+
+    Private Function IsBulbBelowCanvas(ByVal bulb As Illumination.BulbInfo) As Boolean
+        If bulb Is Nothing OrElse Backglass.currentData Is Nothing OrElse
+           (bulb.ParentForm <> eParentForm.Backglass AndAlso bulb.ParentForm <> eParentForm.DMD) Then Return False
+
+        Backglass.currentData.EnsureUnifiedLayerDeck()
+        Dim visualCount As Integer = If(OwningBulbs Is Nothing, 0, OwningBulbs.Count) + If(OwningScores Is Nothing, 0, OwningScores.Count)
+        Dim firstBelow As Integer = visualCount - Backglass.currentData.CanvasLayerPositionFor(bulb.ParentForm = eParentForm.DMD)
+        Return bulb.LayerOrder >= Math.Max(0, firstBelow)
     End Function
 
     ' Group-aware version used by Light Settings.  The off image excludes every
@@ -1313,16 +1327,22 @@ Public Class B2SPictureBox
                 layerGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
                 layerGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
 
-                DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
-                For Each item As Object In OrderedVisualItems()
-                    If TypeOf item Is Illumination.BulbInfo Then
-                        Dim itemBulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
-                        If excluded.Contains(itemBulb) Then Continue For
-                        DrawUnifiedBulbOrSnippetNative(layerGraphics, result, itemBulb, forced.Contains(itemBulb), ignoreCurrentFilter)
-                    ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
-                        DrawScoreLayerNative(layerGraphics, DirectCast(item, ReelAndLED.ScoreInfo))
+                Dim orderedItems As Object() = OrderedVisualItems().ToArray()
+                Dim belowCount As Integer = If(Backglass.currentData Is Nothing, 0, Backglass.currentData.CanvasLayerPositionFor(IsDMDPictureBox))
+                Dim belowItems As New Generic.List(Of Object)()
+                Dim frontItems As New Generic.List(Of Object)()
+                For Each item As Object In orderedItems
+                    If belowCount > 0 Then
+                        belowItems.Add(item)
+                        belowCount -= 1
+                    Else
+                        frontItems.Add(item)
                     End If
                 Next
+
+                DrawPreviewDeckSegment(layerGraphics, result, belowItems, excluded, forced, ignoreCurrentFilter)
+                DrawMainBackglassLayer(layerGraphics, New Rectangle(0, 0, nativeWidth, nativeHeight))
+                DrawPreviewDeckSegment(layerGraphics, result, frontItems, excluded, forced, ignoreCurrentFilter)
             End Using
             Return result
         Catch
@@ -1330,6 +1350,34 @@ Public Class B2SPictureBox
             Return Nothing
         End Try
     End Function
+
+    Private Sub DrawPreviewDeckSegment(ByVal graphics As Graphics,
+                                       ByVal composite As Bitmap,
+                                       ByVal items As Generic.IEnumerable(Of Object),
+                                       ByVal excluded As Generic.HashSet(Of Illumination.BulbInfo),
+                                       ByVal forced As Generic.HashSet(Of Illumination.BulbInfo),
+                                       ByVal ignoreCurrentFilter As Boolean)
+        ' Each side of the canvas uses the exact normal front-light two-pass
+        ' renderer. The canvas is only the fixed card between the two segments.
+        For Each item As Object In items
+            Dim previewLight As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+            If previewLight Is Nothing OrElse excluded.Contains(previewLight) OrElse
+               Not previewLight.DynamicFrontLighting OrElse Not previewLight.DynamicFrontShowLight OrElse
+               previewLight.SeparateLightLayer OrElse
+               Not PreviewBulbIsDrawable(previewLight, forced.Contains(previewLight), ignoreCurrentFilter) Then Continue For
+            DrawBulbLayerOnCurrentComposite(graphics, composite, previewLight)
+        Next
+
+        For Each item As Object In items
+            If TypeOf item Is Illumination.BulbInfo Then
+                Dim itemBulb As Illumination.BulbInfo = DirectCast(item, Illumination.BulbInfo)
+                If excluded.Contains(itemBulb) Then Continue For
+                DrawUnifiedBulbOrSnippetNative(graphics, composite, itemBulb, forced.Contains(itemBulb), ignoreCurrentFilter)
+            ElseIf TypeOf item Is ReelAndLED.ScoreInfo Then
+                DrawScoreLayerNative(graphics, DirectCast(item, ReelAndLED.ScoreInfo))
+            End If
+        Next
+    End Sub
 
     Friend Function ScorePerspectivePoints(ByVal score As ReelAndLED.ScoreInfo, ByVal scale As Single) As PointF()
         Dim centerX As Single = (score.Location.X + score.Size.Width / 2.0F) * scale
@@ -1457,16 +1505,19 @@ Public Class B2SPictureBox
 
     Private Sub DrawPerspectiveBitmap(ByVal graphics As Graphics, ByVal bitmap As Bitmap, ByVal quad As PointF())
         If graphics Is Nothing OrElse bitmap Is Nothing OrElse quad Is Nothing OrElse quad.Length <> 4 Then Return
+        ' A flat or rotated rectangle is one affine image draw in both the live
+        ' drag preview and the completed canvas. Reserve the strip renderer for
+        ' a true perspective trapezoid so releasing the mouse cannot change the
+        ' reel's proportions.
+        If Math.Abs(quad(0).X + quad(2).X - quad(1).X - quad(3).X) < 0.01F AndAlso
+           Math.Abs(quad(0).Y + quad(2).Y - quad(1).Y - quad(3).Y) < 0.01F Then
+            graphics.DrawImage(bitmap, New PointF() {quad(0), quad(1), quad(3)},
+                               New RectangleF(0, 0, bitmap.Width, bitmap.Height), GraphicsUnit.Pixel)
+            Return
+        End If
+
         Dim strips As Integer = Math.Max(24, Math.Min(160, bitmap.Width))
         If dragPreviewActive AndAlso dragPreviewScores.Count > 0 Then
-            ' A flat/rotated rectangle is one affine image draw. Reserve the
-            ' perspective strips for an actual trapezoid during mouse movement.
-            If Math.Abs(quad(0).X + quad(2).X - quad(1).X - quad(3).X) < 0.01F AndAlso
-               Math.Abs(quad(0).Y + quad(2).Y - quad(1).Y - quad(3).Y) < 0.01F Then
-                graphics.DrawImage(bitmap, New PointF() {quad(0), quad(1), quad(3)},
-                                   New RectangleF(0, 0, bitmap.Width, bitmap.Height), GraphicsUnit.Pixel)
-                Return
-            End If
             strips = 24
         End If
         Dim oldMode As Drawing2D.InterpolationMode = graphics.InterpolationMode
@@ -1556,48 +1607,6 @@ Public Class B2SPictureBox
         End Try
     End Function
 
-    Private Sub CacheScoreDragCanvas()
-        Using canvas As New Bitmap(Me.Image.Width, Me.Image.Height, PixelFormat.Format32bppArgb)
-            Using canvasGraphics As Graphics = Graphics.FromImage(canvas)
-                canvasGraphics.CompositingMode = Drawing2D.CompositingMode.SourceCopy
-                canvasGraphics.DrawImageUnscaled(Me.Image, 0, 0)
-            End Using
-            dragPreviewCanvasSize = canvas.Size
-            Dim data As BitmapData = canvas.LockBits(New Rectangle(Point.Empty, canvas.Size), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
-            Try
-                dragPreviewCanvasPixels = New Byte(canvas.Width * canvas.Height * 4 - 1) {}
-                For y As Integer = 0 To canvas.Height - 1
-                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), dragPreviewCanvasPixels, y * canvas.Width * 4, canvas.Width * 4)
-                Next
-            Finally
-                canvas.UnlockBits(data)
-            End Try
-        End Using
-    End Sub
-
-    Private Sub ApplyScoreDragCanvasMask(ByVal bitmap As Bitmap, ByVal bounds As Rectangle)
-        If dragPreviewCanvasPixels Is Nothing Then Return
-        Dim data As BitmapData = bitmap.LockBits(New Rectangle(Point.Empty, bitmap.Size), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
-        Try
-            Dim row(bitmap.Width * 4 - 1) As Byte
-            For y As Integer = 0 To bitmap.Height - 1
-                Dim address As IntPtr = IntPtr.Add(data.Scan0, y * data.Stride)
-                Runtime.InteropServices.Marshal.Copy(address, row, 0, row.Length)
-                Dim canvasY As Integer = bounds.Y + CInt(Math.Floor(CDbl(y) * bounds.Height / bitmap.Height))
-                For x As Integer = 0 To bitmap.Width - 1
-                    Dim canvasX As Integer = bounds.X + CInt(Math.Floor(CDbl(x) * bounds.Width / bitmap.Width))
-                    Dim transmission As Integer = 0
-                    If canvasX >= 0 AndAlso canvasY >= 0 AndAlso canvasX < dragPreviewCanvasSize.Width AndAlso canvasY < dragPreviewCanvasSize.Height Then
-                        transmission = 255 - CInt(dragPreviewCanvasPixels((canvasY * dragPreviewCanvasSize.Width + canvasX) * 4 + 3))
-                    End If
-                    row(x * 4 + 3) = CByte((CInt(row(x * 4 + 3)) * transmission + 127) \ 255)
-                Next
-                Runtime.InteropServices.Marshal.Copy(row, 0, address, row.Length)
-            Next
-        Finally
-            bitmap.UnlockBits(data)
-        End Try
-    End Sub
     Private Sub DrawScoreDragPreview(ByVal graphics As Graphics,
                                      ByVal preview As ScoreDragPreview,
                                      ByVal scale As Single)
@@ -1615,37 +1624,9 @@ Public Class B2SPictureBox
         Dim rect As New Rectangle(score.Location, score.Size)
         If rect.Width <= 1 OrElse rect.Height <= 1 Then Return
 
-        ' Cached artwork is mapped first; the stationary canvas mask must not
-        ' rotate with the digits, and must cover the glass pass as well.
-        Dim points As PointF() = ScorePerspectivePoints(score, 1.0F)
-        If score.BehindCanvas AndAlso Me.Image IsNot Nothing Then
-            Dim bounds As Rectangle = Rectangle.FromLTRB(
-                CInt(Math.Floor(points.Min(Function(point) point.X))) - 2,
-                CInt(Math.Floor(points.Min(Function(point) point.Y))) - 2,
-                CInt(Math.Ceiling(points.Max(Function(point) point.X))) + 2,
-                CInt(Math.Ceiling(points.Max(Function(point) point.Y))) + 2)
-            If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
-            Dim previewScale As Single = Math.Min(1.0F, Math.Max(0.05F, CSng(Mouse.factor)))
-            Using mapped As New Bitmap(Math.Max(1, CInt(Math.Ceiling(bounds.Width * previewScale))), Math.Max(1, CInt(Math.Ceiling(bounds.Height * previewScale))), PixelFormat.Format32bppArgb)
-                Using mappingGraphics As Graphics = Graphics.FromImage(mapped)
-                    mappingGraphics.Clear(Color.Transparent)
-                    mappingGraphics.ScaleTransform(mapped.Width / CSng(bounds.Width), mapped.Height / CSng(bounds.Height))
-                    mappingGraphics.TranslateTransform(-bounds.X, -bounds.Y)
-                    DrawScoreDragPreviewBitmap(mappingGraphics, preview.Content, points)
-                    If preview.GlassOverlay IsNot Nothing Then DrawScoreDragPreviewBitmap(mappingGraphics, preview.GlassOverlay, points)
-                End Using
-                ApplyScoreDragCanvasMask(mapped, bounds)
-                Using clipped As Bitmap = mapped
-                    If clipped IsNot Nothing Then graphics.DrawImage(clipped,
-                        New RectangleF(bounds.X * scale, bounds.Y * scale, bounds.Width * scale, bounds.Height * scale),
-                        New RectangleF(0, 0, clipped.Width, clipped.Height), GraphicsUnit.Pixel)
-                End Using
-            End Using
-        Else
-            Dim perspectivePoints As PointF() = ScorePerspectivePoints(score, scale)
-            DrawScoreDragPreviewBitmap(graphics, preview.Content, perspectivePoints)
-            If preview.GlassOverlay IsNot Nothing Then DrawScoreDragPreviewBitmap(graphics, preview.GlassOverlay, perspectivePoints)
-        End If
+        Dim perspectivePoints As PointF() = ScorePerspectivePoints(score, scale)
+        DrawScoreDragPreviewBitmap(graphics, preview.Content, perspectivePoints)
+        If preview.GlassOverlay IsNot Nothing Then DrawScoreDragPreviewBitmap(graphics, preview.GlassOverlay, perspectivePoints)
     End Sub
     Private Sub DrawScoreDragPreviewBitmap(ByVal graphics As Graphics,
                                            ByVal bitmap As Bitmap,
@@ -1718,15 +1699,7 @@ Public Class B2SPictureBox
                         x += width + score.Spacing / 2.0F
                     Next
                 End Using
-                Dim clippedScore As Bitmap = Nothing
-                If score.BehindCanvas AndAlso Me.Image IsNot Nothing Then
-                    clippedScore = Illumination.Lights.CreateCanvasClippedSnippet(scoreBitmap, Me.Image, rect)
-                End If
-                Try
-                    DrawPerspectiveBitmap(graphics, If(clippedScore, scoreBitmap), ScorePerspectivePoints(score, 1.0F))
-                Finally
-                    If clippedScore IsNot Nothing Then clippedScore.Dispose()
-                End Try
+                DrawPerspectiveBitmap(graphics, scoreBitmap, ScorePerspectivePoints(score, 1.0F))
                 If score.Reel3DEnabled Then
                     Using glassOverlay As New Bitmap(scoreBitmap.Width, scoreBitmap.Height, Imaging.PixelFormat.Format32bppArgb)
                         Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
@@ -1736,15 +1709,7 @@ Public Class B2SPictureBox
                                                                      score.Reel3DDepth,
                                                                      score.Reel3DGlass)
                         End Using
-                        Dim clippedGlass As Bitmap = Nothing
-                        If score.BehindCanvas AndAlso Me.Image IsNot Nothing Then
-                            clippedGlass = Illumination.Lights.CreateCanvasClippedSnippet(glassOverlay, Me.Image, rect)
-                        End If
-                        Try
-                            DrawPerspectiveBitmap(graphics, If(clippedGlass, glassOverlay), ScorePerspectivePoints(score, 1.0F))
-                        Finally
-                            If clippedGlass IsNot Nothing Then clippedGlass.Dispose()
-                        End Try
+                        DrawPerspectiveBitmap(graphics, glassOverlay, ScorePerspectivePoints(score, 1.0F))
                     End Using
                 End If
             End Using
@@ -1759,14 +1724,127 @@ Public Class B2SPictureBox
                                                 Optional ByVal forceVisible As Boolean = False,
                                                 Optional ByVal ignoreCurrentFilter As Boolean = False)
         If bulb Is Nothing OrElse Not LayerManager.IsVisible(bulb) OrElse
-           (Not ignoreCurrentFilter AndAlso Not BulbPassesCurrentFilter(bulb)) OrElse
-           (Not forceVisible AndAlso Not IsBlinkPhaseOn(bulb)) Then Return
+           (Not ignoreCurrentFilter AndAlso Not BulbPassesCurrentFilter(bulb)) Then Return
         If Not IsPictureAnimationReferenceFrame(bulb) Then Return
         If bulb.IsImageSnippit Then
             DrawSnippetLayerNative(graphics, bulb)
         ElseIf (ShowIllumination OrElse forceVisible) AndAlso Not IsExternalIlluminationImageIlluminated Then
-            DrawBulbLayerOnCurrentComposite(graphics, composed, bulb)
+            If bulb.DynamicFrontLighting Then
+                ' Separate light layers remain visible at their normal Z order.
+                ' A non-separated visible base was already drawn below snippets.
+                If bulb.SeparateLightLayer Then DrawBulbLayerOnCurrentComposite(graphics, composed, bulb)
+                ' A settings-window preview forces the selected light on, and
+                ' Accurate Light Preview represents the authored illuminated
+                DrawDynamicFrontLightOnSnippets(graphics, composed, bulb, ignoreCurrentFilter)
+            Else
+                DrawBulbLayerOnCurrentComposite(graphics, composed, bulb)
+            End If
         End If
+    End Sub
+
+    Private Function PreviewBulbIsDrawable(ByVal bulb As Illumination.BulbInfo,
+                                           ByVal forceVisible As Boolean,
+                                           ByVal ignoreCurrentFilter As Boolean) As Boolean
+        Return bulb IsNot Nothing AndAlso LayerManager.IsVisible(bulb) AndAlso
+               (ignoreCurrentFilter OrElse BulbPassesCurrentFilter(bulb)) AndAlso
+               IsPictureAnimationReferenceFrame(bulb)
+    End Function
+
+    Private Function DynamicFrontTargetsSnippet(ByVal light As Illumination.BulbInfo,
+                                                ByVal snippet As Illumination.BulbInfo) As Boolean
+        If light Is Nothing OrElse snippet Is Nothing Then Return False
+        If light.DynamicFrontTargetSelectionDefined Then
+            Return light.DynamicFrontTargetSnippetIDs.Contains(snippet.ID)
+        End If
+        Return light.DynamicFrontTargetSnippetID <= 0 OrElse
+               light.DynamicFrontTargetSnippetID = snippet.ID
+    End Function
+
+    Private Sub DrawDynamicFrontLightOnSnippets(ByVal graphics As Graphics,
+                                                ByVal composed As Bitmap,
+                                                ByVal light As Illumination.BulbInfo,
+                                                ByVal ignoreCurrentFilter As Boolean)
+        Dim visualBulbs As Illumination.BulbCollection = OwningBulbs
+        If graphics Is Nothing OrElse composed Is Nothing OrElse light Is Nothing OrElse
+           visualBulbs Is Nothing Then Return
+
+        Dim lightRect As New Rectangle(light.Location, light.Size)
+        Dim lightBounds As New Rectangle(light.LocationX, light.SizeX)
+        If light.GlowSpread > 0 AndAlso lightRect.Width > 0 AndAlso lightRect.Height > 0 Then
+            Dim scaleX As Double = If(lightRect.Width > 0, lightBounds.Width / CDbl(lightRect.Width), 1.0)
+            Dim scaleY As Double = If(lightRect.Height > 0, lightBounds.Height / CDbl(lightRect.Height), 1.0)
+            lightRect.Inflate(light.GlowSpread, light.GlowSpread)
+            lightBounds.Inflate(CInt(Math.Round(light.GlowSpread * scaleX)),
+                                CInt(Math.Round(light.GlowSpread * scaleY)))
+        End If
+        lightBounds = Illumination.Create.RotatedLightBounds(lightBounds, light.LightRotationAngle)
+        lightBounds.Intersect(New Rectangle(Point.Empty, composed.Size))
+        If lightBounds.Width <= 0 OrElse lightBounds.Height <= 0 Then Return
+
+        Dim renderer As New Illumination.Create()
+        Using lightField As Bitmap = renderer.CreateDynamicFrontLightField(
+            lightRect, lightBounds,
+            light.GlowSoftness, light.GlowFalloff, light.GlowIntensity,
+            light.SelectionMaskData, light.SelectionFeather,
+            light.GlobalMaskLayerExplicit AndAlso Not light.InFrontOfGlobalMask,
+            light.LightDiffusion,
+            light.MaskRadius, light.MaskSmooth, light.MaskFeather,
+            light.MaskContrast, light.MaskShiftEdge, light.FlasherRadialSpikes,
+            light.LightRotationAngle)
+            If lightField Is Nothing Then Return
+
+            For Each snippet As Illumination.BulbInfo In visualBulbs
+                If snippet Is Nothing OrElse Not snippet.IsImageSnippit OrElse snippet.Image Is Nothing OrElse
+                   snippet.ZOrder >= light.ZOrder OrElse
+                   Not PreviewBulbIsDrawable(snippet, False, ignoreCurrentFilter) OrElse
+                   Not DynamicFrontTargetsSnippet(light, snippet) Then Continue For
+
+                Dim snippetBounds As New Rectangle(snippet.Location, snippet.Size)
+                Dim overlap As Rectangle = Rectangle.Intersect(lightBounds, snippetBounds)
+                If overlap.Width <= 0 OrElse overlap.Height <= 0 OrElse
+                   snippetBounds.Width <= 0 OrElse snippetBounds.Height <= 0 Then Continue For
+
+                Using snippetFrame As New Bitmap(snippetBounds.Width, snippetBounds.Height, PixelFormat.Format32bppArgb)
+                    Using snippetGraphics As Graphics = Graphics.FromImage(snippetFrame)
+                        snippetGraphics.Clear(Color.Transparent)
+                        snippetGraphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
+                        snippetGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                        snippetGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                        snippetGraphics.TranslateTransform(-snippetBounds.X, -snippetBounds.Y)
+                        DrawSnippetLayerNative(snippetGraphics, snippet)
+                    End Using
+
+                    Dim sourceRect As New Rectangle(overlap.X - snippetBounds.X,
+                                                    overlap.Y - snippetBounds.Y,
+                                                    overlap.Width, overlap.Height)
+                    Using sourceCrop As Bitmap = snippetFrame.Clone(sourceRect, PixelFormat.Format32bppArgb)
+                        Using fieldCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+                            Using fieldGraphics As Graphics = Graphics.FromImage(fieldCrop)
+                                fieldGraphics.Clear(Color.Transparent)
+                                fieldGraphics.DrawImage(lightField,
+                                                        New Rectangle(Point.Empty, fieldCrop.Size),
+                                                        New RectangleF((overlap.X - lightBounds.X) * lightField.Width / CSng(lightBounds.Width),
+                                                                       (overlap.Y - lightBounds.Y) * lightField.Height / CSng(lightBounds.Height),
+                                                                       overlap.Width * lightField.Width / CSng(lightBounds.Width),
+                                                                       overlap.Height * lightField.Height / CSng(lightBounds.Height)),
+                                                        GraphicsUnit.Pixel)
+                            End Using
+
+                            Using illuminated As Bitmap = Illumination.ArtworkFlasherRenderer.RenderFromAlphaField(
+                                sourceCrop, fieldCrop, light.GlowIntensity, light.LightColor,
+                                light.FlasherStyle, light.FlasherSaturation,
+                                light.FlasherHighlightProtection, light.FlasherDarkAreaLift,
+                                light.ArtworkContrast)
+                                If illuminated IsNot Nothing Then
+                                    Illumination.Create.ApplyTemperatureToRenderedLight(illuminated, light.LightTemperature)
+                                    graphics.DrawImageUnscaled(illuminated, overlap.Location)
+                                End If
+                            End Using
+                        End Using
+                    End Using
+                End Using
+            Next
+        End Using
     End Sub
 
     Private Sub DrawSnippetLayerNative(ByVal graphics As Graphics,
@@ -1784,16 +1862,20 @@ Public Class B2SPictureBox
                                                                                If(isInfinity, bulb.MaskRadius, 0),
                                                                                If(isInfinity, bulb.MaskSmooth, 0),
                                                                                If(isInfinity, bulb.MaskFeather, 0),
-                                                                               If(isInfinity, bulb.MaskShiftEdge, 0))
+                                                                               If(isInfinity, bulb.MaskShiftEdge, bulb.SnippitInfo.MaskShiftEdge),
+                                                                               If(isInfinity, 0, bulb.SnippitInfo.MaskEdgeSoftness),
+                                                                               If(isInfinity, 0, bulb.SnippitInfo.MaskOutwardDiffusion))
             If clippedSnippet IsNot Nothing Then snippetImage = clippedSnippet
-        End If
-        If bulb.SnippitInfo.BehindCanvas AndAlso Me.Image IsNot Nothing Then
-            Dim canvasClipped As Bitmap = Illumination.Lights.CreateCanvasClippedSnippet(snippetImage, Me.Image, target)
-            If canvasClipped IsNot Nothing Then
-                If clippedSnippet IsNot Nothing Then clippedSnippet.Dispose()
-                clippedSnippet = canvasClipped
-                snippetImage = clippedSnippet
-            End If
+        ElseIf bulb.SnippitInfo.MaskShiftEdge <> 0 OrElse bulb.SnippitInfo.MaskEdgeSoftness <> 0 OrElse
+               bulb.SnippitInfo.MaskOutwardDiffusion <> 0 Then
+            clippedSnippet = Illumination.Lights.CreateAlphaRefinedSnippet(snippetImage,
+                                                                           0,
+                                                                           0,
+                                                                           0,
+                                                                           bulb.SnippitInfo.MaskShiftEdge,
+                                                                           bulb.SnippitInfo.MaskEdgeSoftness,
+                                                                           bulb.SnippitInfo.MaskOutwardDiffusion)
+            If clippedSnippet IsNot Nothing Then snippetImage = clippedSnippet
         End If
         Try
             If layerOpacity >= 100 AndAlso brightness = 100 Then
@@ -1869,7 +1951,7 @@ Public Class B2SPictureBox
                                                   bulb.GlowIntensity,
                                                   bulb.SelectionMaskData,
                                                   bulb.SelectionFeather,
-                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, False, bulb.SeparateLightLayer)
+                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, bulb.SeparateLightLayer)
             If overlay IsNot Nothing Then graphics.DrawImageUnscaled(overlay, rectX.Location)
             If TypeOf overlay Is Bitmap Then
                 Dim size As Long = CLng(overlay.Width) * overlay.Height * 4L
@@ -1928,41 +2010,6 @@ Public Class B2SPictureBox
         If RomInfoFilter.Equals("fantasy") Then Return bulb.DualMode <> eDualMode.Authentic
         Return False
     End Function
-
-    Private Sub DrawSnippetLayer(ByVal graphics As Graphics, ByVal bulb As Illumination.BulbInfo, ByVal factor As Double)
-        If bulb.Image Is Nothing Then Return
-        Dim target As New Rectangle(CInt(bulb.Location.X * factor), CInt(bulb.Location.Y * factor),
-                                    CInt(bulb.Size.Width * factor), CInt(bulb.Size.Height * factor))
-        Dim layerOpacity As Integer = LayerManager.GetOpacity(bulb)
-        Dim brightness As Integer = Math.Max(0, Math.Min(200, bulb.SnippitInfo.Brightness))
-        If layerOpacity >= 100 AndAlso brightness = 100 Then
-            graphics.DrawImage(bulb.Image, target)
-        ElseIf layerOpacity > 0 Then
-            Using attributes As New ImageAttributes()
-                Dim matrix As New ColorMatrix()
-                Dim brightnessScale As Single = CSng(brightness / 100.0R)
-                matrix.Matrix00 = brightnessScale
-                matrix.Matrix11 = brightnessScale
-                matrix.Matrix22 = brightnessScale
-                matrix.Matrix33 = CSng(layerOpacity / 100.0)
-                attributes.SetColorMatrix(matrix)
-                graphics.DrawImage(bulb.Image, target, 0, 0, bulb.Image.Width, bulb.Image.Height, GraphicsUnit.Pixel, attributes)
-            End Using
-        End If
-    End Sub
-
-    Private Sub DrawBulbLayer(ByVal graphics As Graphics, ByVal bulb As Illumination.BulbInfo, ByVal factor As Double)
-        If Lights Is Nothing OrElse Lights.Images Is Nothing Then Return
-
-        For Each light As KeyValuePair(Of Integer, Illumination.Lights.ImageInfo) In Lights.Images
-            If light.Value Is Nothing OrElse light.Value.BulbID <> bulb.ID OrElse light.Value.Image Is Nothing Then Continue For
-            Dim sourceRect As Rectangle = light.Value.Rectangle
-            Dim target As New RectangleF(CSng(sourceRect.X * factor), CSng(sourceRect.Y * factor),
-                                         CSng(sourceRect.Width * factor), CSng(sourceRect.Height * factor))
-            graphics.DrawImage(light.Value.Image, target)
-            Exit For
-        Next
-    End Sub
 
     Protected Overrides Sub Dispose(ByVal disposing As Boolean)
         If disposing Then
@@ -2235,16 +2282,9 @@ Public Class B2SPictureBox
                             Next
                         End Using
                         MyBase.Image = newimage
-                    Else
-                        Dim image As Image = If(IsDMDPictureBox, Backglass.currentData.DMDImage, Backglass.currentData.Image)
-                        If image IsNot Nothing Then
-                            ' Accurate preview is drawn by DrawUnifiedVisualLayers, which
-                            ' owns its light cache. The export/animation images are unused here.
-                            If Not _ShowIntensityIllumination Then
-                                Lights.DrawImage(image, RomInfoFilter)
-                            End If
-                        End If
                     End If
+                    ' Otherwise the accurate preview is drawn by DrawUnifiedVisualLayers,
+                    ' which owns its light cache.
                 Else
                     If MyBase.Image IsNot Nothing AndAlso Not IsDMDPictureBox AndAlso IsExternalIlluminationImageIlluminated Then
                         IsExternalIlluminationImageIlluminated = False
@@ -2256,8 +2296,6 @@ Public Class B2SPictureBox
                             MyBase.Image = _image
                         End If
                     Else
-                        'Lights.ClearImages()
-                        Lights.ClearImage()
                     End If
                 End If
                 Me.Invalidate()
@@ -2349,29 +2387,32 @@ Public Class B2SPictureBox
         Get
             Dim newimage As Bitmap = New Bitmap(ExportCanvasImage())
             Using gr As Graphics = Graphics.FromImage(newimage)
-                For Each score As ReelAndLED.ScoreInfo In Backglass.currentScores
-                    With score
-                        If .Digits > 0 Then
-                            Dim rect As Rectangle = New Rectangle(score.Location, score.Size)
-                            Dim width As Single = ((rect.Width - .Spacing / 2 * (.Digits - 1)) / .Digits)
-                            Do While width * .Digits > rect.Width - 1
-                                width -= 1
-                            Loop
-                            Dim height As Integer = rect.Height - 1
-                            Dim x As Single = rect.X + 1
-                            Dim y As Integer = rect.Y + 1
-                            Dim newsize As Size = New Size(width, height)
-                            Dim image As Image = ResizeScoreReel(GetReelImage(.ReelType, Color.FromArgb(0, 0, 0), Backglass.currentData.UseDream7LEDs, Backglass.currentData.D7Thickness, Backglass.currentData.D7Shear, Backglass.currentData.D7Glow, newsize), newsize, score)
-                            If image IsNot Nothing Then
-                                For i As Integer = 1 To .Digits
-                                    gr.DrawImage(image, New Point(x, y))
-                                    x += width + .Spacing / 2
-                                Next
-                                image.Dispose()
+                Dim visualScores As ReelAndLED.ScoreCollection = OwningScores
+                If visualScores IsNot Nothing Then
+                    For Each score As ReelAndLED.ScoreInfo In visualScores
+                        With score
+                            If .Digits > 0 Then
+                                Dim rect As Rectangle = New Rectangle(score.Location, score.Size)
+                                Dim width As Single = ((rect.Width - .Spacing / 2 * (.Digits - 1)) / .Digits)
+                                Do While width * .Digits > rect.Width - 1
+                                    width -= 1
+                                Loop
+                                Dim height As Integer = rect.Height - 1
+                                Dim x As Single = rect.X + 1
+                                Dim y As Integer = rect.Y + 1
+                                Dim newsize As Size = New Size(width, height)
+                                Dim image As Image = ResizeScoreReel(GetReelImage(.ReelType, Color.FromArgb(0, 0, 0), Backglass.currentData.UseDream7LEDs, Backglass.currentData.D7Thickness, Backglass.currentData.D7Shear, Backglass.currentData.D7Glow, newsize), newsize, score)
+                                If image IsNot Nothing Then
+                                    For i As Integer = 1 To .Digits
+                                        gr.DrawImage(image, New Point(x, y))
+                                        x += width + .Spacing / 2
+                                    Next
+                                    image.Dispose()
+                                End If
                             End If
-                        End If
-                    End With
-                Next
+                        End With
+                    Next
+                End If
             End Using
             ' that's it
             Return newimage
@@ -2382,7 +2423,7 @@ Public Class B2SPictureBox
             ' Export the same full-quality layer stack shown by Accurate Light
             ' Preview.  Force every light on and ignore the editor's temporary
             ' ROM/name filter, matching the established illuminated-export scope.
-            Return CreateLayeredPreviewImageForBulbs(Nothing, Backglass.currentBulbs, True)
+            Return CreateLayeredPreviewImageForBulbs(Nothing, OwningBulbs, True)
         End Get
     End Property
     Public ReadOnly Property IlluminatedImageOnlyWithAlwaysOnLights() As Image

@@ -522,66 +522,6 @@ Namespace My.Resources
         '''<summary>
         '''  Looks up a localized resource of type System.Drawing.Bitmap.
         '''</summary>
-        Friend ReadOnly Property check_checked() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_checked", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property check_checked_S() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_checked_S", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property check_default() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_default", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property check_default_S() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_default_S", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property check_disabled() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_disabled", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property check_disabled_checked() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("check_disabled_checked", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
         Friend ReadOnly Property chooseback1() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("chooseback1", resourceCulture)
@@ -2076,16 +2016,6 @@ Namespace My.Resources
         '''<summary>
         '''  Looks up a localized resource of type System.Drawing.Bitmap.
         '''</summary>
-        Friend ReadOnly Property help2() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("help2", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
         Friend ReadOnly Property illumination() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("illumination", resourceCulture)
@@ -2109,26 +2039,6 @@ Namespace My.Resources
         Friend ReadOnly Property illumination2() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("illumination2", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property imagefile() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("imagefile", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property imagemarker() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("imagemarker", resourceCulture)
                 Return CType(obj,System.Drawing.Bitmap)
             End Get
         End Property
@@ -2166,16 +2076,6 @@ Namespace My.Resources
         Friend ReadOnly Property IMAGES_IlluminationSnippits() As String
             Get
                 Return ResourceManager.GetString("IMAGES_IlluminationSnippits", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property imagesize() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("imagesize", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
             End Get
         End Property
         
@@ -2472,39 +2372,9 @@ Namespace My.Resources
         '''<summary>
         '''  Looks up a localized resource of type System.Drawing.Bitmap.
         '''</summary>
-        Friend ReadOnly Property marker_reel3() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("marker_reel3", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
         Friend ReadOnly Property marker_reel4() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("marker_reel4", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property marker_text() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("marker_text", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property marker2() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("marker2", resourceCulture)
                 Return CType(obj,System.Drawing.Bitmap)
             End Get
         End Property
@@ -2743,18 +2613,6 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to Import some images for background, illumination and/or DMD with the &apos;Images &amp; layers&apos; tool window. 
-        '''If you import more than one background image you can toggle between these background images.
-        '''If you import illuminated images you can import yourself created illumination effects and use them in the backglass.
-        '''If you import one or more DMD images you can use them as background or main picture of your DMD screen..
-        '''</summary>
-        Friend ReadOnly Property MSG_ImportImages() As String
-            Get
-                Return ResourceManager.GetString("MSG_ImportImages", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized string similar to You&apos;re importing a newer &apos;directB2S&apos; file of version {0} but your designer is version {1}. You can import this file but maybe you&apos;re missing some backglass infos and settings. Please update the designer to the newest version..
         '''</summary>
         Friend ReadOnly Property MSG_ImportWarning() As String
@@ -2787,15 +2645,6 @@ Namespace My.Resources
         Friend ReadOnly Property MSG_NoDMDFile4SettingLocation() As String
             Get
                 Return ResourceManager.GetString("MSG_NoDMDFile4SettingLocation", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to Sorry, there is no project file. Please load another project..
-        '''</summary>
-        Friend ReadOnly Property MSG_NoProjectFileFound() As String
-            Get
-                Return ResourceManager.GetString("MSG_NoProjectFileFound", resourceCulture)
             End Get
         End Property
         
@@ -2854,31 +2703,11 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to You have selected an LED image set. My recommendation is to use &apos;Rendered LEDs&apos; because of more flexibility, more realism and much better look.	 
-        '''
-        '''Do you really want to use an LED image set?.
-        '''</summary>
-        Friend ReadOnly Property MSG_ReelTypeLEDsSelected() As String
-            Get
-                Return ResourceManager.GetString("MSG_ReelTypeLEDsSelected", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized string similar to Do you really want to remove the animation &apos;{0}&apos;?.
         '''</summary>
         Friend ReadOnly Property MSG_RemoveAnimation() As String
             Get
                 Return ResourceManager.GetString("MSG_RemoveAnimation", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to Please import a new background image right now. This is necessary to move and resize all the bulb, reel and LED infos matching the new background image..
-        '''</summary>
-        Friend ReadOnly Property MSG_SaveAsAndImportNewImage() As String
-            Get
-                Return ResourceManager.GetString("MSG_SaveAsAndImportNewImage", resourceCulture)
             End Get
         End Property
         
@@ -2909,15 +2738,6 @@ Namespace My.Resources
         Friend ReadOnly Property MSG_ThereIsAlreadyOneSelfRotatingSnippit() As String
             Get
                 Return ResourceManager.GetString("MSG_ThereIsAlreadyOneSelfRotatingSnippit", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to Please remember, you have to import 11 images step by step, one image for each numeric character, from 0 to 9, and one image for an empty reel or LED..
-        '''</summary>
-        Friend ReadOnly Property MSG_WrongNumberOfImportedReelImages() As String
-            Get
-                Return ResourceManager.GetString("MSG_WrongNumberOfImportedReelImages", resourceCulture)
             End Get
         End Property
         
@@ -3028,15 +2848,6 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to Rendered type.
-        '''</summary>
-        Friend ReadOnly Property ReelsAndLEDs_TypeRendered() As String
-            Get
-                Return ResourceManager.GetString("ReelsAndLEDs_TypeRendered", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized resource of type System.Drawing.Bitmap.
         '''</summary>
         Friend ReadOnly Property resize() As System.Drawing.Bitmap
@@ -3102,26 +2913,6 @@ Namespace My.Resources
         Friend ReadOnly Property save() As System.Drawing.Bitmap
             Get
                 Dim obj As Object = ResourceManager.GetObject("save", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property save_black() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("save_black", resourceCulture)
-                Return CType(obj,System.Drawing.Bitmap)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized resource of type System.Drawing.Bitmap.
-        '''</summary>
-        Friend ReadOnly Property save2() As System.Drawing.Bitmap
-            Get
-                Dim obj As Object = ResourceManager.GetObject("save2", resourceCulture)
                 Return CType(obj,System.Drawing.Bitmap)
             End Get
         End Property
@@ -3295,15 +3086,6 @@ Namespace My.Resources
         End Property
         
         '''<summary>
-        '''  Looks up a localized string similar to B2S ID.
-        '''</summary>
-        Friend ReadOnly Property TXT_B2SID() As String
-            Get
-                Return ResourceManager.GetString("TXT_B2SID", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
         '''  Looks up a localized string similar to .
         '''</summary>
         Friend ReadOnly Property TXT_B2SIDType() As String
@@ -3453,24 +3235,6 @@ Namespace My.Resources
         Friend ReadOnly Property TXT_MiniGrillTop() As String
             Get
                 Return ResourceManager.GetString("TXT_MiniGrillTop", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to ROM ID.
-        '''</summary>
-        Friend ReadOnly Property TXT_RomID() As String
-            Get
-                Return ResourceManager.GetString("TXT_RomID", resourceCulture)
-            End Get
-        End Property
-        
-        '''<summary>
-        '''  Looks up a localized string similar to ROM ID type.
-        '''</summary>
-        Friend ReadOnly Property TXT_RomIDType() As String
-            Get
-                Return ResourceManager.GetString("TXT_RomIDType", resourceCulture)
             End Get
         End Property
         

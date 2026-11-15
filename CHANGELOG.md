@@ -2,6 +2,39 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 2.0.0 / Server 3.0.12 — 2026-11-15
+
+**Major Update — New Layer System, DMD Layering, and Smoother Rotation**
+
+### Important
+
+- Update the Designer and the Server together; 2.0.0 backglasses need Server 3.0.12.
+- Re-download B2S Pro backglasses made with Designer 1.0.x. Older .B2SPro exports still load, but as legacy backglasses.
+- Items that used the old Behind Canvas option must be moved below the Canvas row in the Layers list.
+
+### Designer
+
+- New layer system: one Layers list with a Canvas row. Anything below the Canvas row sits behind the artwork; layer order replaces the old Z-order controls.
+- The DMD has its own canvas position, so DMD edits no longer move backglass items. DMD lights can start lit.
+- Projects save as .b2s, with crash-recovery copies in the project's AutoRecovery folder. Step 1 – Create DirectB2S File writes the .B2SPro.
+- Exported .B2SPro files carry the edit data for every object, so anyone who receives one can open and edit it.
+- Rotated lights render cleanly, EM reels keep their digit proportions, and imported flashers get the standard defaults.
+- Fixes for dropping layers under the Canvas, snippet scaling, and the pivot preview. The mini grill option is hidden; grill height is kept.
+
+### Server
+
+- Smoother spinning artwork: rotating wheels with dynamic lights draw in about half the time.
+- Score reels, LED displays and Dream7 displays can be rotated and given perspective, and DMD scores follow the layer order.
+- DMD items can sit behind the DMD picture, and DMD startup lights are supported.
+- Fixes a crash with reverse-play animations, plus several freeze and repaint fixes.
+
+### Compatibility
+
+- Legacy .directb2s backglasses run on the original B2S Server code paths for animation loops, score display repaint, background scaling, reels and grill snippets.
+- Crash-recovery files from Designer 1.0.10 are not offered after the upgrade.
+- ScreenRes files, Server registration, table settings, projects and backglasses are preserved.
+- The local B2S Pro VPX plugin is not included in this release.
+
 ## Designer 1.0.10 / Server 3.0.11 — 2026-11-08
 
 **Feature Update — Physics Interaction, Sound Sensors, and Designer Workflow**

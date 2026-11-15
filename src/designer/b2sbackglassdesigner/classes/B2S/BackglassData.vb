@@ -1,4 +1,5 @@
 Imports System.Text
+Imports System.Linq
 
 Public Class Backglass
 
@@ -99,7 +100,6 @@ Public Class Backglass
         ' this document. Its filename may contain a recovery identity different
         ' from the new Data instance created while loading it.
         Public Property RecoverySourceFilePath() As String = String.Empty
-        Public ReadOnly Property RecoveryIdentity() As String = Guid.NewGuid().ToString("N").Substring(0, 8)
         Public Property VSName() As String
             Get
                 Return _vsname
@@ -114,11 +114,6 @@ Public Class Backglass
         Public ReadOnly Property SecuredName() As String
             Get
                 Return Secured(_name)
-            End Get
-        End Property
-        Public ReadOnly Property SecuredVSName() As String
-            Get
-                Return Secured(_vsname)
             End Get
         End Property
 
@@ -329,14 +324,6 @@ Public Class Backglass
         Public Property ThumbnailImage() As Image
 
         Private _importedImages As Image()
-        Public Property ImportedImages() As Image()
-            Get
-                Return _importedImages
-            End Get
-            Set(ByVal value As Image())
-                _importedImages = value
-            End Set
-        End Property
 
         Public Property AddedGrillOriginalHeight As Integer = 0
         Private _GrillHeight As Integer = 0
@@ -459,7 +446,10 @@ Public Class Backglass
                 Return _ReelRollingDirection
             End Get
             Set(ByVal value As eReelRollingDirection)
-                _ReelRollingDirection = value
+                If _ReelRollingDirection <> value Then
+                    _ReelRollingDirection = value
+                    IsDirty = True
+                End If
             End Set
         End Property
 
@@ -493,6 +483,137 @@ Public Class Backglass
 
         Public Property Bulbs() As Illumination.BulbCollection = New Illumination.BulbCollection()
         Public Property DMDBulbs() As Illumination.BulbCollection = New Illumination.BulbCollection()
+
+        ' Number of backglass visual layers below the fixed canvas card.  Every
+        ' light, flasher, snippet, reel and LED participates in the same exact
+        ' front-to-back deck; the canvas is only a fixed divider in that deck.
+        Public Property CanvasLayerPosition() As Integer = 0
+        Public Property UnifiedLayerDeck() As Boolean = True
+
+        ' The DMD has its own deck and its own canvas divider. Zero (the default)
+        ' keeps every DMD item in front of the DMD image.
+        Public Property DMDCanvasLayerPosition() As Integer = 0
+
+        Public Sub NormalizeCanvasLayerPosition()
+            Dim visualCount As Integer = If(Bulbs Is Nothing, 0, Bulbs.Count) + If(Scores Is Nothing, 0, Scores.Count)
+            CanvasLayerPosition = Math.Max(0, Math.Min(visualCount, CanvasLayerPosition))
+            Dim dmdVisualCount As Integer = If(DMDBulbs Is Nothing, 0, DMDBulbs.Count) + If(DMDScores Is Nothing, 0, DMDScores.Count)
+            DMDCanvasLayerPosition = Math.Max(0, Math.Min(dmdVisualCount, DMDCanvasLayerPosition))
+        End Sub
+
+        ' Canvas divider of the backglass deck or of the DMD deck.
+        Public Function CanvasLayerPositionFor(ByVal isDMD As Boolean) As Integer
+            Return If(isDMD, DMDCanvasLayerPosition, CanvasLayerPosition)
+        End Function
+
+        Public Sub SetCanvasLayerPositionFor(ByVal isDMD As Boolean, ByVal value As Integer)
+            If isDMD Then
+                DMDCanvasLayerPosition = Math.Max(0, value)
+            Else
+                CanvasLayerPosition = Math.Max(0, value)
+            End If
+            NormalizeCanvasLayerPosition()
+        End Sub
+
+        Public Sub EnsureUnifiedLayerDeck()
+            EnsureUnifiedLayerDeck(Bulbs, Scores, True)
+            EnsureUnifiedLayerDeck(DMDBulbs, DMDScores, False)
+            UnifiedLayerDeck = True
+            NormalizeCanvasLayerPosition()
+        End Sub
+
+        Private Sub EnsureUnifiedLayerDeck(ByVal bulbs As Illumination.BulbCollection,
+                                           ByVal scores As ReelAndLED.ScoreCollection,
+                                           ByVal hasCanvas As Boolean)
+            Dim items As New List(Of Object)()
+            If bulbs IsNot Nothing Then
+                For Each bulb As Illumination.BulbInfo In bulbs
+                    items.Add(bulb)
+                Next
+            End If
+            If scores IsNot Nothing Then
+                For Each score As ReelAndLED.ScoreInfo In scores
+                    items.Add(score)
+                Next
+            End If
+            If items.Count = 0 Then Return
+
+            Dim validOrders As New Generic.HashSet(Of Integer)()
+            Dim complete As Boolean = True
+            For Each item As Object In items
+                Dim order As Integer = VisualLayerOrder(item)
+                If order < 0 OrElse Not validOrders.Add(order) Then complete = False
+            Next
+
+            Dim ordered As New List(Of Object)()
+            If complete Then
+                ordered.AddRange(items.OrderBy(Function(item) VisualLayerOrder(item)))
+            ElseIf items.All(Function(item) VisualLayerOrder(item) < 0) Then
+                ' One-time migration of a pre-unified project.  Preserve the
+                ' exact visible arrangement: scores were always in front and
+                ' CanvasLayerPosition counted only the final bulb entries.
+                items.Sort(Function(left As Object, right As Object)
+                               Dim result As Integer = VisualZ(right).CompareTo(VisualZ(left))
+                               If result <> 0 Then Return result
+                               Return LegacyStableVisualIndex(left, bulbs, scores).CompareTo(LegacyStableVisualIndex(right, bulbs, scores))
+                           End Function)
+                If hasCanvas AndAlso bulbs IsNot Nothing Then
+                    Dim below As New Generic.HashSet(Of Illumination.BulbInfo)()
+                    Dim legacyBelowCount As Integer = Math.Max(0, Math.Min(bulbs.Count, CanvasLayerPosition))
+                    For index As Integer = bulbs.Count - legacyBelowCount To bulbs.Count - 1
+                        If index >= 0 Then below.Add(bulbs(index))
+                    Next
+                    ordered.AddRange(items.Where(Function(item)
+                                                     Dim bulb As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+                                                     Return bulb Is Nothing OrElse Not below.Contains(bulb)
+                                                 End Function))
+                    ordered.AddRange(items.Where(Function(item)
+                                                     Dim bulb As Illumination.BulbInfo = TryCast(item, Illumination.BulbInfo)
+                                                     Return bulb IsNot Nothing AndAlso below.Contains(bulb)
+                                                 End Function))
+                Else
+                    ordered.AddRange(items)
+                End If
+            Else
+                ' New objects have no order yet.  Put only those new objects at
+                ' the front and retain every established deck relationship.
+                ordered.AddRange(items.Where(Function(item) VisualLayerOrder(item) < 0).
+                                       OrderByDescending(Function(item) VisualZ(item)).
+                                       ThenBy(Function(item) LegacyStableVisualIndex(item, bulbs, scores)))
+                ordered.AddRange(items.Where(Function(item) VisualLayerOrder(item) >= 0).
+                                       OrderBy(Function(item) VisualLayerOrder(item)).
+                                       ThenBy(Function(item) LegacyStableVisualIndex(item, bulbs, scores)))
+            End If
+
+            For index As Integer = 0 To ordered.Count - 1
+                SetVisualLayerOrder(ordered(index), index)
+            Next
+        End Sub
+
+        Private Shared Function VisualLayerOrder(ByVal item As Object) As Integer
+            If TypeOf item Is Illumination.BulbInfo Then Return DirectCast(item, Illumination.BulbInfo).LayerOrder
+            Return DirectCast(item, ReelAndLED.ScoreInfo).LayerOrder
+        End Function
+
+        Private Shared Sub SetVisualLayerOrder(ByVal item As Object, ByVal value As Integer)
+            If TypeOf item Is Illumination.BulbInfo Then
+                DirectCast(item, Illumination.BulbInfo).LayerOrder = value
+            Else
+                DirectCast(item, ReelAndLED.ScoreInfo).LayerOrder = value
+            End If
+        End Sub
+
+        Private Shared Function VisualZ(ByVal item As Object) As Integer
+            If TypeOf item Is Illumination.BulbInfo Then Return DirectCast(item, Illumination.BulbInfo).ZOrder
+            Return DirectCast(item, ReelAndLED.ScoreInfo).ZOrder
+        End Function
+
+        Private Shared Function LegacyStableVisualIndex(ByVal item As Object,
+                                                        ByVal bulbs As Illumination.BulbCollection,
+                                                        ByVal scores As ReelAndLED.ScoreCollection) As Integer
+            If TypeOf item Is Illumination.BulbInfo Then Return If(bulbs Is Nothing, Integer.MaxValue, bulbs.IndexOf(DirectCast(item, Illumination.BulbInfo)))
+            Return 1000000 + If(scores Is Nothing, Integer.MaxValue, scores.IndexOf(DirectCast(item, ReelAndLED.ScoreInfo)))
+        End Function
 
         Public Property Animations() As Animation.AnimationHeaderCollection = New Animation.AnimationHeaderCollection()
         'Public Property DMDAnimations() As Animation.AnimationHeaderCollection = New Animation.AnimationHeaderCollection()

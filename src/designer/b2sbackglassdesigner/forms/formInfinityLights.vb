@@ -634,8 +634,6 @@ Public Class formInfinityLights
         target.MaskShiftEdge = source.MaskShiftEdge
         target.InFrontOfGlobalMask = source.InFrontOfGlobalMask
         target.GlobalMaskLayerExplicit = source.GlobalMaskLayerExplicit
-        target.LightBehindCanvas = source.LightBehindCanvas
-        target.SnippitInfo.BehindCanvas = source.SnippitInfo.BehindCanvas
         target.GlowSpread = source.GlowSpread
         target.GlowSoftness = source.GlowSoftness
         target.GlowFalloff = source.GlowFalloff
@@ -1128,10 +1126,6 @@ Public Class formInfinityLights
         PreviewFit_Click(sender, e)
     End Sub
 
-    Private Sub Preview_Resize(ByVal sender As Object, ByVal e As EventArgs)
-        RefreshRenderedPreview()
-    End Sub
-
     Private Sub EndPreviewPan()
         previewIsPanning = False
         preview.Capture = False
@@ -1188,24 +1182,6 @@ Friend NotInheritable Class InfinityLightGenerator
             End If
         Next
         Return result
-    End Function
-
-    Friend Shared Function CreateBulbRowImage(ByVal canvasSize As Size,
-                                               ByVal ringBounds As Rectangle,
-                                               ByVal bulbCount As Integer,
-                                               ByVal diameter As Integer,
-                                               ByVal kelvin As Integer,
-                                               ByVal depthOpacity As Single) As Bitmap
-        Dim row As New Bitmap(canvasSize.Width, canvasSize.Height, PixelFormat.Format32bppArgb)
-        Using graphics As Graphics = Graphics.FromImage(row),
-              bulb As Bitmap = CreateBulbImage(diameter, kelvin, Color.White, depthOpacity, 800)
-            graphics.Clear(Color.Transparent)
-            graphics.SmoothingMode = SmoothingMode.AntiAlias
-            For Each point As PointF In PerimeterPoints(ringBounds, bulbCount)
-                graphics.DrawImage(bulb, point.X - diameter / 2.0F, point.Y - diameter / 2.0F, diameter, diameter)
-            Next
-        End Using
-        Return row
     End Function
 
     Friend Shared Function CreateStaticBulbLayer(ByVal canvasSize As Size,

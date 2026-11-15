@@ -6,6 +6,9 @@ Imports System.Windows.Forms
 
 Public Class Dream7Display
     Inherits Control
+
+    Public Property UnifiedLayerZOrder As Integer = 0
+    Public Property UnifiedLayerOverlay As Action(Of Control, PaintEventArgs) = Nothing
     Private SegmentNumbers As New Generic.List(Of SegmentNumber)
     Private ExtraSpacings As New Generic.Dictionary(Of Integer, Single)
 
@@ -350,8 +353,9 @@ Public Class Dream7Display
             Dim nBounds As RectangleF = GetBounds(oStyleMatrix)
             Dim oCorrectedMatrix As New Matrix
             If nScaleMode <> ScaleMode.Manual Then
-                Dim nScaleX As Single = (Me.Width + 3 - nOffsetWidth) / nBounds.Width
-                Dim nScaleY As Single = (Me.Height - 1) / nBounds.Height
+                Dim layoutSize As Size = DisplayLayoutSize()
+                Dim nScaleX As Single = (layoutSize.Width + 3 - nOffsetWidth) / nBounds.Width
+                Dim nScaleY As Single = (layoutSize.Height - 1) / nBounds.Height
                 If nScaleMode = ScaleMode.Zoom Then
                     nScaleY = Math.Min(nScaleX, nScaleY)
                     nScaleX = nScaleY
@@ -414,7 +418,13 @@ Public Class Dream7Display
 
     Private Sub SegmentNumberInvalidated(ByVal sender As Object, ByVal e As System.EventArgs)
         Dim oNumber As SegmentNumber = sender
-        Me.Invalidate(New Region(oNumber.Bounds))
+        ' A digit's bounds are in the flat layout; on a rotated or perspective
+        ' display it is drawn elsewhere, so repaint the whole display.
+        If scoreSlice IsNot Nothing Then
+            Me.Invalidate()
+        Else
+            Me.Invalidate(New Region(oNumber.Bounds))
+        End If
     End Sub
     Private Sub InitSegmentsStyle()
         InitMatrix(nShear, nScaleFactor, Mirrored)
@@ -437,35 +447,71 @@ Public Class Dream7Display
     End Sub
 
     Private Sub SegmentDisplay_SizeChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.SizeChanged
+        If scoreSlice IsNot Nothing Then scoreSlice.ApplyRegion(Me)
         InitSegmentsStyle()
     End Sub
+
+    ' B2S Pro: the display's place on a rotated/perspective score (Nothing = straight on).
+    Private scoreSlice As ScoreTransformState = Nothing
+
+    Friend Sub ApplyScoreTransform(ByVal displayQuad As PointF())
+        scoreSlice = New ScoreTransformState(displayQuad)
+        Me.Location = scoreSlice.Bounds.Location
+        Me.Size = scoreSlice.Bounds.Size
+        scoreSlice.ApplyRegion(Me)
+        InitSegmentsStyle()
+    End Sub
+
+    ' The size the digits are laid out in: the control, or the flat content of a transformed display.
+    Private Function DisplayLayoutSize() As Size
+        If scoreSlice IsNot Nothing Then Return scoreSlice.ContentSize(ClientSize)
+        Return Me.Size
+    End Function
 
 #End Region
 
 #Region "painting"
 
     Protected Overrides Sub OnPaint(ByVal e As System.Windows.Forms.PaintEventArgs)
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
-        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality
-        e.Graphics.CompositingMode = CompositingMode.SourceCopy
-        e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear
+        If scoreSlice IsNot Nothing Then
+            ' a transformed display is drawn flat, then fitted onto its quad. The
+            ' content is opaque like the screen buffer, so the glass and glow
+            ' (drawn with SourceCopy) keep their normal brightness.
+            Dim contentSize As Size = scoreSlice.ContentSize(ClientSize)
+            Using content As New Bitmap(contentSize.Width, contentSize.Height, Imaging.PixelFormat.Format32bppRgb)
+                Using contentGraphics As Graphics = Graphics.FromImage(content)
+                    PaintDisplay(contentGraphics, New Rectangle(Point.Empty, contentSize))
+                End Using
+                ScoreTransform.DrawWarped(e.Graphics, content, scoreSlice.Scaled(ClientSize))
+            End Using
+        Else
+            PaintDisplay(e.Graphics, e.ClipRectangle)
+        End If
+        e.Graphics.ResetTransform()
+        If UnifiedLayerOverlay IsNot Nothing Then UnifiedLayerOverlay.Invoke(Me, e)
+    End Sub
+
+    Private Sub PaintDisplay(ByVal graphics As Graphics, ByVal clipRectangle As Rectangle)
+        graphics.SmoothingMode = SmoothingMode.AntiAlias
+        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality
+        graphics.CompositingMode = CompositingMode.SourceCopy
+        graphics.InterpolationMode = InterpolationMode.HighQualityBilinear
         ' draw background
         If Me.DoubleBuffered Then
-            e.Graphics.Clear(Color.Black)
+            graphics.Clear(Color.Black)
         Else
-            e.Graphics.Transform = oMatrix
-            e.Graphics.FillRectangle(Brushes.Black, nBounds)
-            e.Graphics.ResetTransform()
+            graphics.Transform = oMatrix
+            graphics.FillRectangle(Brushes.Black, nBounds)
+            graphics.ResetTransform()
         End If
         For Each oNumber As SegmentNumber In SegmentNumbers
-            Dim oRegion As New Region(e.ClipRectangle)
+            Dim oRegion As New Region(clipRectangle)
             oRegion.Intersect(oNumber.Bounds)
-            If Not oRegion.IsEmpty(e.Graphics) Then
-                oNumber.Draw(e.Graphics)
+            If Not oRegion.IsEmpty(graphics) Then
+                oNumber.Draw(graphics)
             End If
-            'e.Graphics.DrawPath(Pens.Blue, oNumber.Bounds)
         Next
-        e.Graphics.ResetTransform()
+        graphics.ResetTransform()
     End Sub
 
     Protected Overrides Sub OnPaintBackground(ByVal pevent As System.Windows.Forms.PaintEventArgs)

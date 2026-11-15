@@ -20,6 +20,8 @@ Namespace Illumination
         Private Shared refinedInfinityMaskSmooth As Integer
         Private Shared refinedInfinityMaskFeather As Integer
         Private Shared refinedInfinityMaskShiftEdge As Integer
+        Private Shared refinedInfinityMaskEdgeSoftness As Integer
+        Private Shared refinedInfinityMaskOutwardDiffusion As Integer
 
         Public Event ReportProgress(ByVal sender As Object, ByVal e As LightsProgressEventArgs)
         Public Class LightsProgressEventArgs
@@ -52,113 +54,7 @@ Namespace Illumination
             End Get
         End Property
 
-        Public Event ImageIsRendered(ByVal sender As Object, ByVal e As ImageEventArgs)
-        Public Class ImageEventArgs
-            Inherits EventArgs
-
-            Public Image As Image = Nothing
-
-            Public Sub New(ByVal _image As Image)
-                Image = _image
-            End Sub
-        End Class
-
         Public Property factor() As Double = 1
-
-        Private newimage As Image = Nothing
-        Public ReadOnly Property Image() As Image
-            Get
-                Return newimage
-            End Get
-        End Property
-
-        Public Sub PrepareImage(currentimage As Image)
-            Static bulbcount As Integer = 0
-            If bulbs.Count > 0 AndAlso bulbcount <> bulbs.Count Then
-                bulbcount = bulbs.Count
-                newimage = New Bitmap(currentimage.Width, currentimage.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
-                lightcreation.MergeLayers(currentimage, newimage)
-                ClearImage()
-            End If
-        End Sub
-        Private Function GetBulbsBackToFront() As Generic.List(Of Illumination.BulbInfo)
-            Dim result As New Generic.List(Of Illumination.BulbInfo)()
-            If bulbs Is Nothing Then Return result
-            For Each bulb As Illumination.BulbInfo In bulbs
-                result.Add(bulb)
-            Next
-            result.Sort(Function(left As Illumination.BulbInfo, right As Illumination.BulbInfo)
-                            Dim compare As Integer = left.ZOrder.CompareTo(right.ZOrder)
-                            If compare <> 0 Then Return compare
-
-                            ' Objects may intentionally share a Z layer. The collection order
-                            ' is their tie-break order: lower collection indexes are visually
-                            ' farther forward, so draw higher indexes first (back to front).
-                            Dim leftIndex As Integer = bulbs.IndexOf(left)
-                            Dim rightIndex As Integer = bulbs.IndexOf(right)
-                            Return rightIndex.CompareTo(leftIndex)
-                        End Function)
-            Return result
-        End Function
-
-        Public Sub DrawImage(currentimage As Image, _
-                             Optional ByVal rominfofilter As String = "")
-            If bulbs.Count > 0 Then
-                newimage = New Bitmap(currentimage.Width, currentimage.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
-                Using gr As Graphics = Graphics.FromImage(newimage)
-                    gr.Clear(Color.Transparent)
-                    gr.SmoothingMode = SmoothingMode.HighQuality
-                    gr.TextRenderingHint = Drawing.Text.TextRenderingHint.AntiAliasGridFit
-                    For Each bulb As Illumination.BulbInfo In GetBulbsBackToFront()
-                        With bulb
-                            Dim getin As Boolean = (String.IsNullOrEmpty(rominfofilter) OrElse .RomInfo2String.Equals(rominfofilter))
-                            getin = getin AndAlso Not .IsImageSnippit
-                            If getin Then
-                                If Not String.IsNullOrEmpty(.Text) Then
-                                    Dim font As Font = New Font(.FontName, .FontSize, .FontStyle)
-                                    lightcreation.DrawLight(gr, New Rectangle(.Location, .Size), .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity)
-                                    font.Dispose()
-                                Else
-                                    lightcreation.DrawLight(gr, New Rectangle(.Location, .Size), , , , .IlluMode)
-                                End If
-                            End If
-                        End With
-                    Next
-                End Using
-                lightcreation.MergeLayers(currentimage, newimage)
-                Using gr As Graphics = Graphics.FromImage(newimage)
-                    For Each bulb As Illumination.BulbInfo In GetBulbsBackToFront()
-                        With bulb
-                            Dim getin As Boolean = (String.IsNullOrEmpty(rominfofilter) OrElse .RomInfo2String.Equals(rominfofilter))
-                            getin = (getin AndAlso .IsImageSnippit AndAlso .Image IsNot Nothing)
-                            If getin Then
-                                Dim brightness As Single = CSng(Math.Max(0, Math.Min(200, .SnippitInfo.Brightness)) / 100.0R)
-                                If brightness = 1.0F Then
-                                    gr.DrawImage(.Image, New Rectangle(.Location, .Size))
-                                Else
-                                    Using attributes As New ImageAttributes()
-                                        Dim matrix As New ColorMatrix()
-                                        matrix.Matrix00 = brightness
-                                        matrix.Matrix11 = brightness
-                                        matrix.Matrix22 = brightness
-                                        attributes.SetColorMatrix(matrix)
-                                        gr.DrawImage(.Image, New Rectangle(.Location, .Size), 0, 0, .Image.Width, .Image.Height, GraphicsUnit.Pixel, attributes)
-                                    End Using
-                                End If
-                            End If
-                        End With
-                    Next
-                End Using
-            Else
-                newimage = Nothing
-            End If
-        End Sub
-        Public Sub ClearImage()
-            If newimage IsNot Nothing Then
-                newimage.Dispose()
-                newimage = Nothing
-            End If
-        End Sub
 
         Private newimages As Generic.SortedList(Of Integer, ImageInfo) = New Generic.SortedList(Of Integer, ImageInfo)
         Public Class ImageInfo
@@ -258,76 +154,31 @@ Namespace Illumination
             Return adjusted
         End Function
 
-        ' A DirectB2S picture box is always displayed above the form background.
-        ' To represent a snippet physically behind transparent backglass artwork,
-        ' keep only the snippet pixels that fall beneath transparent/partially
-        ' transparent canvas pixels. The exported object stays local-sized and
-        ' never duplicates the full background, avoiding scaling seams.
-        Public Shared Function CreateCanvasClippedSnippet(ByVal source As Image,
-                                                          ByVal canvas As Image,
-                                                          ByVal absoluteRectangle As Rectangle,
-                                                          Optional ByVal preserveSourceResolution As Boolean = False) As Bitmap
-            If source Is Nothing OrElse canvas Is Nothing OrElse absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
-
-            Dim renderedSize As Size = If(preserveSourceResolution, source.Size, absoluteRectangle.Size)
-            Dim rendered As New Bitmap(renderedSize.Width, renderedSize.Height, PixelFormat.Format32bppArgb)
-            Dim canvasBitmap As Bitmap = TryCast(canvas, Bitmap)
-            Dim convertedCanvas As Bitmap = Nothing
+        ' Made Snippet already stores its Quick Selection result in the image's
+        ' own alpha channel. Refine that alpha directly when no separate full-
+        ' canvas selection mask exists. RGB pixels are copied unchanged.
+        Public Shared Function CreateAlphaRefinedSnippet(ByVal source As Image,
+                                                         ByVal maskRadius As Integer,
+                                                         ByVal maskSmooth As Integer,
+                                                         ByVal maskFeather As Integer,
+                                                         ByVal maskShiftEdge As Integer,
+                                                         ByVal maskEdgeSoftness As Integer,
+                                                         ByVal maskOutwardDiffusion As Integer) As Bitmap
+            If source Is Nothing OrElse source.Width <= 0 OrElse source.Height <= 0 Then Return Nothing
+            Dim refined As New Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb)
             Try
-                Using graphics As Graphics = Graphics.FromImage(rendered)
+                Using graphics As Graphics = Graphics.FromImage(refined)
                     graphics.Clear(Color.Transparent)
                     graphics.CompositingMode = CompositingMode.SourceCopy
-                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
-                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality
-                    graphics.DrawImage(source, New Rectangle(0, 0, rendered.Width, rendered.Height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel)
+                    ' Copy pixel-for-pixel; DrawImageUnscaled would rescale non-96-DPI images.
+                    graphics.DrawImage(source, New Rectangle(0, 0, source.Width, source.Height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel)
                 End Using
-                If canvasBitmap Is Nothing OrElse canvasBitmap.PixelFormat <> PixelFormat.Format32bppArgb Then
-                    convertedCanvas = New Bitmap(canvas.Width, canvas.Height, PixelFormat.Format32bppArgb)
-                    Using graphics As Graphics = Graphics.FromImage(convertedCanvas)
-                        graphics.Clear(Color.Transparent)
-                        graphics.CompositingMode = CompositingMode.SourceCopy
-                        graphics.DrawImage(canvas, New Rectangle(0, 0, canvas.Width, canvas.Height), 0, 0, canvas.Width, canvas.Height, GraphicsUnit.Pixel)
-                    End Using
-                    canvasBitmap = convertedCanvas
-                End If
-
-                Dim bounds As New Rectangle(0, 0, rendered.Width, rendered.Height)
-                Dim renderedData As BitmapData = rendered.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb)
-                Dim canvasBounds As New Rectangle(0, 0, canvasBitmap.Width, canvasBitmap.Height)
-                Dim canvasData As BitmapData = canvasBitmap.LockBits(canvasBounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
-                Try
-                    Dim renderedStride As Integer = Math.Abs(renderedData.Stride)
-                    Dim canvasStride As Integer = Math.Abs(canvasData.Stride)
-                    Dim renderedRaw(renderedStride * rendered.Height - 1) As Byte
-                    Dim canvasRaw(canvasStride * canvasBitmap.Height - 1) As Byte
-                    Marshal.Copy(renderedData.Scan0, renderedRaw, 0, renderedRaw.Length)
-                    Marshal.Copy(canvasData.Scan0, canvasRaw, 0, canvasRaw.Length)
-                    For y As Integer = 0 To rendered.Height - 1
-                        Dim renderedRow As Integer = If(renderedData.Stride >= 0, y, rendered.Height - 1 - y) * renderedStride
-                        Dim canvasY As Integer = absoluteRectangle.Y + CInt(Math.Floor(CDbl(y) * absoluteRectangle.Height / rendered.Height))
-                        For x As Integer = 0 To rendered.Width - 1
-                            Dim renderedPixel As Integer = renderedRow + x * 4
-                            Dim canvasX As Integer = absoluteRectangle.X + CInt(Math.Floor(CDbl(x) * absoluteRectangle.Width / rendered.Width))
-                            Dim transmission As Integer = 0
-                            If canvasX >= 0 AndAlso canvasY >= 0 AndAlso canvasX < canvasBitmap.Width AndAlso canvasY < canvasBitmap.Height Then
-                                Dim canvasRow As Integer = If(canvasData.Stride >= 0, canvasY, canvasBitmap.Height - 1 - canvasY) * canvasStride
-                                Dim canvasPixel As Integer = canvasRow + canvasX * 4
-                                transmission = 255 - CInt(canvasRaw(canvasPixel + 3))
-                            End If
-                            renderedRaw(renderedPixel + 3) = CByte((CInt(renderedRaw(renderedPixel + 3)) * transmission + 127) \ 255)
-                        Next
-                    Next
-                    Marshal.Copy(renderedRaw, 0, renderedData.Scan0, renderedRaw.Length)
-                Finally
-                    canvasBitmap.UnlockBits(canvasData)
-                    rendered.UnlockBits(renderedData)
-                End Try
-                Return rendered
+                ArtworkFlasherRenderer.RefineMaskBitmap(refined, maskRadius, maskSmooth, maskFeather, maskShiftEdge,
+                                                         maskEdgeSoftness, maskOutwardDiffusion)
+                Return refined
             Catch
-                rendered.Dispose()
+                refined.Dispose()
                 Return Nothing
-            Finally
-                If convertedCanvas IsNot Nothing Then convertedCanvas.Dispose()
             End Try
         End Function
 
@@ -342,7 +193,9 @@ Namespace Illumination
                                                              Optional ByVal maskRadius As Integer = 0,
                                                              Optional ByVal maskSmooth As Integer = 0,
                                                              Optional ByVal maskFeather As Integer = 0,
-                                                             Optional ByVal maskShiftEdge As Integer = 0) As Bitmap
+                                                             Optional ByVal maskShiftEdge As Integer = 0,
+                                                             Optional ByVal maskEdgeSoftness As Integer = 0,
+                                                             Optional ByVal maskOutwardDiffusion As Integer = 0) As Bitmap
             If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) OrElse
                absoluteRectangle.Width <= 0 OrElse absoluteRectangle.Height <= 0 Then Return Nothing
 
@@ -350,10 +203,12 @@ Namespace Illumination
             Dim rendered As New Bitmap(renderedSize.Width, renderedSize.Height, PixelFormat.Format32bppArgb)
             Dim maskBitmap As Bitmap = Nothing
             Try
-                Dim useLocalRefinedMask As Boolean = maskRadius <> 0 OrElse maskSmooth <> 0 OrElse maskFeather <> 0 OrElse maskShiftEdge <> 0
+                Dim useLocalRefinedMask As Boolean = maskRadius <> 0 OrElse maskSmooth <> 0 OrElse maskFeather <> 0 OrElse maskShiftEdge <> 0 OrElse
+                                                       maskEdgeSoftness <> 0 OrElse maskOutwardDiffusion <> 0
                 If useLocalRefinedMask Then
                     maskBitmap = GetCachedRefinedInfinityMask(selectionMaskData, absoluteRectangle, renderedSize,
-                                                              maskRadius, maskSmooth, maskFeather, maskShiftEdge)
+                                                              maskRadius, maskSmooth, maskFeather, maskShiftEdge,
+                                                              maskEdgeSoftness, maskOutwardDiffusion)
                 End If
 
                 If maskBitmap Is Nothing Then
@@ -381,9 +236,11 @@ Namespace Illumination
                         End Using
                         maskBitmap.Dispose()
                         maskBitmap = localMask
-                        ArtworkFlasherRenderer.RefineMaskBitmap(maskBitmap, maskRadius, maskSmooth, maskFeather, maskShiftEdge)
+                        ArtworkFlasherRenderer.RefineMaskBitmap(maskBitmap, maskRadius, maskSmooth, maskFeather, maskShiftEdge,
+                                                                 maskEdgeSoftness, maskOutwardDiffusion)
                         StoreRefinedInfinityMask(selectionMaskData, absoluteRectangle, renderedSize,
-                                                 maskRadius, maskSmooth, maskFeather, maskShiftEdge, maskBitmap)
+                                                 maskRadius, maskSmooth, maskFeather, maskShiftEdge,
+                                                 maskEdgeSoftness, maskOutwardDiffusion, maskBitmap)
                     End If
                 End If
 
@@ -444,7 +301,9 @@ Namespace Illumination
                                                              ByVal maskRadius As Integer,
                                                              ByVal maskSmooth As Integer,
                                                              ByVal maskFeather As Integer,
-                                                             ByVal maskShiftEdge As Integer) As Bitmap
+                                                             ByVal maskShiftEdge As Integer,
+                                                             ByVal maskEdgeSoftness As Integer,
+                                                             ByVal maskOutwardDiffusion As Integer) As Bitmap
             SyncLock refinedInfinityMaskSync
                 If refinedInfinityMask Is Nothing OrElse
                    Not refinedInfinityMaskRectangle.Equals(absoluteRectangle) OrElse
@@ -452,7 +311,9 @@ Namespace Illumination
                    refinedInfinityMaskRadius <> maskRadius OrElse
                    refinedInfinityMaskSmooth <> maskSmooth OrElse
                    refinedInfinityMaskFeather <> maskFeather OrElse
-                   refinedInfinityMaskShiftEdge <> maskShiftEdge Then Return Nothing
+                   refinedInfinityMaskShiftEdge <> maskShiftEdge OrElse
+                   refinedInfinityMaskEdgeSoftness <> maskEdgeSoftness OrElse
+                   refinedInfinityMaskOutwardDiffusion <> maskOutwardDiffusion Then Return Nothing
 
                 If Not Object.ReferenceEquals(refinedInfinityMaskData, selectionMaskData) AndAlso
                    Not String.Equals(refinedInfinityMaskData, selectionMaskData, StringComparison.Ordinal) Then Return Nothing
@@ -468,6 +329,8 @@ Namespace Illumination
                                                     ByVal maskSmooth As Integer,
                                                     ByVal maskFeather As Integer,
                                                     ByVal maskShiftEdge As Integer,
+                                                    ByVal maskEdgeSoftness As Integer,
+                                                    ByVal maskOutwardDiffusion As Integer,
                                                     ByVal mask As Bitmap)
             If mask Is Nothing Then Return
             SyncLock refinedInfinityMaskSync
@@ -480,6 +343,8 @@ Namespace Illumination
                 refinedInfinityMaskSmooth = maskSmooth
                 refinedInfinityMaskFeather = maskFeather
                 refinedInfinityMaskShiftEdge = maskShiftEdge
+                refinedInfinityMaskEdgeSoftness = maskEdgeSoftness
+                refinedInfinityMaskOutwardDiffusion = maskOutwardDiffusion
             End SyncLock
         End Sub
 
@@ -565,12 +430,8 @@ Namespace Illumination
                                             Dim lowerintensity As Integer = Math.Max(.Intensity - 2, 1)
                                             If .DodgeColor <> Nothing Then lowerintensity = 3
                                             'Dim lowerintensity As Integer = 1
-                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer)
-                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer), Nothing)
-                                            If .LightBehindCanvas Then
-                                                illuimage = ClipLightBehindCanvas(illuimage, currentimage, rectX)
-                                                offimage = ClipLightBehindCanvas(offimage, If(currentoffimage, currentimage), rectX)
-                                            End If
+                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer)
+                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer), Nothing)
                                             imageinfo = New ImageInfo(.ID, .Name, illuimage,
                                                                              offimage,
                                                                              rectX,
@@ -580,12 +441,8 @@ Namespace Illumination
                                             Dim lowerintensity As Integer = Math.Max(.Intensity - 2, 1)
                                             If .DodgeColor <> Nothing Then lowerintensity = 3
                                             'Dim lowerintensity As Integer = 1
-                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer)
-                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .LightBehindCanvas, .SeparateLightLayer), Nothing)
-                                            If .LightBehindCanvas Then
-                                                illuimage = ClipLightBehindCanvas(illuimage, currentimage, rectX)
-                                                offimage = ClipLightBehindCanvas(offimage, If(currentoffimage, currentimage), rectX)
-                                            End If
+                                            If illuimage Is Nothing Then illuimage = lightcreation.CreateOverlayImage(If(artworkBackdrop, currentimage), rect, rectX, .Intensity, .LightColor, .DodgeColor, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer)
+                                            Dim offimage As Image = If(currentoffimage IsNot Nothing, lightcreation.CreateOverlayImage(If(offArtworkBackdrop, currentoffimage), rect, rectX, lowerintensity, .LightColor, Nothing, "", Nothing, eTextAlignment.Center, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer), Nothing)
                                             imageinfo = New ImageInfo(.ID, .Name, illuimage,
                                                                              offimage,
                                                                              rectX,
@@ -601,10 +458,25 @@ Namespace Illumination
                                                                                                   If(isInfinity, .MaskRadius, 0),
                                                                                                   If(isInfinity, .MaskSmooth, 0),
                                                                                                   If(isInfinity, .MaskFeather, 0),
-                                                                                                  If(isInfinity, .MaskShiftEdge, 0))
+                                                                                                  If(isInfinity, .MaskShiftEdge, .SnippitInfo.MaskShiftEdge),
+                                                                                                  If(isInfinity, 0, .SnippitInfo.MaskEdgeSoftness),
+                                                                                                  If(isInfinity, 0, .SnippitInfo.MaskOutwardDiffusion))
                                         If maskedSnippet IsNot Nothing Then
                                             If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
                                             adjustedSnippet = maskedSnippet
+                                        End If
+                                    ElseIf .SnippitInfo.MaskShiftEdge <> 0 OrElse .SnippitInfo.MaskEdgeSoftness <> 0 OrElse
+                                           .SnippitInfo.MaskOutwardDiffusion <> 0 Then
+                                        Dim refinedSnippet As Image = CreateAlphaRefinedSnippet(adjustedSnippet,
+                                                                                               0,
+                                                                                               0,
+                                                                                               0,
+                                                                                               .SnippitInfo.MaskShiftEdge,
+                                                                                               .SnippitInfo.MaskEdgeSoftness,
+                                                                                               .SnippitInfo.MaskOutwardDiffusion)
+                                        If refinedSnippet IsNot Nothing Then
+                                            If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
+                                            adjustedSnippet = refinedSnippet
                                         End If
                                     End If
                                     If Not String.IsNullOrEmpty(.SnippitInfo.InfinityLightsGroup) AndAlso
@@ -613,13 +485,6 @@ Namespace Illumination
                                         If globallyMaskedSnippet IsNot Nothing Then
                                             If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
                                             adjustedSnippet = globallyMaskedSnippet
-                                        End If
-                                    End If
-                                    If .SnippitInfo.BehindCanvas Then
-                                        Dim clippedSnippet As Image = CreateCanvasClippedSnippet(adjustedSnippet, currentimage, rect)
-                                        If clippedSnippet IsNot Nothing Then
-                                            If Not Object.ReferenceEquals(adjustedSnippet, .Image) Then adjustedSnippet.Dispose()
-                                            adjustedSnippet = clippedSnippet
                                         End If
                                     End If
                                     If illuimage Is Nothing Then illuimage = adjustedSnippet
@@ -668,16 +533,6 @@ Namespace Illumination
             Next
             cache.Clear()
         End Sub
-
-        Private Shared Function ClipLightBehindCanvas(ByVal lightImage As Image,
-                                                       ByVal canvas As Image,
-                                                       ByVal absoluteRectangle As Rectangle) As Image
-            If lightImage Is Nothing OrElse canvas Is Nothing Then Return lightImage
-            Dim clipped As Bitmap = CreateCanvasClippedSnippet(lightImage, canvas, absoluteRectangle)
-            If clipped Is Nothing Then Return lightImage
-            lightImage.Dispose()
-            Return clipped
-        End Function
 
         Public Sub ClearImages()
             For i As Integer = newimages.Count - 1 To 0 Step -1

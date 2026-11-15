@@ -8,16 +8,40 @@ Public Class B2SLEDBox
 
     Inherits B2SBaseBox
 
+    Public Property UnifiedLayerZOrder As Integer = 0
+    Public Property UnifiedLayerOverlay As Action(Of Control, PaintEventArgs) = Nothing
+
     Private currentSeg As Generic.List(Of PointF()) = New Generic.List(Of PointF())
+
+    ' B2S Pro: this digit's slice of a rotated/perspective score (Nothing = straight on).
+    Private scoreSlice As ScoreTransformState = Nothing
+
+    ' Places this digit on its slice of the transformed score (design units).
+    Friend Sub ApplyScoreTransform(ByVal digitQuad As PointF())
+        scoreSlice = New ScoreTransformState(digitQuad)
+        Me.Location = scoreSlice.Bounds.Location
+        Me.Size = scoreSlice.Bounds.Size
+        scoreSlice.ApplyRegion(Me)
+        RecalculateSegments()
+    End Sub
 
     Protected Overrides Sub OnResize(e As System.EventArgs)
 
         ' base call
         MyBase.OnResize(e)
 
+        If scoreSlice IsNot Nothing Then scoreSlice.ApplyRegion(Me)
+        RecalculateSegments()
+
+    End Sub
+
+    Private Sub RecalculateSegments()
+
         ' resize the led segments and load it into the current segment array
-        Dim width As Single = Me.Width / B2SData.ledCoordMax
-        Dim height As Single = Me.Height / B2SData.ledCoordMax
+        ' (a transformed digit lays out at its flat content size)
+        Dim layoutSize As Size = If(scoreSlice IsNot Nothing, scoreSlice.ContentSize(ClientSize), Me.Size)
+        Dim width As Single = layoutSize.Width / B2SData.ledCoordMax
+        Dim height As Single = layoutSize.Height / B2SData.ledCoordMax
         currentSeg.Clear()
         For Each entry As PointF() In If(LEDType = B2SLED.eLEDType.LED10, B2SData.led10Seg, If(LEDType = B2SLED.eLEDType.LED14, B2SData.led14Seg, If(LEDType = B2SLED.eLEDType.LED16, B2SData.led16Seg, B2SData.led8Seg)))
             Dim scaled(entry.Length - 1) As PointF
@@ -48,24 +72,35 @@ Public Class B2SLEDBox
             darkbrush = New SolidBrush(DarkLEDSegmentColor)
         End If
 
-        ' draw LED segments
-        Dim width As Single = Me.Width / B2SData.ledCoordMax
-        Dim height As Single = Me.Height / B2SData.ledCoordMax
+        ' draw LED segments (a transformed digit is drawn flat, then fitted onto its slice)
+        If scoreSlice IsNot Nothing Then
+            Dim contentSize As Size = scoreSlice.ContentSize(ClientSize)
+            Using content As New Bitmap(contentSize.Width, contentSize.Height, Imaging.PixelFormat.Format32bppPArgb)
+                Using contentGraphics As Graphics = Graphics.FromImage(content)
+                    contentGraphics.Clear(Me.BackColor)
+                    DrawSegments(contentGraphics, litbrush, darkbrush)
+                End Using
+                ScoreTransform.DrawWarped(e.Graphics, content, scoreSlice.Scaled(ClientSize))
+            End Using
+        Else
+            DrawSegments(e.Graphics, litbrush, darkbrush)
+        End If
 
+        If UnifiedLayerOverlay IsNot Nothing Then UnifiedLayerOverlay.Invoke(Me, e)
+
+       
+    End Sub
+
+    Private Sub DrawSegments(ByVal graphics As Graphics, ByVal litbrush As SolidBrush, ByVal darkbrush As SolidBrush)
         ' set graphics' options
-        e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
-
-        ' draw LED segments
+        graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
         For i As Integer = 0 To currentSeg.Count - 1
             If (_Value And 2 ^ i) <> 0 Then
-                'e.Graphics.FillPolygon(glowingbrush, currentSeg(i))
-                'e.Graphics.DrawPolygon(litpen, currentSeg(i))
-                e.Graphics.FillPolygon(litbrush, currentSeg(i))
+                graphics.FillPolygon(litbrush, currentSeg(i))
             Else
-                e.Graphics.FillPolygon(darkbrush, currentSeg(i))
+                graphics.FillPolygon(darkbrush, currentSeg(i))
             End If
         Next
-       
     End Sub
 
     Public Sub New()

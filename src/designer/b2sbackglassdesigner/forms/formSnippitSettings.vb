@@ -5,7 +5,14 @@ Public Class formSnippitSettings
     Private WithEvents grpAppearance As GroupBox
     Private WithEvents trkBrightness As TrackBar
     Private WithEvents numericBrightness As NumericUpDown
-    Private WithEvents chkBehindCanvas As CheckBox
+    Private WithEvents grpMaskRefinement As GroupBox
+    Private WithEvents trkMaskShiftEdge As TrackBar
+    Private WithEvents numericMaskShiftEdge As NumericUpDown
+    Private WithEvents trkMaskEdgeSoftness As TrackBar
+    Private WithEvents numericMaskEdgeSoftness As NumericUpDown
+    Private WithEvents trkMaskOutwardDiffusion As TrackBar
+    Private WithEvents numericMaskOutwardDiffusion As NumericUpDown
+    Private lblMaskRefinementStatus As Label
     Private WithEvents grpAutomaticRotation As GroupBox
     Private WithEvents chkAutomaticRotation As CheckBox
     Private WithEvents radAutomaticRotationContinuous As RadioButton
@@ -26,15 +33,13 @@ Public Class formSnippitSettings
     Private lblAutomaticRotationMilliseconds As Label
 
     Private Shared activeDialog As formSnippitSettings = Nothing
-    Private ReadOnly diagnosticID As String = Guid.NewGuid().ToString("N").Substring(0, 8)
     Public ignoreChange As Boolean = False
 
     Private IsDirty As Boolean = False
     Private bulbID As Integer = -1
     Private revealCompletedLayout As Boolean = True
     Private ReadOnly previewBulbs As New Generic.List(Of Illumination.BulbInfo)()
-    Private ReadOnly originalBrightness As New Generic.Dictionary(Of Illumination.BulbInfo, Integer)()
-    Private ReadOnly originalBehindCanvas As New Generic.Dictionary(Of Illumination.BulbInfo, Boolean)()
+    Private syncingMaskControls As Boolean = False
     Private snippetLayoutRoot As TableLayoutPanel
     Private snippetLeftPanel As Panel
     Private snippetLeftContent As Panel
@@ -60,29 +65,19 @@ Public Class formSnippitSettings
     Public Sub New()
         InitializeComponent()
         BuildAppearanceSection()
+        BuildMaskRefinementSection()
         BuildAutomaticRotationSection()
-        TraceWindow("constructor after InitializeComponent")
 
         ' Build the complete resizable layout before B2SThemedForm applies the
         ' shared B2S window chrome during the first ShowDialog call. Applying
         ' the chrome before changing the legacy dialog to Sizable would leave
         ' both the native Windows frame and the B2S frame active.
         BuildSnippetManagedLayout()
-        TraceWindow("constructor after theme")
 
         ' Keep the already completed frame out of the compositor until its
         ' ShowDialog layout pass has also finished.
         Me.Opacity = 0.0R
-        AddHandler Me.LocationChanged, Sub() TraceWindow("LocationChanged")
-        AddHandler Me.SizeChanged, Sub() TraceWindow("SizeChanged")
-        AddHandler Me.VisibleChanged, Sub() TraceWindow("VisibleChanged")
         AddHandler Me.FormClosed, AddressOf SnippetSettings_FormClosed
-    End Sub
-
-    Private Sub TraceWindow(ByVal action As String)
-        Debug.WriteLine(String.Format("{0:HH:mm:ss.fff} id={1} {2} visible={3} opacity={4:0.00} bounds={5},{6},{7},{8}",
-                                      DateTime.Now, diagnosticID, action, Me.Visible, Me.Opacity,
-                                      Me.Left, Me.Top, Me.Width, Me.Height))
     End Sub
 
     Public Shadows Function ShowDialog(ByVal owner As IWin32Window,
@@ -91,7 +86,9 @@ Public Class formSnippitSettings
                                        ByRef snippittype As eSnippitType,
                                        ByRef zorder As Integer,
                                        ByRef brightness As Integer,
-                                       ByRef behindCanvas As Boolean,
+                                       ByRef maskEdgeSoftness As Integer,
+                                       ByRef maskOutwardDiffusion As Integer,
+                                       ByRef maskShiftEdge As Integer,
                                        ByRef mechid As Integer,
                                        ByRef rotatingsteps As Integer,
                                        ByRef rotatinginterval As Integer,
@@ -111,7 +108,6 @@ Public Class formSnippitSettings
         ' double-click message sequence. Enforce the single-window rule at the
         ' dialog itself so no caller can create a second visible instance.
         If activeDialog IsNot Nothing AndAlso Not activeDialog.IsDisposed Then
-            TraceWindow("ShowDialog refused; active=" & activeDialog.diagnosticID)
             If activeDialog.WindowState = FormWindowState.Minimized Then activeDialog.WindowState = FormWindowState.Normal
             activeDialog.BringToFront()
             activeDialog.Activate()
@@ -119,14 +115,11 @@ Public Class formSnippitSettings
         End If
 
         activeDialog = Me
-        TraceWindow("ShowDialog accepted")
 
         ignoreChange = True
         ' set starting values
         bulbID = id
         previewBulbs.Clear()
-        originalBrightness.Clear()
-        originalBehindCanvas.Clear()
         If multiSelection IsNot Nothing Then
             For Each candidate As Illumination.BulbInfo In multiSelection
                 If candidate IsNot Nothing AndAlso Not previewBulbs.Contains(candidate) Then previewBulbs.Add(candidate)
@@ -136,13 +129,11 @@ Public Class formSnippitSettings
             Dim selected As Illumination.BulbInfo = Backglass.currentTabPage.Mouse.SelectedBulb
             If selected IsNot Nothing AndAlso selected.ID = id AndAlso Not previewBulbs.Contains(selected) Then previewBulbs.Insert(0, selected)
         End If
-        For Each candidate As Illumination.BulbInfo In previewBulbs
-            originalBrightness(candidate) = Math.Max(0, Math.Min(200, candidate.SnippitInfo.Brightness))
-            originalBehindCanvas(candidate) = candidate.SnippitInfo.BehindCanvas
-        Next
         Dim primaryPreview As Illumination.BulbInfo = previewBulbs.FirstOrDefault(Function(candidate) candidate.ID = id)
         brightness = Math.Max(0, Math.Min(200, If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.Brightness, brightness)))
-        behindCanvas = If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.BehindCanvas, behindCanvas)
+        maskEdgeSoftness = Math.Max(0, Math.Min(300, If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.MaskEdgeSoftness, maskEdgeSoftness)))
+        maskOutwardDiffusion = Math.Max(0, Math.Min(300, If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.MaskOutwardDiffusion, maskOutwardDiffusion)))
+        maskShiftEdge = Math.Max(-100, Math.Min(100, If(primaryPreview IsNot Nothing, primaryPreview.SnippitInfo.MaskShiftEdge, maskShiftEdge)))
 
         Dim legacySelfRotation As Boolean = (snippittype = eSnippitType.SelfRotatingImage)
         Dim legacyMechanicalRotation As Boolean = (snippittype = eSnippitType.MechRotatingImage)
@@ -164,10 +155,15 @@ Public Class formSnippitSettings
         numericZOrder.Enabled = False
         lblZOrder.Text = "Z layer (managed in Layers):"
         numericZOrder.AccessibleDescription = "Use the Layers window to change stacking order."
+        ' Retired from view: the legacy Z value no longer controls stacking.
+        ' The value is still passed through unchanged.
+        lblZOrder.Visible = False
+        numericZOrder.Visible = False
         brightness = Math.Max(0, Math.Min(200, brightness))
         trkBrightness.Value = brightness
         numericBrightness.Value = brightness
-        chkBehindCanvas.Checked = behindCanvas
+        SetMaskRefinementValues(maskEdgeSoftness, maskOutwardDiffusion, maskShiftEdge)
+        SetMaskRefinementEnabled(primaryPreview IsNot Nothing AndAlso primaryPreview.Image IsNot Nothing)
         If mechid < numericMechID.Minimum OrElse mechid > numericMechID.Maximum Then mechid = numericMechID.Minimum
         numericMechID.Value = mechid
         If rotatingsteps < numericRotatingSteps.Minimum Then rotatingsteps = numericRotatingSteps.Minimum
@@ -205,10 +201,8 @@ Public Class formSnippitSettings
         ' open dialog
         Dim ret As DialogResult
         Try
-            TraceWindow("before MyBase.ShowDialog")
             ret = MyBase.ShowDialog(owner)
         Finally
-            TraceWindow("after MyBase.ShowDialog")
             If Object.ReferenceEquals(activeDialog, Me) Then activeDialog = Nothing
         End Try
         If ret = Windows.Forms.DialogResult.OK Then
@@ -217,12 +211,19 @@ Public Class formSnippitSettings
             snippittype = SelectedSnippetType()
             zorder = CInt(numericZOrder.Value)
             brightness = CInt(numericBrightness.Value)
-            behindCanvas = chkBehindCanvas.Checked
+            maskEdgeSoftness = CInt(numericMaskEdgeSoftness.Value)
+            maskOutwardDiffusion = CInt(numericMaskOutwardDiffusion.Value)
+            maskShiftEdge = CInt(numericMaskShiftEdge.Value)
             mechid = numericMechID.Value
             rotatingsteps = numericRotatingSteps.Value
             rotatinginterval = numericRotatingInterval.Value
             rotatingdirection = cmbRotatingDirection.SelectedIndex
-            rotationstopping = cmbRotationStopBehaviour.SelectedIndex
+            ' The stop-behaviour combo is shared: it edits the legacy rotation's
+            ' setting for self/mech rotating images and the one-image rotation's
+            ' setting otherwise. Write it back only to the field it was editing.
+            Dim selectedTypeOnOK As eSnippitType = SelectedSnippetType()
+            Dim editsLegacyStop As Boolean = (selectedTypeOnOK = eSnippitType.SelfRotatingImage OrElse selectedTypeOnOK = eSnippitType.MechRotatingImage)
+            If editsLegacyStop Then rotationstopping = cmbRotationStopBehaviour.SelectedIndex
             automaticRotationEnabled = (SelectedSnippetType() = eSnippitType.StandardImage AndAlso chkAutomaticRotation.Checked)
             automaticRotationContinuous = radAutomaticRotationContinuous.Checked
             automaticRotationTriggerID = If(radAutomaticRotationTriggered.Checked, CInt(numericAutomaticRotationTriggerID.Value), 0)
@@ -230,7 +231,7 @@ Public Class formSnippitSettings
             automaticRotationSteps = CInt(numericAutomaticRotationSteps.Value)
             automaticRotationInterval = CInt(numericAutomaticRotationInterval.Value)
             automaticRotationDirection = CType(cmbAutomaticRotationDirection.SelectedIndex, eSnippitRotationDirection)
-            automaticRotationStopBehaviour = CType(cmbRotationStopBehaviour.SelectedIndex, eSnippitRotationStopBehaviour)
+            If Not editsLegacyStop Then automaticRotationStopBehaviour = CType(cmbRotationStopBehaviour.SelectedIndex, eSnippitRotationStopBehaviour)
         End If
 
         Return ret
@@ -313,7 +314,6 @@ Public Class formSnippitSettings
         IsDirty = False
     End Sub
     Private Sub formSnippitSettings_Shown(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Shown
-        TraceWindow("Shown entered")
         IsDirty = False
         Me.PerformLayout()
         Me.Refresh()
@@ -325,7 +325,6 @@ Public Class formSnippitSettings
                     If Me.IsDisposed Then Return
                     Me.PerformLayout()
                     Me.Opacity = 1.0R
-                    TraceWindow("revealed")
                     Me.Activate()
                     txtName.Focus()
                 End Sub))
@@ -424,14 +423,133 @@ Public Class formSnippitSettings
             .Size = New Size(55, 21)
         }
         Dim lblPercent As New Label With {.Text = "%", .AutoSize = True, .Location = New Point(378, 27)}
-        chkBehindCanvas = New AutomaticRotationStatusCheckBox With {
-            .Name = "chkBehindCanvas",
-            .Text = "Place snippet behind the backglass canvas",
-            .AutoSize = True,
-            .Location = New Point(132, 57)
-        }
-        grpAppearance.Controls.AddRange(New Control() {lblBrightness, trkBrightness, numericBrightness, lblPercent, chkBehindCanvas})
+        grpAppearance.Controls.AddRange(New Control() {lblBrightness, trkBrightness, numericBrightness, lblPercent})
         Controls.Add(grpAppearance)
+    End Sub
+
+    Private Sub BuildMaskRefinementSection()
+        grpMaskRefinement = New GroupBox With {
+            .Name = "grpMaskRefinement",
+            .Text = "Snippet mask refinement",
+            .Size = New Size(grpRotating.Width, 155),
+            .TabStop = False
+        }
+
+        CreateMaskEditor(grpMaskRefinement, "Edge Softness", 12, 23, 0, 300, trkMaskEdgeSoftness, numericMaskEdgeSoftness)
+        CreateMaskEditor(grpMaskRefinement, "Outward Diffusion", 260, 23, 0, 300, trkMaskOutwardDiffusion, numericMaskOutwardDiffusion)
+        CreateMaskEditor(grpMaskRefinement, "Shift Edge", 12, 76, -100, 100, trkMaskShiftEdge, numericMaskShiftEdge)
+
+        lblMaskRefinementStatus = New Label With {
+            .Name = "lblMaskRefinementStatus",
+            .Text = "Snippet alpha only; source color and brightness stay unchanged.",
+            .AutoSize = False,
+            .Location = New Point(16, 128),
+            .Size = New Size(grpMaskRefinement.Width - 32, 20),
+            .ForeColor = Color.Gainsboro
+        }
+        grpMaskRefinement.Controls.Add(lblMaskRefinementStatus)
+        Controls.Add(grpMaskRefinement)
+    End Sub
+
+    Private Sub CreateMaskEditor(ByVal parent As Control,
+                                 ByVal caption As String,
+                                 ByVal left As Integer,
+                                 ByVal top As Integer,
+                                 ByVal minimum As Integer,
+                                 ByVal maximum As Integer,
+                                 ByRef track As TrackBar,
+                                 ByRef number As NumericUpDown)
+        Dim label As New Label With {
+            .Text = caption,
+            .AutoSize = False,
+            .Location = New Point(left, top),
+            .Size = New Size(185, 18),
+            .TextAlign = ContentAlignment.MiddleLeft
+        }
+        track = New TrackBar With {
+            .Minimum = minimum,
+            .Maximum = maximum,
+            .Value = 0,
+            .TickStyle = TickStyle.None,
+            .SmallChange = 1,
+            .LargeChange = Math.Max(1, (maximum - minimum) \ 20),
+            .AutoSize = False,
+            .Location = New Point(left, top + 20),
+            .Size = New Size(132, 26)
+        }
+        number = New NumericUpDown With {
+            .Minimum = minimum,
+            .Maximum = maximum,
+            .Value = 0,
+            .Increment = 1,
+            .Location = New Point(left + 137, top + 21),
+            .Size = New Size(55, 21)
+        }
+        parent.Controls.Add(label)
+        parent.Controls.Add(track)
+        parent.Controls.Add(number)
+    End Sub
+
+    Private Sub SetMaskRefinementValues(ByVal edgeSoftness As Integer,
+                                        ByVal outwardDiffusion As Integer,
+                                        ByVal shiftEdge As Integer)
+        syncingMaskControls = True
+        Try
+            SetMaskPairValue(trkMaskEdgeSoftness, numericMaskEdgeSoftness, edgeSoftness)
+            SetMaskPairValue(trkMaskOutwardDiffusion, numericMaskOutwardDiffusion, outwardDiffusion)
+            SetMaskPairValue(trkMaskShiftEdge, numericMaskShiftEdge, shiftEdge)
+        Finally
+            syncingMaskControls = False
+        End Try
+    End Sub
+
+    Private Shared Sub SetMaskPairValue(ByVal track As TrackBar,
+                                        ByVal number As NumericUpDown,
+                                        ByVal value As Integer)
+        value = Math.Max(track.Minimum, Math.Min(track.Maximum, value))
+        track.Value = value
+        number.Value = value
+    End Sub
+
+    Private Sub SetMaskRefinementEnabled(ByVal enabled As Boolean)
+        For Each control As Control In grpMaskRefinement.Controls
+            If control IsNot lblMaskRefinementStatus Then control.Enabled = enabled
+        Next
+        lblMaskRefinementStatus.Text = If(enabled,
+            "Snippet alpha only; source color and brightness stay unchanged.",
+            "The selected snippet does not contain an image.")
+    End Sub
+
+    Private Sub MaskTrackChanged(ByVal sender As Object, ByVal e As EventArgs) Handles trkMaskShiftEdge.ValueChanged, trkMaskEdgeSoftness.ValueChanged, trkMaskOutwardDiffusion.ValueChanged
+        If syncingMaskControls Then Return
+        syncingMaskControls = True
+        Try
+            If sender Is trkMaskShiftEdge Then numericMaskShiftEdge.Value = trkMaskShiftEdge.Value
+            If sender Is trkMaskEdgeSoftness Then numericMaskEdgeSoftness.Value = trkMaskEdgeSoftness.Value
+            If sender Is trkMaskOutwardDiffusion Then numericMaskOutwardDiffusion.Value = trkMaskOutwardDiffusion.Value
+        Finally
+            syncingMaskControls = False
+        End Try
+        MaskRefinementChanged()
+    End Sub
+
+    Private Sub MaskNumberChanged(ByVal sender As Object, ByVal e As EventArgs) Handles numericMaskShiftEdge.ValueChanged, numericMaskEdgeSoftness.ValueChanged, numericMaskOutwardDiffusion.ValueChanged
+        If syncingMaskControls Then Return
+        syncingMaskControls = True
+        Try
+            If sender Is numericMaskShiftEdge Then trkMaskShiftEdge.Value = CInt(numericMaskShiftEdge.Value)
+            If sender Is numericMaskEdgeSoftness Then trkMaskEdgeSoftness.Value = CInt(numericMaskEdgeSoftness.Value)
+            If sender Is numericMaskOutwardDiffusion Then trkMaskOutwardDiffusion.Value = CInt(numericMaskOutwardDiffusion.Value)
+        Finally
+            syncingMaskControls = False
+        End Try
+        MaskRefinementChanged()
+    End Sub
+
+    Private Sub MaskRefinementChanged()
+        If ignoreChange Then Return
+        IsDirty = True
+        QueueSnippetPreview()
     End Sub
 
     Private Sub BrightnessTrackChanged(sender As Object, e As EventArgs) Handles trkBrightness.ValueChanged
@@ -457,16 +575,6 @@ Public Class formSnippitSettings
         ' Appearance changes remain local to this dialog until Save & Close.
         ' RefreshSnippetPreviewSource temporarily applies the pending values
         ' only while composing the embedded preview, then restores the model.
-        QueueSnippetPreview()
-    End Sub
-
-    Private Sub BehindCanvasChanged(sender As Object, e As EventArgs) Handles chkBehindCanvas.CheckedChanged
-        If ignoreChange Then Return
-        IsDirty = True
-        ApplyBehindCanvasPreview(chkBehindCanvas.Checked)
-    End Sub
-
-    Private Sub ApplyBehindCanvasPreview(ByVal value As Boolean)
         QueueSnippetPreview()
     End Sub
 
@@ -616,7 +724,7 @@ Public Class formSnippitSettings
 
         Text = "Snippet"
         ClientSize = New Size(1260, 780)
-        MinimumSize = New Size(1080, 700)
+        MinimumSize = New Size(1180, 700)
         MaximumSize = Size.Empty
         FormBorderStyle = FormBorderStyle.Sizable
         MaximizeBox = True
@@ -634,7 +742,7 @@ Public Class formSnippitSettings
             .Margin = Padding.Empty,
             .BackColor = background
         }
-        snippetLayoutRoot.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 475.0F))
+        snippetLayoutRoot.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 555.0F))
         snippetLayoutRoot.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
         snippetLayoutRoot.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
 
@@ -646,7 +754,7 @@ Public Class formSnippitSettings
         }
         snippetLeftContent = New Panel With {
             .Location = Point.Empty,
-            .Size = New Size(460, 560),
+            .Size = New Size(540, 560),
             .Anchor = AnchorStyles.Top Or AnchorStyles.Left,
             .BackColor = background
         }
@@ -681,18 +789,23 @@ Public Class formSnippitSettings
             .Left = 11, .Top = 43, .Width = 440, .Height = 38,
             .ForeColor = Color.Gainsboro
         }
-        grpAppearance.SetBounds(10, 88, 440, grpAppearance.Height)
+        grpAppearance.SetBounds(10, 88, 520, grpAppearance.Height)
         grpAppearance.ForeColor = accent
         grpAppearance.BackColor = panelColor
-        grpAutomaticRotation.SetBounds(10, grpAppearance.Bottom + 8, 440, grpAutomaticRotation.Height)
+        grpMaskRefinement.SetBounds(10, grpAppearance.Bottom + 8, 520, grpMaskRefinement.Height)
+        grpMaskRefinement.ForeColor = accent
+        grpMaskRefinement.BackColor = panelColor
+        lblMaskRefinementStatus.Width = grpMaskRefinement.Width - 32
+        grpAutomaticRotation.SetBounds(10, grpMaskRefinement.Bottom + 8, 520, grpAutomaticRotation.Height)
         grpAutomaticRotation.ForeColor = accent
         grpAutomaticRotation.BackColor = panelColor
 
         snippetLeftContent.Controls.Add(title)
         snippetLeftContent.Controls.Add(description)
         snippetLeftContent.Controls.Add(grpAppearance)
+        snippetLeftContent.Controls.Add(grpMaskRefinement)
         snippetLeftContent.Controls.Add(grpAutomaticRotation)
-        snippetLeftContent.Size = New Size(460, grpAutomaticRotation.Bottom + 20)
+        snippetLeftContent.Size = New Size(540, grpAutomaticRotation.Bottom + 20)
         snippetLeftPanel.Controls.Add(snippetLeftContent)
         snippetLeftPanel.AutoScrollMinSize = snippetLeftContent.Size
 
@@ -838,44 +951,102 @@ Public Class formSnippitSettings
 
     Private Sub RefreshSnippetPreviewSource()
         If snippetPreviewBox Is Nothing Then Return
-        Dim canvas As B2SPictureBox = If(Backglass.currentTabPage IsNot Nothing, Backglass.currentTabPage.CurrentPictureBox, Nothing)
-        If canvas Is Nothing Then
-            snippetPreviewStatus.Text = "No backglass image is available for preview."
-            SetSnippetPreviewImage(Nothing)
-            Return
-        End If
-
-        Dim rendered As Bitmap = Nothing
         Dim pendingBrightness As Integer = Math.Max(0, Math.Min(200, CInt(numericBrightness.Value)))
-        Dim pendingBehindCanvas As Boolean = chkBehindCanvas.Checked
+        Dim pendingMaskShiftEdge As Integer = CInt(numericMaskShiftEdge.Value)
+        Dim pendingMaskEdgeSoftness As Integer = CInt(numericMaskEdgeSoftness.Value)
+        Dim pendingMaskOutwardDiffusion As Integer = CInt(numericMaskOutwardDiffusion.Value)
+
+        Dim previewImages As New Generic.Dictionary(Of Illumination.BulbInfo, Bitmap)()
+        Dim unionBounds As Rectangle = Rectangle.Empty
         Try
-            ' Compose the pending appearance values in the embedded preview
-            ' without changing the live Designer canvas or committing project
-            ' data. Every model value is restored before this method returns.
             For Each previewBulb As Illumination.BulbInfo In previewBulbs
-                previewBulb.SnippitInfo.Brightness = pendingBrightness
-                previewBulb.SnippitInfo.BehindCanvas = pendingBehindCanvas
-                previewBulb.IsIlluminatedImageDirty = True
+                If previewBulb Is Nothing OrElse previewBulb.Image Is Nothing Then Continue For
+                Dim previewImage As Bitmap = CreatePendingSnippetPreviewImage(previewBulb,
+                                                                               pendingBrightness,
+                                                                               pendingMaskShiftEdge,
+                                                                               pendingMaskEdgeSoftness,
+                                                                               pendingMaskOutwardDiffusion)
+                If previewImage Is Nothing Then Continue For
+                previewImages(previewBulb) = previewImage
+                Dim placement As New Rectangle(previewBulb.Location, previewBulb.Size)
+                If placement.Width <= 0 OrElse placement.Height <= 0 Then placement.Size = previewImage.Size
+                unionBounds = If(unionBounds.IsEmpty, placement, Rectangle.Union(unionBounds, placement))
             Next
-            rendered = canvas.CreateLayeredPreviewImage()
+
+            If previewImages.Count = 0 OrElse unionBounds.Width <= 0 OrElse unionBounds.Height <= 0 Then
+                snippetPreviewStatus.Text = "No selected snippet image is available for preview."
+                If snippetPreviewSource IsNot Nothing Then snippetPreviewSource.Dispose() : snippetPreviewSource = Nothing
+                SetSnippetPreviewImage(Nothing)
+                Return
+            End If
+
+            Dim rendered As Bitmap
+            If previewImages.Count = 1 Then
+                rendered = New Bitmap(previewImages.Values.First())
+            Else
+                rendered = New Bitmap(unionBounds.Width, unionBounds.Height, Imaging.PixelFormat.Format32bppArgb)
+                Using graphics As Graphics = Graphics.FromImage(rendered)
+                    graphics.Clear(Color.Transparent)
+                    graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+                    graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                    graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                    For Each previewBulb As Illumination.BulbInfo In previewBulbs
+                        If Not previewImages.ContainsKey(previewBulb) Then Continue For
+                        Dim placement As New Rectangle(previewBulb.Location.X - unionBounds.X,
+                                                       previewBulb.Location.Y - unionBounds.Y,
+                                                       previewBulb.Size.Width,
+                                                       previewBulb.Size.Height)
+                        If placement.Width <= 0 OrElse placement.Height <= 0 Then placement.Size = previewImages(previewBulb).Size
+                        graphics.DrawImage(previewImages(previewBulb), placement)
+                    Next
+                End Using
+            End If
+
+            If snippetPreviewSource IsNot Nothing Then snippetPreviewSource.Dispose()
+            snippetPreviewSource = rendered
+            snippetPreviewStatus.Text = If(previewImages.Count > 1,
+                                           "Live preview — selected snippets only (" & previewImages.Count.ToString() & ")",
+                                           "Live preview — selected snippet only")
+            RefreshSnippetPreviewImage()
         Finally
-            For Each previewBulb As Illumination.BulbInfo In previewBulbs
-                If originalBrightness.ContainsKey(previewBulb) Then previewBulb.SnippitInfo.Brightness = originalBrightness(previewBulb)
-                If originalBehindCanvas.ContainsKey(previewBulb) Then previewBulb.SnippitInfo.BehindCanvas = originalBehindCanvas(previewBulb)
-                previewBulb.IsIlluminatedImageDirty = True
+            For Each previewImage As Bitmap In previewImages.Values
+                previewImage.Dispose()
             Next
         End Try
-        If rendered Is Nothing Then
-            snippetPreviewStatus.Text = "The snippet preview could not be rendered."
-            Return
-        End If
-        If snippetPreviewSource IsNot Nothing Then snippetPreviewSource.Dispose()
-        snippetPreviewSource = rendered
-        snippetPreviewStatus.Text = If(previewBulbs.Count > 1,
-                                       "Live preview — " & previewBulbs.Count.ToString() & " selected snippets",
-                                       "Live preview — selected snippet")
-        RefreshSnippetPreviewImage()
     End Sub
+
+    Private Function CreatePendingSnippetPreviewImage(ByVal previewBulb As Illumination.BulbInfo,
+                                                      ByVal brightness As Integer,
+                                                      ByVal maskShiftEdge As Integer,
+                                                      ByVal maskEdgeSoftness As Integer,
+                                                      ByVal maskOutwardDiffusion As Integer) As Bitmap
+        Dim adjusted As Image = Illumination.Lights.CreateBrightnessAdjustedSnippet(previewBulb.Image, brightness)
+        Dim ownsAdjusted As Boolean = Not Object.ReferenceEquals(adjusted, previewBulb.Image)
+        Try
+            If Not String.IsNullOrEmpty(previewBulb.SelectionMaskData) Then
+                Dim isInfinity As Boolean = Not String.IsNullOrEmpty(previewBulb.SnippitInfo.InfinityLightsGroup)
+                Return Illumination.Lights.CreateSelectionMaskedSnippet(adjusted,
+                                                                        previewBulb.SelectionMaskData,
+                                                                        New Rectangle(previewBulb.Location, previewBulb.Size),
+                                                                        True,
+                                                                        If(isInfinity, previewBulb.MaskRadius, 0),
+                                                                        If(isInfinity, previewBulb.MaskSmooth, 0),
+                                                                        If(isInfinity, previewBulb.MaskFeather, 0),
+                                                                        If(isInfinity, previewBulb.MaskShiftEdge, maskShiftEdge),
+                                                                        If(isInfinity, 0, maskEdgeSoftness),
+                                                                        If(isInfinity, 0, maskOutwardDiffusion))
+            End If
+            Return Illumination.Lights.CreateAlphaRefinedSnippet(adjusted,
+                                                                 0,
+                                                                 0,
+                                                                 0,
+                                                                 maskShiftEdge,
+                                                                 maskEdgeSoftness,
+                                                                 maskOutwardDiffusion)
+        Finally
+            If ownsAdjusted Then adjusted.Dispose()
+        End Try
+    End Function
 
     Private Sub RefreshSnippetPreviewImage()
         If snippetPreviewBox Is Nothing Then Return
@@ -895,7 +1066,17 @@ Public Class formSnippitSettings
         Dim drawHeight As Integer = Math.Max(1, CInt(Math.Round(source.Height * scale)))
         Dim result As New Bitmap(canvasSize.Width, canvasSize.Height, Imaging.PixelFormat.Format32bppArgb)
         Using graphics As Graphics = Graphics.FromImage(result)
-            graphics.Clear(Color.FromArgb(11, 12, 13))
+            graphics.Clear(Color.FromArgb(20, 21, 23))
+            Const checkerSize As Integer = 16
+            Using lightSquare As New SolidBrush(Color.FromArgb(43, 45, 48)),
+                  darkSquare As New SolidBrush(Color.FromArgb(28, 30, 33))
+                For y As Integer = 0 To canvasSize.Height - 1 Step checkerSize
+                    For x As Integer = 0 To canvasSize.Width - 1 Step checkerSize
+                        graphics.FillRectangle(If(((x \ checkerSize) + (y \ checkerSize)) Mod 2 = 0, lightSquare, darkSquare),
+                                               x, y, checkerSize, checkerSize)
+                    Next
+                Next
+            End Using
             graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
             graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
             graphics.CompositingQuality = Drawing2D.CompositingQuality.HighQuality
@@ -1066,7 +1247,10 @@ Public Class formSnippitSettings
                     If .ShowDialog(Me) = DialogResult.OK Then
                         Backglass.currentImages.RemoveByTypeAndName(Images.eImageInfoType.IlluminationSnippits, bulb.Name)
 
-                        bulb.Image = Bitmap.FromFile(.FileName).Copy(True)
+                        ' Copy the pixels and release the file so it is not left locked.
+                        Using loaded As Image = Bitmap.FromFile(.FileName)
+                            bulb.Image = loaded.Copy(True)
+                        End Using
                         bulb.Name = IO.Path.GetFileNameWithoutExtension(.FileName)
                         bulb.Size.Width = bulb.Image.Width
                         bulb.Size.Height = bulb.Image.Height
@@ -1075,6 +1259,7 @@ Public Class formSnippitSettings
                         imageInfo.Text = bulb.Name
                         imageInfo.Image = bulb.Image
                         Backglass.currentImages.Insert(Images.eImageInfoType.Title4IlluminationSnippits, imageInfo)
+                        If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
 
                         B2SBackglassDesigner.formDesigner.RefreshImageInfoList()
                         QueueSnippetPreview()
@@ -1098,7 +1283,9 @@ Public Class formSnippitSettings
 
             If trim_rect.X > 0 Or trim_rect.Y > 0 Or trim_rect.Width < selected_bulb.Image.Width Or trim_rect.Height < selected_bulb.Image.Height Then
                 Dim trimmed As New Bitmap(trim_rect.Width, trim_rect.Height, selected_bulb.Image.PixelFormat)
-                Graphics.FromImage(trimmed).DrawImage(selected_bulb.Image, New Rectangle(0, 0, trimmed.Width, trimmed.Height), trim_rect, System.Drawing.GraphicsUnit.Pixel)
+                Using trimGraphics As Graphics = Graphics.FromImage(trimmed)
+                    trimGraphics.DrawImage(selected_bulb.Image, New Rectangle(0, 0, trimmed.Width, trimmed.Height), trim_rect, System.Drawing.GraphicsUnit.Pixel)
+                End Using
 
                 For Each bulb As Illumination.BulbInfo In Backglass.currentBulbs
                     If bulb.Name = selected_bulb.Name Then
@@ -1110,6 +1297,7 @@ Public Class formSnippitSettings
                 Next
 
                 Backglass.currentImages.SetNewImage(Images.eImageInfoType.IlluminationSnippits, selected_bulb.Name, selected_bulb.Image)
+                If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
                 B2SBackglassDesigner.formDesigner.RefreshImageInfoList()
                 QueueSnippetPreview()
             End If

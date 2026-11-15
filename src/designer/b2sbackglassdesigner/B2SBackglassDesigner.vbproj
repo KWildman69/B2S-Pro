@@ -436,7 +436,6 @@
     <None Include="Resources\save.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\imagemarker.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\close.png" />
@@ -457,10 +456,8 @@
     <None Include="Resources\info_2.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\imagesize.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\imagefile.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\saveas.png" />
@@ -493,16 +490,13 @@
     <None Include="Resources\marker.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\save_black.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\saa.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\marker_bulb.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\marker_text.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\chooseback3.png" />
@@ -586,7 +580,6 @@
     <None Include="Resources\led_small.png" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\help2.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\EMR_T6_9.png" />
@@ -657,7 +650,6 @@
     <Content Include="Resources\Codefiles\SegmentDisplay.vb.txt" />
     <Content Include="Resources\Codefiles\Segment.vb.txt" />
     <None Include="Resources\marker_reel4.png" />
-    <None Include="Resources\marker_reel3.png" />
     <None Include="Resources\EMR_T3_Empty.jpg" />
     <None Include="Resources\EMR_T3_9.jpg" />
     <None Include="Resources\EMR_T3_8.jpg" />
@@ -791,12 +783,6 @@
     <None Include="Resources\copy2.png" />
     <None Include="Resources\cut2.png" />
     <None Include="Resources\paste2.png" />
-    <None Include="Resources\check_checked.png" />
-    <None Include="Resources\check_checked_S.png" />
-    <None Include="Resources\check_default.png" />
-    <None Include="Resources\check_default_S.png" />
-    <None Include="Resources\check_disabled.png" />
-    <None Include="Resources\check_disabled_checked.png" />
     <Content Include="Resources\Codefiles\formDMD.designer.vb.txt" />
     <Content Include="Resources\Codefiles\formDMD.resx.txt" />
     <Content Include="Resources\Codefiles\Resources.Designer.vb.txt" />
@@ -805,7 +791,6 @@
     <Content Include="Resources\Codefiles\Resources.resx.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\save2.png" />
     <Content Include="Resources\Codefiles\Settings.Designer.vb.txt" />
   </ItemGroup>
   <ItemGroup>

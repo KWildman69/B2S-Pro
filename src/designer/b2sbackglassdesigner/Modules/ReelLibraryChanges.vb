@@ -101,7 +101,11 @@ Public Module ReelLibraryChanges
     End Sub
 
     Public Function KeepDigitAspect(score As ReelAndLED.ScoreInfo) As Boolean
-        Return score.KeepDigitAspect OrElse IsProportionalImageSet(score.ReelType)
+        If score Is Nothing Then Return False
+        Dim reelType As String = If(score.ReelType, String.Empty)
+        Dim mechanicalReel As Boolean = reelType.StartsWith("EMR_", StringComparison.OrdinalIgnoreCase) OrElse
+                                        reelType.StartsWith("ImportedEMR_", StringComparison.OrdinalIgnoreCase)
+        Return score.KeepDigitAspect OrElse mechanicalReel OrElse IsProportionalImageSet(reelType)
     End Function
 
     Public Function ResizeScoreReel(image As Image, size As Size, score As ReelAndLED.ScoreInfo) As Image

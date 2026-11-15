@@ -606,67 +606,6 @@ Public Module B2SProMainToolbar
             End Using
         End Sub
 
-        Private Sub DrawCommandGroupTitle(graphics As Graphics,
-                                          groupBounds As Rectangle,
-                                          title As String,
-                                          accent As Color)
-            If String.IsNullOrWhiteSpace(title) Then Return
-
-            Using titleFont As New Font("Segoe UI Semibold", 7.0F, FontStyle.Bold)
-                Dim titleSize As Size = TextRenderer.MeasureText(title, titleFont)
-                Dim titleBounds As New Rectangle(groupBounds.Left + 10,
-                                                 Math.Max(1, groupBounds.Top - 7),
-                                                 titleSize.Width + 10,
-                                                 titleSize.Height)
-                Using titleBack As New SolidBrush(Color.FromArgb(1, 3, 6))
-                    graphics.FillRectangle(titleBack, titleBounds)
-                End Using
-                TextRenderer.DrawText(graphics,
-                                      title,
-                                      titleFont,
-                                      titleBounds,
-                                      accent,
-                                      TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
-            End Using
-        End Sub
-
-        Private Function CommandGroupTitle(strip As ToolStrip,
-                                           firstIndex As Integer,
-                                           lastIndex As Integer,
-                                           group As B2SProUIFoundation.CommandGroup) As String
-            Dim key As New System.Text.StringBuilder()
-            For index As Integer = firstIndex To lastIndex
-                Dim item As ToolStripItem = strip.Items(index)
-                key.Append(" ").Append(item.Name).Append(" ").Append(item.Text)
-            Next
-
-            Dim names As String = key.ToString().ToLowerInvariant()
-            If names.Contains("help") Then Return "TOOLS"
-            If names.Contains("illumination") OrElse names.Contains("illu") OrElse names.Contains("bulb") Then Return "LIGHTS"
-            If names.Contains("reel") OrElse names.Contains("score") OrElse names.Contains("led") Then Return "REELS & LEDS"
-            If names.Contains("importbackground") Then Return "IMAGE"
-            If names.Contains("zoom") Then Return "VIEW"
-            If names.Contains("undo") OrElse names.Contains("redo") Then Return "EDIT"
-            If names.Contains("new") OrElse names.Contains("open") OrElse names.Contains("save") Then Return "FILE"
-
-            Select Case group
-                Case B2SProUIFoundation.CommandGroup.File
-                    Return "FILE"
-                Case B2SProUIFoundation.CommandGroup.Edit
-                    Return "EDIT"
-                Case B2SProUIFoundation.CommandGroup.View
-                    Return "VIEW"
-                Case B2SProUIFoundation.CommandGroup.Lighting
-                    Return "LIGHTS"
-                Case B2SProUIFoundation.CommandGroup.Artwork
-                    Return "IMAGE"
-                Case B2SProUIFoundation.CommandGroup.PlayExport
-                    Return "PLAY / EXPORT"
-                Case Else
-                    Return "TOOLS"
-            End Select
-        End Function
-
         Protected Overrides Sub OnRenderButtonBackground(e As ToolStripItemRenderEventArgs)
             Dim button As ToolStripButton = TryCast(e.Item, ToolStripButton)
             If button Is Nothing Then
@@ -782,16 +721,6 @@ Public Module B2SProMainToolbar
         Protected Overrides Sub OnRenderSeparator(e As ToolStripSeparatorRenderEventArgs)
             ' Separators create the gaps between the rounded neon panels.
         End Sub
-
-        Private Function GroupAfterSeparator(separator As ToolStripItem) As B2SProUIFoundation.CommandGroup
-            If separator Is Nothing OrElse separator.Owner Is Nothing Then Return B2SProUIFoundation.CommandGroup.Neutral
-            Dim index As Integer = separator.Owner.Items.IndexOf(separator)
-            For i As Integer = index + 1 To separator.Owner.Items.Count - 1
-                Dim nextItem As ToolStripItem = separator.Owner.Items(i)
-                If TypeOf nextItem Is ToolStripButton Then Return B2SProUIFoundation.CommandGroupForItem(nextItem)
-            Next
-            Return B2SProUIFoundation.CommandGroup.Neutral
-        End Function
 
         Private Function RoundedRectangle(bounds As Rectangle, radius As Integer) As GraphicsPath
             Dim path As New GraphicsPath()

@@ -10,7 +10,6 @@ Namespace Illumination
     Public Class Create
 
         Private Const C_OVERLAYS As Integer = 2
-        Private Const C_BULBRADIUS As Single = 0.15
 
         Private doDodge As Boolean = True
 
@@ -442,181 +441,11 @@ Namespace Illumination
 
         End Sub
 
-        ' 3.1.6: artwork-based flasher rendering.
-        ' A flasher with a Quick Selection mask now brightens the actual artwork
-        ' inside that mask. The mask defines the visible shape; no synthetic star,
-        ' oval, or rectangular light shape is drawn over the artwork.
-        Private Function CreateArtworkFlasherOverlay(ByVal source As Bitmap,
-                                                      ByVal rectX As Rectangle,
-                                                      ByVal selectionMaskData As String,
-                                                      ByVal selectionFeather As Integer,
-                                                      ByVal glowSoftness As Integer,
-                                                      ByVal glowFalloff As Integer,
-                                                      ByVal glowIntensity As Integer,
-                                                      ByVal lightcolor As Color,
-                                                      ByVal flasherStyle As Integer,
-                                                      ByVal saturation As Integer,
-                                                      ByVal highlightProtection As Integer,
-                                                      ByVal darkAreaLift As Integer,
-                                                      ByVal hotspotX As Integer,
-                                                      ByVal hotspotY As Integer) As Bitmap
-            If source Is Nothing OrElse String.IsNullOrEmpty(selectionMaskData) Then Return Nothing
-            Dim width As Integer = source.Width, height As Integer = source.Height
-            If width <= 0 OrElse height <= 0 Then Return Nothing
-            Dim coreAlpha As Byte() = GetSelectionAlpha(selectionMaskData, rectX, width, height, selectionFeather)
-            If coreAlpha Is Nothing OrElse coreAlpha.Length <> width * height Then Return Nothing
-
-            ' 3.1.7: The bloom seed is made from the bright details in the selected
-            ' artwork, not from a radial hotspot and not from the complete mask.
-            ' This removes the visible circular halo while retaining a subtle,
-            ' artwork-shaped light spill around highlights.
-            Dim bloomAlpha(width * height - 1) As Byte
-            Dim result As New Bitmap(width, height, PixelFormat.Format32bppArgb)
-            Dim srcData As BitmapData = source.LockBits(New Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
-            Dim dstData As BitmapData = result.LockBits(New Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb)
-            Try
-                Dim ss As Integer = Math.Abs(srcData.Stride), ds As Integer = Math.Abs(dstData.Stride)
-                Dim srcBytes(ss * height - 1) As Byte, dstBytes(ds * height - 1) As Byte
-                Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length)
-
-                ' Build an irregular luminance-driven bloom map. Dark outlines and
-                ' transparent areas produce almost no bloom; bright printed details
-                ' produce the strongest bloom.
-                For y As Integer = 0 To height - 1
-                    For x As Integer = 0 To width - 1
-                        Dim si As Integer = y * ss + x * 4, mi As Integer = y * width + x
-                        Dim core As Double = coreAlpha(mi) / 255.0
-                        If core <= 0 Then Continue For
-                        Dim b As Double = srcBytes(si), g As Double = srcBytes(si + 1), r As Double = srcBytes(si + 2)
-                        Dim sa As Double = srcBytes(si + 3) / 255.0
-                        Dim lum As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
-                        Dim highlight As Double = Math.Max(0.0, (lum - 0.28) / 0.72)
-                        highlight = highlight * highlight
-                        bloomAlpha(mi) = CByte(ClampByte(CInt(Math.Round(255.0 * core * sa * highlight))))
-                    Next
-                Next
-
-                Dim spreadRadius As Integer = Math.Max(0, Math.Min(25, CInt(Math.Round(glowSoftness / 6.0))))
-                If spreadRadius > 0 Then BlurAlphaBytes(bloomAlpha, width, height, spreadRadius)
-
-                Dim strength As Double = Math.Max(0.0, Math.Min(4.0, glowIntensity / 100.0))
-                Dim protect As Double = Math.Max(0.0, Math.Min(1.0, highlightProtection / 100.0))
-                Dim darkLift As Double = Math.Max(0.0, Math.Min(1.0, darkAreaLift / 100.0))
-                Dim sat As Double = Math.Max(0.0, Math.Min(2.0, saturation / 100.0))
-                Dim hx As Double = Math.Max(0.0, Math.Min(width - 1.0, (hotspotX / 100.0) * (width - 1)))
-                Dim hy As Double = Math.Max(0.0, Math.Min(height - 1.0, (hotspotY / 100.0) * (height - 1)))
-                Dim maxDist As Double = Math.Max(1.0, Math.Sqrt(width * width + height * height) * 0.9)
-                Dim glowAmount As Double = Math.Max(0.0, Math.Min(0.25, glowFalloff / 100.0 * 0.25))
-
-                For y As Integer = 0 To height - 1
-                    For x As Integer = 0 To width - 1
-                        Dim si As Integer = y * ss + x * 4, di As Integer = y * ds + x * 4, mi As Integer = y * width + x
-                        Dim core As Double = coreAlpha(mi) / 255.0
-                        Dim blur As Double = bloomAlpha(mi) / 255.0
-                        If core <= 0 AndAlso blur <= 0 Then Continue For
-                        Dim b As Double = srcBytes(si), g As Double = srcBytes(si + 1), r As Double = srcBytes(si + 2)
-                        Dim sa As Double = srcBytes(si + 3) / 255.0
-                        Dim lum As Double = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0
-
-                        ' The hotspot now only gives a very small directional bias to
-                        ' existing bright details. It never contributes alpha, tint,
-                        ' or an independently visible radial glow.
-                        Dim dx As Double = x - hx, dy As Double = y - hy
-                        Dim hotspotBias As Double = Math.Max(0.0, 1.0 - Math.Sqrt(dx * dx + dy * dy) / maxDist)
-                        hotspotBias = hotspotBias * hotspotBias * lum * lum * 0.10
-
-                        Dim response As Double = 0.10 + 0.78 * Math.Sqrt(lum) + hotspotBias
-                        Dim shadowResponse As Double = darkLift * (1.0 - lum) * 0.22
-                        Dim exposure As Double = 1.0 + strength * (response + shadowResponse)
-                        exposure = 1.0 + (exposure - 1.0) * (1.0 - protect * lum * 0.78)
-                        Dim rr As Double = ExposureChannel(CInt(r), exposure)
-                        Dim gg As Double = ExposureChannel(CInt(g), exposure)
-                        Dim bb As Double = ExposureChannel(CInt(b), exposure)
-                        Dim outLum As Double = rr * 0.299 + gg * 0.587 + bb * 0.114
-                        rr = outLum + (rr - outLum) * sat
-                        gg = outLum + (gg - outLum) * sat
-                        bb = outLum + (bb - outLum) * sat
-
-                        Dim coreA As Double = core
-                        Dim bloomA As Double = blur * glowAmount
-                        Dim finalA As Double
-                        Select Case flasherStyle
-                            Case 1
-                                finalA = coreA
-                            Case 2
-                                finalA = bloomA
-                                Dim glowWhite As Double = 0.62 + 0.38 * lum
-                                rr = lightcolor.R * glowWhite
-                                gg = lightcolor.G * glowWhite
-                                bb = lightcolor.B * glowWhite
-                            Case Else
-                                finalA = Math.Max(coreA, bloomA)
-                        End Select
-                        finalA *= sa
-                        dstBytes(di) = CByte(ClampByte(CInt(bb)))
-                        dstBytes(di + 1) = CByte(ClampByte(CInt(gg)))
-                        dstBytes(di + 2) = CByte(ClampByte(CInt(rr)))
-                        dstBytes(di + 3) = CByte(ClampByte(CInt(finalA * 255)))
-                    Next
-                Next
-                Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length)
-            Finally
-                source.UnlockBits(srcData)
-                result.UnlockBits(dstData)
-            End Try
-            Return result
-        End Function
-
-        Private Shared Function ExposureChannel(ByVal value As Integer, ByVal exposure As Double) As Integer
-            Dim normalized As Double = Math.Max(0.0, Math.Min(1.0, value / 255.0))
-            ' 1-(1-x)^e keeps exposure=1 unchanged and approaches white smoothly,
-            ' avoiding the hard clipping that made earlier flashers look fake.
-            Dim brightened As Double = 1.0 - Math.Pow(1.0 - normalized, Math.Max(1.0, exposure))
-            Return ClampByte(CInt(Math.Round(brightened * 255.0)))
-        End Function
-
         Private Shared Function ClampByte(ByVal value As Integer) As Integer
             Return Math.Max(0, Math.Min(255, value))
         End Function
 
-        Private Shared Sub BlurAlphaBytes(ByVal alpha As Byte(), ByVal width As Integer, ByVal height As Integer, ByVal radius As Integer)
-            If alpha Is Nothing OrElse width <= 0 OrElse height <= 0 OrElse radius <= 0 Then Return
-            radius = Math.Min(25, radius)
-            Dim horizontal(alpha.Length - 1) As Integer
-            Dim output(alpha.Length - 1) As Byte
-
-            For y As Integer = 0 To height - 1
-                Dim sum As Integer = 0
-                For x As Integer = -radius To radius
-                    Dim sampleX As Integer = Math.Max(0, Math.Min(width - 1, x))
-                    sum += alpha(y * width + sampleX)
-                Next
-                For x As Integer = 0 To width - 1
-                    horizontal(y * width + x) = sum \ (radius * 2 + 1)
-                    Dim removeX As Integer = Math.Max(0, x - radius)
-                    Dim addX As Integer = Math.Min(width - 1, x + radius + 1)
-                    sum += alpha(y * width + addX) - alpha(y * width + removeX)
-                Next
-            Next
-
-            For x As Integer = 0 To width - 1
-                Dim sum As Integer = 0
-                For y As Integer = -radius To radius
-                    Dim sampleY As Integer = Math.Max(0, Math.Min(height - 1, y))
-                    sum += horizontal(sampleY * width + x)
-                Next
-                For y As Integer = 0 To height - 1
-                    output(y * width + x) = CByte(Math.Max(0, Math.Min(255, sum \ (radius * 2 + 1))))
-                    Dim removeY As Integer = Math.Max(0, y - radius)
-                    Dim addY As Integer = Math.Min(height - 1, y + radius + 1)
-                    sum += horizontal(addY * width + x) - horizontal(removeY * width + x)
-                Next
-            Next
-
-            Array.Copy(output, alpha, alpha.Length)
-        End Sub
-
-        Private Shared Sub ApplyTemperatureToRenderedLight(ByVal rendered As Bitmap, ByVal kelvin As Integer)
+        Friend Shared Sub ApplyTemperatureToRenderedLight(ByVal rendered As Bitmap, ByVal kelvin As Integer)
             If rendered Is Nothing Then Return
             kelvin = Math.Max(2000, Math.Min(6500, kelvin))
             If kelvin = 4000 Then Return
@@ -755,7 +584,6 @@ Namespace Illumination
                                            Optional ByVal maskShiftEdge As Integer = 0,
                                            Optional ByVal flasherRadialSpikes As Integer = 0,
                                            Optional ByVal lightRotationAngle As Single = 0.0F,
-                                           Optional ByVal transmitTransparentCanvas As Boolean = False,
                                            Optional ByVal separateLightLayer As Boolean = False) As Image
 
             If separateLightLayer AndAlso String.IsNullOrEmpty(text) Then
@@ -794,7 +622,23 @@ Namespace Illumination
                                     templateMode, glowSoftness, glowFalloff,
                                     glowIntensity, lightDiffusion)
 
+                ' A rotated artwork light must be refined (Shift Edge, Radius, Smooth,
+                ' Feather, Contrast, Radial Spikes) in its own unrotated box before it
+                ' is rotated. Refining after rotation spreads the light across the
+                ' larger axis-aligned bitmap and outside the rotated light box.
+                Dim refinedBeforeRotation As Boolean = False
+                Dim unrefinedTemplate As Bitmap = Nothing
                 If Math.Abs(lightRotationAngle) >= 0.001F Then
+                    If useArtworkPixels Then
+                        Dim refinedTemplate As Bitmap = ArtworkFlasherRenderer.CreateRefinedAlphaField(
+                            image, maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge,
+                            flasherRadialSpikes)
+                        If refinedTemplate IsNot Nothing Then
+                            unrefinedTemplate = image
+                            image = refinedTemplate
+                            refinedBeforeRotation = True
+                        End If
+                    End If
                     Dim rotatedImage As Bitmap = PositionRotatedLightTemplate(image, rect, rectX, lightRotationAngle)
                     image.Dispose()
                     image = rotatedImage
@@ -817,8 +661,23 @@ Namespace Illumination
                         currentimage, image, artworkExposure, lightcolor,
                         flasherStyle, flasherSaturation, flasherHighlightProtection,
                         flasherDarkAreaLift, transmissionContrast,
-                        maskRadius, maskSmooth, maskFeather, maskContrast, maskShiftEdge,
-                        flasherRadialSpikes, transmitTransparentCanvas)
+                        If(refinedBeforeRotation, 0, maskRadius),
+                        If(refinedBeforeRotation, 0, maskSmooth),
+                        If(refinedBeforeRotation, 0, maskFeather),
+                        If(refinedBeforeRotation, 0, maskContrast),
+                        If(refinedBeforeRotation, 0, maskShiftEdge),
+                        If(refinedBeforeRotation, 0, flasherRadialSpikes))
+                    If pixelLit Is Nothing AndAlso refinedBeforeRotation Then
+                        ' Keep the established fallback: the merge path below uses
+                        ' the unrefined rotated light template.
+                        Dim unrefinedRotated As Bitmap = PositionRotatedLightTemplate(unrefinedTemplate, rect, rectX, lightRotationAngle)
+                        image.Dispose()
+                        image = unrefinedRotated
+                    End If
+                    If unrefinedTemplate IsNot Nothing Then
+                        unrefinedTemplate.Dispose()
+                        unrefinedTemplate = Nothing
+                    End If
                     If pixelLit IsNot Nothing Then
                         image.Dispose()
                         image = pixelLit
@@ -920,7 +779,18 @@ Namespace Illumination
                                 glowIntensity, lightDiffusion)
             If template Is Nothing Then Return Nothing
 
+            ' Refine a rotated light in its own unrotated box, then rotate it, so
+            ' the refinement cannot spread outside the rotated light box.
+            Dim refinedBeforeRotation As Boolean = False
             If Math.Abs(lightRotationAngle) >= 0.001F Then
+                Dim refinedTemplate As Bitmap = ArtworkFlasherRenderer.CreateRefinedAlphaField(
+                    template, maskRadius, maskSmooth, maskFeather,
+                    maskContrast, maskShiftEdge, radialSpikes)
+                If refinedTemplate IsNot Nothing Then
+                    template.Dispose()
+                    template = refinedTemplate
+                    refinedBeforeRotation = True
+                End If
                 Dim rotatedTemplate As Bitmap = PositionRotatedLightTemplate(template, rect, rectX, lightRotationAngle)
                 template.Dispose()
                 template = rotatedTemplate
@@ -936,8 +806,13 @@ Namespace Illumination
             If template Is Nothing Then Return Nothing
 
             Dim field As Bitmap = ArtworkFlasherRenderer.CreateRefinedAlphaField(
-                template, maskRadius, maskSmooth, maskFeather,
-                maskContrast, maskShiftEdge, radialSpikes)
+                template,
+                If(refinedBeforeRotation, 0, maskRadius),
+                If(refinedBeforeRotation, 0, maskSmooth),
+                If(refinedBeforeRotation, 0, maskFeather),
+                If(refinedBeforeRotation, 0, maskContrast),
+                If(refinedBeforeRotation, 0, maskShiftEdge),
+                If(refinedBeforeRotation, 0, radialSpikes))
             template.Dispose()
             If field Is Nothing Then Return Nothing
 
@@ -1252,30 +1127,6 @@ Namespace Illumination
                 bmp.UnlockBits(data)
             End Try
         End Sub
-
-        Public Function CreateImage(ByVal image As Bitmap,
-                                    ByVal rect As Rectangle,
-                                    ByVal rectX As Rectangle,
-                                    ByVal intensity As Integer,
-                                    ByVal lightcolor As Color,
-                                    ByVal dodgecolor As Color,
-                                    ByVal text As String,
-                                    ByVal font As Font,
-                                    ByVal textalignment As Illumination.eTextAlignment,
-                                    ByVal illumode As Illumination.eIlluMode) As Image
-
-            If image Is Nothing Then Return Nothing
-
-            Dim ret As Image = image.Clone()
-            Dim overlay = CreateOverlayImage(image, rect, rectX, intensity, lightcolor, dodgecolor, text, font, textalignment, illumode)
-            Using gr As Graphics = Graphics.FromImage(ret)
-                gr.DrawImage(overlay, rectX.X, rectX.Y)
-            End Using
-            overlay.Dispose()
-            overlay = Nothing
-            Return ret
-
-        End Function
 
     End Class
 

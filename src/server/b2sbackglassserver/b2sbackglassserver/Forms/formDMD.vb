@@ -36,17 +36,95 @@ Public Class formDMD
 #Region "painting"
 
     Private Sub formDMD_Paint(sender As Object, e As System.Windows.Forms.PaintEventArgs) Handles Me.Paint
-        DrawDMDLayer(e, False)
+        DrawDMDLayer(e)
+        ' B2S Pro files: DMD reels/LEDs are child controls that draw the DMD
+        ' layers above them (DrawUnifiedLayersAboveScore). Refresh the ones this
+        ' repaint touches so a change underneath or above them shows on them too.
+        If B2SData.UnifiedLayerDeck Then RepaintScoreControls(e.ClipRectangle)
     End Sub
 
-    Private Sub DrawDMDLayer(e As PaintEventArgs, ByVal behindCanvas As Boolean)
+    Private Sub RepaintScoreControls(ByVal clipRectangle As Rectangle)
+        For Each child As Control In Me.Controls
+            If (TypeOf child Is B2SReelBox OrElse TypeOf child Is B2SLEDBox OrElse TypeOf child Is Dream7Display) AndAlso
+               child.Visible AndAlso clipRectangle.IntersectsWith(child.Bounds) Then
+                child.Invalidate()
+                child.Update()
+            End If
+        Next
+    End Sub
+
+    ' B2S Pro files: a DMD reel or LED display is a child control, so whatever
+    ' belongs in front of it (DMD items with a higher rank and, when the score is
+    ' below the DMD canvas divider, the DMD image itself) is drawn over it here,
+    ' clipped to its bounds. formBackglass does the same for backglass scores.
+    Friend Sub DrawUnifiedLayersAboveScore(ByVal scoreControl As Control, ByVal scoreZOrder As Integer, ByVal e As PaintEventArgs)
+        If Not B2SData.UnifiedLayerDeck OrElse scoreControl Is Nothing OrElse scoreControl.Parent IsNot Me Then Return
+        Dim canvasRank As Integer = Math.Max(0, B2SData.DMDCanvasLayerPosition)
+        Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
+        Try
+            e.Graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+            e.Graphics.ResetTransform()
+            e.Graphics.TranslateTransform(-scoreControl.Left, -scoreControl.Top)
+            e.Graphics.SetClip(scoreControl.Bounds, Drawing2D.CombineMode.Replace)
+            DrawRankedDMDItems(e.Graphics, scoreZOrder, canvasRank)
+            If scoreZOrder <= canvasRank AndAlso Me.BackgroundImage IsNot Nothing Then
+                e.Graphics.DrawImage(Me.BackgroundImage, Me.ClientRectangle)
+            End If
+            DrawRankedDMDItems(e.Graphics, Math.Max(scoreZOrder, canvasRank), Integer.MaxValue)
+        Finally
+            e.Graphics.Restore(state)
+        End Try
+    End Sub
+
+    ' Draws the visible DMD items whose rank is greater than lowerExclusive and
+    ' at most upperInclusive, back to front.
+    Private Sub DrawRankedDMDItems(ByVal graphics As Graphics, ByVal lowerExclusive As Integer, ByVal upperInclusive As Integer)
+        For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderDMDImages
+            For Each illu As B2SPictureBox In illus.Value
+                If illu.ZOrder > lowerExclusive AndAlso illu.ZOrder <= upperInclusive AndAlso
+                   (illu.Visible OrElse illu.HasPersistentMotionPathSource) Then
+                    DrawIlluminationImage(graphics, illu)
+                End If
+            Next
+        Next
+    End Sub
+
+    ' A DMD item is behind the DMD image only in current-Designer files whose
+    ' DMD deck places it below the DMD canvas divider (runtime ranks 1..N run
+    ' back to front). Legacy and pre-unified files never use this pass.
+    Private Shared Function IsBehindDMDImage(ByVal picbox As B2SPictureBox) As Boolean
+        Return B2SData.UnifiedLayerDeck AndAlso B2SData.DMDCanvasLayerPosition > 0 AndAlso
+               picbox IsNot Nothing AndAlso picbox.ZOrder > 0 AndAlso picbox.ZOrder <= B2SData.DMDCanvasLayerPosition
+    End Function
+
+    Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
+        If Not B2SData.UnifiedLayerDeck OrElse B2SData.DMDCanvasLayerPosition <= 0 OrElse Not B2SData.UseDMDZOrder Then
+            MyBase.OnPaintBackground(e)
+            Return
+        End If
+        Using backing As New SolidBrush(Me.BackColor)
+            e.Graphics.FillRectangle(backing, e.ClipRectangle)
+        End Using
+        For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderDMDImages
+            For Each illu As B2SPictureBox In illus.Value
+                If IsBehindDMDImage(illu) AndAlso (illu.Visible OrElse illu.HasPersistentMotionPathSource) Then
+                    DrawIlluminationImage(e.Graphics, illu)
+                End If
+            Next
+        Next
+        ' B2SScreen sets DMD backgrounds to Stretch; paint the DMD image with its
+        ' alpha over the items behind it (same approach as the 3.0.11 rear pass).
+        If Me.BackgroundImage IsNot Nothing Then e.Graphics.DrawImage(Me.BackgroundImage, Me.ClientRectangle)
+    End Sub
+
+    Private Sub DrawDMDLayer(e As PaintEventArgs)
         If B2SData.DMDIlluminations.Count > 0 Then
 
             If Not B2SData.UseDMDZOrder Then
 
                 ' draw all standard images
                 For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
-                    If illu.Value.BehindCanvas = behindCanvas AndAlso (illu.Value.Visible OrElse illu.Value.HasPersistentMotionPathSource) Then
+                    If illu.Value.Visible OrElse illu.Value.HasPersistentMotionPathSource Then
                         DrawIlluminationImage(e.Graphics, illu.Value)
                     End If
                 Next
@@ -56,14 +134,14 @@ Public Class formDMD
                 ' first of all draw zorderd images
                 For Each illus As KeyValuePair(Of Integer, B2SPictureBox()) In B2SData.ZOrderDMDImages
                     For Each illu As B2SPictureBox In illus.Value
-                        If illu.BehindCanvas = behindCanvas AndAlso (illu.Visible OrElse illu.HasPersistentMotionPathSource) Then
+                        If (illu.Visible OrElse illu.HasPersistentMotionPathSource) AndAlso Not IsBehindDMDImage(illu) Then
                             DrawIlluminationImage(e.Graphics, illu)
                         End If
                     Next
                 Next
                 ' now draw all standard images
                 For Each illu As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
-                    If illu.Value.BehindCanvas = behindCanvas AndAlso (illu.Value.Visible OrElse illu.Value.HasPersistentMotionPathSource) AndAlso illu.Value.ZOrder = 0 Then
+                    If (illu.Value.Visible OrElse illu.Value.HasPersistentMotionPathSource) AndAlso illu.Value.ZOrder = 0 Then
                         DrawIlluminationImage(e.Graphics, illu.Value)
                     End If
                 Next
@@ -72,29 +150,6 @@ Public Class formDMD
 
         End If
 
-    End Sub
-
-    Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
-        ' Only authored behind-canvas objects use this pass. The ordinary
-        ' DMD background and legacy foreground retain their existing path.
-        Dim hasBehindCanvas As Boolean = False
-        For Each entry As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
-            If entry.Value.BehindCanvas Then
-                hasBehindCanvas = True
-                Exit For
-            End If
-        Next
-        If Not hasBehindCanvas Then
-            MyBase.OnPaintBackground(e)
-            Return
-        End If
-        Using backing As New SolidBrush(Me.BackColor)
-            e.Graphics.FillRectangle(backing, e.ClipRectangle)
-        End Using
-        DrawDMDLayer(e, True)
-        ' B2SScreen sets DMD backgrounds to Stretch. Paint its alpha over
-        ' behind-canvas artwork instead of clearing that artwork a second time.
-        If Me.BackgroundImage IsNot Nothing Then e.Graphics.DrawImage(Me.BackgroundImage, Me.ClientRectangle)
     End Sub
 
     Private Sub DrawIlluminationImage(ByVal graphics As Graphics, ByVal picbox As B2SPictureBox)
@@ -143,10 +198,10 @@ Public Class formDMD
                 destination = BallRollDestinationPoints(bounds, angle)
             ElseIf picbox.NativeRotation Then
                 destination = NativeRotationDestinationPoints(picbox, bounds)
-            ElseIf picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation Then
-                destination = BallRollDestinationPoints(bounds, angle)
             Else
-                destination = RotationDestinationPoints(bounds, angle, picbox.RotationPivotX, picbox.RotationPivotY)
+                ' Only motion-path roll remains: the method returned above unless
+                ' NativeRotation or MotionPathRollEnabled is set.
+                destination = BallRollDestinationPoints(bounds, angle)
             End If
             graphics.DrawImage(image, destination, New RectangleF(0, 0, image.Width, image.Height), GraphicsUnit.Pixel)
         Finally
