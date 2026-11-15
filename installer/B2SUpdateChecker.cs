@@ -269,7 +269,12 @@ namespace B2SPro.Updates
 
     internal sealed class UpdateAvailableDialog : Form
     {
+        // Local preview tooling only: simulates a larger display scale. Always 1 for users.
+        internal static float PreviewTextScale = 1F;
+
         private readonly Button _laterButton;
+        private readonly float _scale;
+        private readonly int _textWidth;
 
         private UpdateAvailableDialog(UpdateTarget target, Version installedVersion, AvailableUpdate available, bool testOnly)
         {
@@ -279,13 +284,21 @@ namespace B2SPro.Updates
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = true;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(520, 420);
-            Font = SystemFonts.MessageBoxFont;
+
+            // Fonts are in points and grow with the display scale, so every pixel size is scaled
+            // by the same factor here. (AutoScaleMode.Dpi without AutoScaleDimensions scaled nothing,
+            // so at 150% the text outgrew the fixed 520x420 window and pushed the buttons off.)
+            AutoScaleMode = AutoScaleMode.None;
+            using (Graphics graphics = CreateGraphics()) _scale = graphics.DpiX / 96F * PreviewTextScale;
+            Font = ScaledFont(SystemFonts.MessageBoxFont, SystemFonts.MessageBoxFont.SizeInPoints, SystemFonts.MessageBoxFont.Style);
+            Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+            int frameWidth = SizeFromClientSize(Size.Empty).Width;
+            ClientSize = new Size(Math.Min(S(520), workingArea.Width - frameWidth), S(420));
+            _textWidth = Math.Max(S(200), Math.Min(S(462), ClientSize.Width - S(58)));
 
             var layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
-            layout.Padding = new Padding(22, 18, 22, 14);
+            layout.Padding = P(22, 18, 22, 14);
             layout.ColumnCount = 1;
             layout.RowCount = 8;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -301,18 +314,18 @@ namespace B2SPro.Updates
             string updateType = String.IsNullOrWhiteSpace(available.UpdateType) ? "Update" : available.UpdateType.Trim();
             var classification = CreateLabel(updateType, new Font(Font, FontStyle.Bold), 10F);
             classification.ForeColor = SystemColors.HotTrack;
-            classification.Margin = new Padding(0, 7, 0, 0);
+            classification.Margin = P(0, 7, 0, 0);
             layout.Controls.Add(classification, 0, 1);
 
             var title = CreateLabel(available.ReleaseTitle, Font, 11F);
             title.ForeColor = SystemColors.GrayText;
-            title.Margin = new Padding(0, 4, 0, 0);
+            title.Margin = P(0, 4, 0, 0);
             layout.Controls.Add(title, 0, 2);
 
             string versions = "Installed " + Program.VersionText(installedVersion) + "    Available " + Program.VersionText(available.Version);
             if (available.Version == installedVersion) versions += "    Refreshed package";
             var versionLabel = CreateLabel(versions, Font, 10F);
-            versionLabel.Margin = new Padding(0, 8, 0, 0);
+            versionLabel.Margin = P(0, 8, 0, 0);
             layout.Controls.Add(versionLabel, 0, 3);
 
             var changes = new GroupBox();
@@ -320,8 +333,8 @@ namespace B2SPro.Updates
             changes.Dock = DockStyle.Top;
             changes.AutoSize = true;
             changes.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            changes.Margin = new Padding(0, 14, 0, 0);
-            changes.Padding = new Padding(12, 8, 12, 10);
+            changes.Margin = P(0, 14, 0, 0);
+            changes.Padding = P(12, 8, 12, 10);
             var changeList = new TableLayoutPanel();
             changeList.Dock = DockStyle.Top;
             changeList.AutoSize = true;
@@ -331,7 +344,7 @@ namespace B2SPro.Updates
             foreach (string item in CompactReleaseSummary.Build(available.ReleaseNotes, 3))
             {
                 var itemLabel = CreateLabel("\u2022  " + item, Font, 10F);
-                itemLabel.Margin = new Padding(0, 3, 0, 3);
+                itemLabel.Margin = P(0, 3, 0, 3);
                 changeList.Controls.Add(itemLabel);
             }
             changes.Controls.Add(changeList);
@@ -340,7 +353,7 @@ namespace B2SPro.Updates
             var details = new LinkLabel();
             details.Text = "View full release notes";
             details.AutoSize = true;
-            details.Margin = new Padding(0, 8, 0, 0);
+            details.Margin = P(0, 8, 0, 0);
             details.LinkClicked += delegate
             {
                 MessageBox.Show(this,
@@ -356,7 +369,7 @@ namespace B2SPro.Updates
                 : target.CloseBeforeInstallMessage;
             var closing = CreateLabel(closingText, Font, 10F);
             closing.ForeColor = SystemColors.GrayText;
-            closing.Margin = new Padding(0, 10, 0, 0);
+            closing.Margin = P(0, 10, 0, 0);
             layout.Controls.Add(closing, 0, 6);
 
             var buttons = new FlowLayoutPanel();
@@ -364,19 +377,19 @@ namespace B2SPro.Updates
             buttons.FlowDirection = FlowDirection.RightToLeft;
             buttons.WrapContents = false;
             buttons.AutoSize = true;
-            buttons.Margin = new Padding(0, 14, 0, 0);
+            buttons.Margin = P(0, 14, 0, 0);
 
             var downloadButton = new Button();
             downloadButton.Text = testOnly ? "Test Download" : "Download Update";
             downloadButton.AutoSize = true;
             downloadButton.DialogResult = DialogResult.Yes;
-            downloadButton.Padding = new Padding(8, 2, 8, 2);
+            downloadButton.Padding = P(8, 2, 8, 2);
 
             _laterButton = new Button();
             _laterButton.Text = "Later";
             _laterButton.AutoSize = true;
             _laterButton.DialogResult = DialogResult.No;
-            _laterButton.Padding = new Padding(8, 2, 8, 2);
+            _laterButton.Padding = P(8, 2, 8, 2);
 
             buttons.Controls.Add(downloadButton);
             buttons.Controls.Add(_laterButton);
@@ -389,7 +402,7 @@ namespace B2SPro.Updates
         }
 
         // Long release text must never push the buttons out of the window: grow the window
-        // to the content's preferred height (after DPI scaling), limited to the screen.
+        // to the content's preferred height, limited to the screen.
         private void FitHeightToContent(TableLayoutPanel layout)
         {
             int needed = layout.GetPreferredSize(new Size(ClientSize.Width, 0)).Height;
@@ -399,19 +412,34 @@ namespace B2SPro.Updates
             CenterToScreen();
         }
 
+        private int S(int value)
+        {
+            return (int)Math.Round(value * _scale);
+        }
+
+        private Padding P(int left, int top, int right, int bottom)
+        {
+            return new Padding(S(left), S(top), S(right), S(bottom));
+        }
+
+        private static Font ScaledFont(Font font, float points, FontStyle style)
+        {
+            return new Font(font.FontFamily, points * PreviewTextScale, style, GraphicsUnit.Point);
+        }
+
         public static DialogResult ShowUpdate(UpdateTarget target, Version installedVersion, AvailableUpdate available, bool testOnly)
         {
             using (var dialog = new UpdateAvailableDialog(target, installedVersion, available, testOnly))
                 return dialog.ShowDialog();
         }
 
-        private static Label CreateLabel(string text, Font font, float size)
+        private Label CreateLabel(string text, Font font, float size)
         {
             var label = new Label();
             label.Text = text ?? String.Empty;
             label.AutoSize = true;
-            label.MaximumSize = new Size(462, 0);
-            label.Font = new Font(font.FontFamily, size, font.Style, GraphicsUnit.Point);
+            label.MaximumSize = new Size(_textWidth, 0);
+            label.Font = ScaledFont(font, size, font.Style);
             return label;
         }
     }
