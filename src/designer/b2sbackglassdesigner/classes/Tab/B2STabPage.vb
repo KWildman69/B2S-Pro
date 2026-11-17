@@ -925,8 +925,19 @@ Public Class B2STabPage
             Dim reel3Dtemperature As Integer = SelectedScore.Reel3DTemperature
             Dim reel3Ddepth As Integer = SelectedScore.Reel3DDepth
             Dim reel3Dglass As Integer = SelectedScore.Reel3DGlass
+            Dim reel3Dstyle As Integer = SelectedScore.Reel3DStyle
+            Dim reel3Dcurve As Integer = SelectedScore.Reel3DCurve
+            Dim reel3Dshadow As Integer = SelectedScore.Reel3DShadow
+            Dim reel3DglassStyle As Integer = SelectedScore.Reel3DGlassStyle
+            Dim reel3Ddividers As Boolean = SelectedScore.Reel3DDividers
+            Dim reel3DdividerWidth As Integer = SelectedScore.Reel3DDividerWidth
+            ' The Test spin window draws this score with the live settings.
+            formSetReelIllumination.TestScore = SelectedScore
+            formSetReelIllumination.TestIlluminate = AddressOf DrawIlluminatedReelImage
             formSetReelIllumination.ShowDialog(Me, reelillulocation, reelillub2sid, reelillub2sidtype, reelillub2svalue, reelilluintensity,
-                                               reel3Denabled, reel3Dbrightness, reel3Dtemperature, reel3Ddepth, reel3Dglass)
+                                               reel3Denabled, reel3Dbrightness, reel3Dtemperature, reel3Ddepth, reel3Dglass,
+                                               reel3Dstyle, reel3Dcurve, reel3Dshadow, reel3DglassStyle,
+                                               reel3Ddividers, reel3DdividerWidth)
 
             ' This window is an auto-saving editor. Closing it with either
             ' button or the title-bar X keeps every displayed value.
@@ -940,6 +951,12 @@ Public Class B2STabPage
             SelectedScore.Reel3DTemperature = reel3Dtemperature
             SelectedScore.Reel3DDepth = reel3Ddepth
             SelectedScore.Reel3DGlass = reel3Dglass
+            SelectedScore.Reel3DStyle = reel3Dstyle
+            SelectedScore.Reel3DCurve = reel3Dcurve
+            SelectedScore.Reel3DShadow = reel3Dshadow
+            SelectedScore.Reel3DGlassStyle = reel3DglassStyle
+            SelectedScore.Reel3DDividers = reel3Ddividers
+            SelectedScore.Reel3DDividerWidth = reel3DdividerWidth
             BackglassData.IsDirty = True
             Me.Invalidate()
         End If
@@ -1136,7 +1153,13 @@ Public Class B2STabPage
                                                     ByVal reel3DBrightness As Integer,
                                                     ByVal reel3DTemperature As Integer,
                                                     ByVal reel3DDepth As Integer,
-                                                    ByVal reel3DGlass As Integer) Handles formSetReelIllumination.LivePreviewChanged
+                                                    ByVal reel3DGlass As Integer,
+                                                    ByVal reel3DStyle As Integer,
+                                                    ByVal reel3DCurve As Integer,
+                                                    ByVal reel3DShadow As Integer,
+                                                    ByVal reel3DGlassStyle As Integer,
+                                                    ByVal reel3DDividers As Boolean,
+                                                    ByVal reel3DDividerWidth As Integer) Handles formSetReelIllumination.LivePreviewChanged
         If SelectedScore Is Nothing Then Return
         SelectedScore.ReelIlluLocation = location
         SelectedScore.ReelIlluIntensity = Math.Max(0, Math.Min(100, intensity))
@@ -1145,6 +1168,12 @@ Public Class B2STabPage
         SelectedScore.Reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
         SelectedScore.Reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
         SelectedScore.Reel3DGlass = Math.Max(0, Math.Min(200, reel3DGlass))
+        SelectedScore.Reel3DStyle = Math.Max(0, Math.Min(1, reel3DStyle))
+        SelectedScore.Reel3DCurve = Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, reel3DCurve))
+        SelectedScore.Reel3DShadow = Math.Max(0, Math.Min(200, reel3DShadow))
+        SelectedScore.Reel3DGlassStyle = Math.Max(0, Math.Min(ReelGlass.MaximumStyle, reel3DGlassStyle))
+        SelectedScore.Reel3DDividers = reel3DDividers
+        SelectedScore.Reel3DDividerWidth = Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, reel3DDividerWidth))
         BackglassData.IsDirty = True
         Me.Refresh()
     End Sub

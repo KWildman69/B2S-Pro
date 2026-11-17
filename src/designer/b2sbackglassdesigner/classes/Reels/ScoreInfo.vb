@@ -50,6 +50,17 @@
         Public Reel3DTemperature As Integer = 4000
         Public Reel3DDepth As Integer = 100
         Public Reel3DGlass As Integer = 55
+        ' Reel style: 0 Classic (the original 3D look), 1 Realistic (drum,
+        ' neighbouring numbers, window shadow). Files without it are Classic.
+        Public Reel3DStyle As Integer = 0
+        Public Reel3DCurve As Integer = 100
+        Public Reel3DShadow As Integer = 100
+        ' Glass: 0 the original reflection lines, 1 soft wide, 2 soft streaks.
+        Public Reel3DGlassStyle As Integer = 0
+        ' Reel dividers: a black line between the digits (width in design pixels).
+        ' Off is the previous look; files without it are unchanged.
+        Public Reel3DDividers As Boolean = False
+        Public Reel3DDividerWidth As Integer = ReelDivider.DefaultWidth
 
 
         Public PerfectScaleWidthFix As Boolean = False
@@ -95,6 +106,12 @@
             Reel3DTemperature = source.Reel3DTemperature
             Reel3DDepth = source.Reel3DDepth
             Reel3DGlass = source.Reel3DGlass
+            Reel3DStyle = source.Reel3DStyle
+            Reel3DCurve = source.Reel3DCurve
+            Reel3DShadow = source.Reel3DShadow
+            Reel3DGlassStyle = source.Reel3DGlassStyle
+            Reel3DDividers = source.Reel3DDividers
+            Reel3DDividerWidth = source.Reel3DDividerWidth
         End Sub
 
         ' property for internal use

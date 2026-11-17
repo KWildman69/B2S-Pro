@@ -8,6 +8,19 @@ Public NotInheritable Class Reel3DEffect
     Private Sub New()
     End Sub
 
+    ' The depth, glass edge and glare are sized as a share of the reel
+    ' height, so the Designer, Server and plugin show the same look at any
+    ' size (WYSIWYG). The pixel values below are the look at this height.
+    Private Const ReferenceReelHeight As Double = 58.0
+
+    Private Shared Function SizeScale(ByVal height As Integer) As Double
+        Return Math.Max(1, height) / ReferenceReelHeight
+    End Function
+
+    Private Shared Function Scaled(ByVal pixels As Integer, ByVal scale As Double) As Integer
+        Return Math.Max(1, CInt(Math.Round(pixels * scale)))
+    End Function
+
     Public Shared Function RenderReel(ByVal source As Image,
                                       ByVal targetSize As Size,
                                       ByVal brightness As Integer,
@@ -74,7 +87,7 @@ Public NotInheritable Class Reel3DEffect
 
         Using graphics As Graphics = Graphics.FromImage(result)
             Dim depthAmount As Double = depth / 100.0
-            Dim sideWidth As Integer = Math.Min(Math.Max(1, result.Width \ 3), 12 + CInt(Math.Round(8.0 * depthAmount)))
+            Dim sideWidth As Integer = Math.Min(Math.Max(1, result.Width \ 3), Scaled(12 + CInt(Math.Round(8.0 * depthAmount)), SizeScale(result.Height)))
             For i As Integer = 0 To sideWidth - 1
                 Dim alpha As Integer = ClampAlpha(105.0 * depthAmount * (1.0 - i / CDbl(sideWidth)))
                 Using pen As New Pen(Color.FromArgb(alpha, 0, 0, 0))
@@ -88,14 +101,39 @@ Public NotInheritable Class Reel3DEffect
         Return result
     End Function
 
+    ' Realistic style: drum, neighbouring numbers, window shadow and lamp
+    ' (shared ReelRealistic), then the same colour temperature as Classic.
+    ' numbers: offsets -2 to +2 around the shown number; roll: -1 to 1.
+    Public Shared Function RenderRealisticReel(ByVal numbers As Image(),
+                                               ByVal targetSize As Size,
+                                               ByVal keepAspect As Boolean,
+                                               ByVal digitWidth As Integer,
+                                               ByVal brightness As Integer,
+                                               ByVal temperature As Integer,
+                                               ByVal depth As Integer,
+                                               ByVal curve As Integer,
+                                               ByVal shadow As Integer,
+                                               ByVal roll As Double) As Bitmap
+        Dim result As Bitmap = ReelRealistic.Render(numbers, targetSize, keepAspect, digitWidth, brightness, depth, curve, shadow, roll)
+        If result IsNot Nothing Then ApplyTemperatureGrade(result, Math.Max(2000, Math.Min(6500, temperature)))
+        Return result
+    End Function
+
     Public Shared Function CreateWindowOverlay(ByVal displaySize As Size,
                                                ByVal depth As Integer,
-                                               ByVal glassReflection As Integer) As Bitmap
+                                               ByVal glassReflection As Integer,
+                                               Optional ByVal glassStyle As Integer = 0,
+                                               Optional ByVal dividerCenters As Double() = Nothing,
+                                               Optional ByVal dividerWidth As Integer = 0) As Bitmap
         If displaySize.Width <= 2 OrElse displaySize.Height <= 2 Then Return Nothing
         Dim overlay As New Bitmap(displaySize.Width, displaySize.Height, PixelFormat.Format32bppArgb)
         Using graphics As Graphics = Graphics.FromImage(overlay)
             graphics.Clear(Color.Transparent)
-            DrawWindowOverlay(graphics, New Rectangle(Point.Empty, displaySize), depth, glassReflection)
+            ' Reel dividers first; the inset shadow and glass pass over them.
+            If dividerWidth > 0 AndAlso dividerCenters IsNot Nothing Then
+                ReelDivider.Draw(graphics, New Rectangle(Point.Empty, displaySize), dividerCenters, dividerWidth)
+            End If
+            DrawWindowOverlay(graphics, New Rectangle(Point.Empty, displaySize), depth, glassReflection, glassStyle)
         End Using
         Return overlay
     End Function
@@ -103,11 +141,13 @@ Public NotInheritable Class Reel3DEffect
     Private Shared Sub DrawWindowOverlay(ByVal graphics As Graphics,
                                          ByVal window As Rectangle,
                                          ByVal depth As Integer,
-                                         ByVal glassReflection As Integer)
+                                         ByVal glassReflection As Integer,
+                                         ByVal glassStyle As Integer)
         depth = Math.Max(0, Math.Min(200, depth))
         glassReflection = Math.Max(0, Math.Min(200, glassReflection))
         Dim depthAmount As Double = depth / 100.0
-        Dim insetWidth As Integer = 18 + CInt(Math.Round(7.0 * depthAmount))
+        Dim s As Double = SizeScale(window.Height)
+        Dim insetWidth As Integer = Scaled(18 + CInt(Math.Round(7.0 * depthAmount)), s)
         insetWidth = Math.Min(insetWidth, Math.Max(1, Math.Min(window.Width, window.Height) \ 2 - 1))
         For i As Integer = 0 To insetWidth - 1
             Dim alpha As Integer = ClampAlpha(150.0 * depthAmount * (1.0 - i / CDbl(insetWidth)))
@@ -120,25 +160,31 @@ Public NotInheritable Class Reel3DEffect
             End Using
         Next
 
+        ' Soft glass styles (shared ReelGlass) replace the original lines.
+        If glassStyle <> ReelGlass.StyleLines Then
+            ReelGlass.DrawReflection(graphics, window, glassStyle, glassReflection)
+            Return
+        End If
+
         Dim reflectionAlpha As Integer = ClampAlpha(150.0 * glassReflection / 100.0)
         If reflectionAlpha <= 0 Then Return
-        Dim shineRect As New Rectangle(window.X + 16,
-                                       window.Y + 8,
-                                       Math.Max(2, window.Width - 32),
-                                       Math.Max(16, window.Height \ 3))
+        Dim shineRect As New Rectangle(window.X + Scaled(16, s),
+                                       window.Y + Scaled(8, s),
+                                       Math.Max(2, window.Width - Scaled(32, s)),
+                                       Math.Max(Scaled(16, s), window.Height \ 3))
         Using shine As New LinearGradientBrush(shineRect,
                                                Color.FromArgb(reflectionAlpha, 235, 248, 255),
                                                Color.FromArgb(0, 235, 248, 255),
                                                90.0F)
             graphics.FillRectangle(shine, shineRect)
         End Using
-        Using line As New Pen(Color.FromArgb(reflectionAlpha, 255, 255, 255), 2.5F)
-            graphics.DrawLine(line, window.Left + 35, window.Top + 19, window.Right - 85, window.Top + 7)
+        Using line As New Pen(Color.FromArgb(reflectionAlpha, 255, 255, 255), CSng(2.5 * s))
+            graphics.DrawLine(line, window.Left + Scaled(35, s), window.Top + Scaled(19, s), window.Right - Scaled(85, s), window.Top + Scaled(7, s))
         End Using
-        Using streak As New Pen(Color.FromArgb(reflectionAlpha \ 2, 210, 238, 255), 5.0F)
+        Using streak As New Pen(Color.FromArgb(reflectionAlpha \ 2, 210, 238, 255), CSng(5.0 * s))
             graphics.DrawLine(streak,
                               window.Left + window.Width \ 3,
-                              window.Top + 10,
+                              window.Top + Scaled(10, s),
                               window.Left + window.Width \ 2,
                               window.Top + window.Height \ 3)
         End Using

@@ -578,6 +578,11 @@ Public Class B2SPictureBox
                 hash = MixVisualHash(hash, score.Reel3DTemperature)
                 hash = MixVisualHash(hash, score.Reel3DDepth)
                 hash = MixVisualHash(hash, score.Reel3DGlass)
+                hash = MixVisualHash(hash, score.Reel3DStyle)
+                hash = MixVisualHash(hash, score.Reel3DCurve)
+                hash = MixVisualHash(hash, score.Reel3DGlassStyle)
+                hash = MixVisualHash(hash, score.Reel3DShadow)
+                hash = MixVisualHash(hash, If(score.Reel3DDividers, score.Reel3DDividerWidth, 0))
                 hash = MixVisualHash(hash, CInt(score.DisplayState))
                 hash = MixVisualHash(hash, If(LayerManager.IsVisible(score), 1, 0))
             Next
@@ -1539,6 +1544,69 @@ Public Class B2SPictureBox
         End Try
     End Sub
 
+    ' Realistic 3D reel style: the preview number (0) on its drum with 1 above
+    ' and 9 below, lit like the exported reel images. Nothing = draw Classic.
+    Private Function CreateRealisticReelDigit(ByVal score As ReelAndLED.ScoreInfo, ByVal size As Size) As Bitmap
+        If score Is Nothing OrElse Not score.Reel3DEnabled OrElse score.Reel3DStyle <> ReelRealistic.StyleRealistic Then Return Nothing
+        Dim images As Image() = CreateReelNumberSet(score, Function(image, intensity, location) Lights.DrawIlluminatedReelImage(image, intensity, location), {8, 9, 0, 1, 2})
+        If images Is Nothing Then Return Nothing
+        Try
+            Return RenderRealisticReelDigit(score, images, size, 0, 0.0)
+        Finally
+            DisposeReelNumberSet(images)
+        End Try
+    End Function
+
+    ' The numbers 0 to 9 of the score's reel set (only those asked for), lit
+    ' like the exported reel images. Nothing when the set has no separate
+    ' numbers or no 0. Dispose with DisposeReelNumberSet.
+    Friend Shared Function CreateReelNumberSet(ByVal score As ReelAndLED.ScoreInfo,
+                                               ByVal illuminate As Func(Of Image, Integer, eReelIlluminationLocation, Image),
+                                               Optional ByVal digits As Integer() = Nothing) As Image()
+        If score Is Nothing OrElse illuminate Is Nothing Then Return Nothing
+        If digits Is Nothing Then digits = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+        Dim images(9) As Image
+        For Each digit As Integer In digits
+            Dim raw As Image = GetReelDigitImage(score.ReelType, digit)
+            If raw Is Nothing Then Continue For
+            images(digit) = New Bitmap(raw)
+            If score.ReelIlluLocation <> eReelIlluminationLocation.Off AndAlso score.ReelIlluIntensity > 0 Then
+                Dim illuminated As Image = illuminate(images(digit), score.ReelIlluIntensity, score.ReelIlluLocation)
+                If illuminated IsNot Nothing AndAlso Not Object.ReferenceEquals(illuminated, images(digit)) Then
+                    images(digit).Dispose()
+                    images(digit) = illuminated
+                End If
+            End If
+        Next
+        If images(0) Is Nothing Then
+            DisposeReelNumberSet(images)
+            Return Nothing
+        End If
+        Return images
+    End Function
+
+    Friend Shared Sub DisposeReelNumberSet(ByVal images As Image())
+        If images Is Nothing Then Return
+        For Each image As Image In images
+            If image IsNot Nothing Then image.Dispose()
+        Next
+    End Sub
+
+    ' One Realistic reel showing digit, turned roll (-1 to 1) toward the next
+    ' number, exactly as the Server and plugin draw it.
+    Friend Shared Function RenderRealisticReelDigit(ByVal score As ReelAndLED.ScoreInfo, ByVal numberSet As Image(),
+                                                    ByVal size As Size, ByVal digit As Integer, ByVal roll As Double) As Bitmap
+        If numberSet Is Nothing OrElse digit < 0 OrElse digit > 9 OrElse numberSet(digit) Is Nothing Then Return Nothing
+        Dim numbers(4) As Image
+        For offset As Integer = -2 To 2
+            numbers(offset + 2) = numberSet((digit + offset + 10) Mod 10)
+        Next
+        Return ReelAndLED.Reel3DEffect.RenderRealisticReel(numbers, size,
+                                                           KeepDigitAspect(score), If(KeepDigitAspect(score), score.ReelDigitWidth, 0),
+                                                           score.Reel3DBrightness, score.Reel3DTemperature, score.Reel3DDepth,
+                                                           score.Reel3DCurve, score.Reel3DShadow, roll)
+    End Function
+
     Private Function CreateScoreContentBitmap(ByVal score As ReelAndLED.ScoreInfo,
                                               ByRef glassOverlay As Bitmap) As Bitmap
         glassOverlay = Nothing
@@ -1565,10 +1633,13 @@ Public Class B2SPictureBox
                 End If
             End If
             If score.Reel3DEnabled Then
-                Dim enhanced As Bitmap = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
-                                                                           score.Reel3DBrightness,
-                                                                           score.Reel3DTemperature,
-                                                                           score.Reel3DDepth)
+                Dim enhanced As Bitmap = CreateRealisticReelDigit(score, newSize)
+                If enhanced Is Nothing Then
+                    enhanced = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
+                                                                 score.Reel3DBrightness,
+                                                                 score.Reel3DTemperature,
+                                                                 score.Reel3DDepth)
+                End If
                 If enhanced IsNot Nothing Then
                     reelImage.Dispose()
                     reelImage = enhanced
@@ -1588,10 +1659,12 @@ Public Class B2SPictureBox
                 glassOverlay = New Bitmap(scoreBitmap.Width, scoreBitmap.Height, Imaging.PixelFormat.Format32bppArgb)
                 Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
                     overlayGraphics.Clear(Color.Transparent)
+                    DrawScoreDividers(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score, width)
                     ReelAndLED.Reel3DEffect.DrawWindowOverlay(overlayGraphics,
                                                              New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height),
                                                              score.Reel3DDepth,
-                                                             score.Reel3DGlass)
+                                                             score.Reel3DGlass,
+                                                             score.Reel3DGlassStyle)
                 End Using
             End If
             Return scoreBitmap
@@ -1606,6 +1679,20 @@ Public Class B2SPictureBox
             reelImage.Dispose()
         End Try
     End Function
+
+    ' Reel dividers on the score's window overlay, at the boundaries of the digits
+    ' as this preview lays them out (x from 1, step width + Spacing / 2).
+    Private Shared Sub DrawScoreDividers(ByVal graphics As Graphics, ByVal window As Rectangle,
+                                         ByVal score As ReelAndLED.ScoreInfo, ByVal width As Single)
+        If score Is Nothing OrElse Not score.Reel3DDividers OrElse score.Digits < 2 Then Return
+        Dim lefts(score.Digits - 1) As Double
+        Dim x As Single = 1.0F
+        For i As Integer = 0 To score.Digits - 1
+            lefts(i) = x
+            x += width + score.Spacing / 2.0F
+        Next
+        ReelDivider.Draw(graphics, window, ReelDivider.Centers(lefts, width), score.Reel3DDividerWidth)
+    End Sub
 
     Private Sub DrawScoreDragPreview(ByVal graphics As Graphics,
                                      ByVal preview As ScoreDragPreview,
@@ -1680,10 +1767,13 @@ Public Class B2SPictureBox
                 End If
             End If
             If score.Reel3DEnabled Then
-                Dim enhanced As Bitmap = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
-                                                                           score.Reel3DBrightness,
-                                                                           score.Reel3DTemperature,
-                                                                           score.Reel3DDepth)
+                Dim enhanced As Bitmap = CreateRealisticReelDigit(score, newSize)
+                If enhanced Is Nothing Then
+                    enhanced = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
+                                                                 score.Reel3DBrightness,
+                                                                 score.Reel3DTemperature,
+                                                                 score.Reel3DDepth)
+                End If
                 If enhanced IsNot Nothing Then
                     reelImage.Dispose()
                     reelImage = enhanced
@@ -1704,10 +1794,12 @@ Public Class B2SPictureBox
                     Using glassOverlay As New Bitmap(scoreBitmap.Width, scoreBitmap.Height, Imaging.PixelFormat.Format32bppArgb)
                         Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
                             overlayGraphics.Clear(Color.Transparent)
+                            DrawScoreDividers(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score, width)
                             ReelAndLED.Reel3DEffect.DrawWindowOverlay(overlayGraphics,
                                                                      New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height),
                                                                      score.Reel3DDepth,
-                                                                     score.Reel3DGlass)
+                                                                     score.Reel3DGlass,
+                                                                     score.Reel3DGlassStyle)
                         End Using
                         DrawPerspectiveBitmap(graphics, glassOverlay, ScorePerspectivePoints(score, 1.0F))
                     End Using

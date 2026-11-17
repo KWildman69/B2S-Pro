@@ -372,6 +372,18 @@ Public Class Coding
                         nodeScore.SetAttribute("Reel3DTemperature", Math.Max(2000, Math.Min(6500, .Reel3DTemperature)).ToString())
                         nodeScore.SetAttribute("Reel3DDepth", Math.Max(0, Math.Min(200, .Reel3DDepth)).ToString())
                         nodeScore.SetAttribute("Reel3DGlass", Math.Max(0, Math.Min(200, .Reel3DGlass)).ToString())
+                        ' Classic exports are unchanged; the realistic settings are written
+                        ' once they differ from the defaults or are in use (editable round trip).
+                        If .Reel3DStyle <> 0 OrElse .Reel3DCurve <> 100 OrElse .Reel3DShadow <> 100 Then
+                            nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(1, .Reel3DStyle)).ToString())
+                            nodeScore.SetAttribute("Reel3DCurve", Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, .Reel3DCurve)).ToString())
+                            nodeScore.SetAttribute("Reel3DShadow", Math.Max(0, Math.Min(200, .Reel3DShadow)).ToString())
+                        End If
+                        If .Reel3DGlassStyle <> 0 Then nodeScore.SetAttribute("Reel3DGlassStyle", Math.Max(0, Math.Min(ReelGlass.MaximumStyle, .Reel3DGlassStyle)).ToString())
+                        If .Reel3DDividers Then
+                            nodeScore.SetAttribute("Reel3DDividers", "1")
+                            nodeScore.SetAttribute("Reel3DDividerWidth", Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, .Reel3DDividerWidth)).ToString())
+                        End If
                     End If
                     nodeScore.SetAttribute("LocX", .Location.X)
                     nodeScore.SetAttribute("LocY", .Location.Y)
@@ -1375,6 +1387,12 @@ Public Class Coding
                             If innerNode.Attributes("Reel3DTemperature") IsNot Nothing Then score.Reel3DTemperature = Math.Max(2000, Math.Min(6500, CInt(innerNode.Attributes("Reel3DTemperature").InnerText)))
                             If innerNode.Attributes("Reel3DDepth") IsNot Nothing Then score.Reel3DDepth = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DDepth").InnerText)))
                             If innerNode.Attributes("Reel3DGlass") IsNot Nothing Then score.Reel3DGlass = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DGlass").InnerText)))
+                            If innerNode.Attributes("Reel3DStyle") IsNot Nothing Then score.Reel3DStyle = Math.Max(0, Math.Min(1, CInt(innerNode.Attributes("Reel3DStyle").InnerText)))
+                            If innerNode.Attributes("Reel3DCurve") IsNot Nothing Then score.Reel3DCurve = Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, CInt(innerNode.Attributes("Reel3DCurve").InnerText)))
+                            If innerNode.Attributes("Reel3DShadow") IsNot Nothing Then score.Reel3DShadow = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DShadow").InnerText)))
+                            If innerNode.Attributes("Reel3DGlassStyle") IsNot Nothing Then score.Reel3DGlassStyle = Math.Max(0, Math.Min(ReelGlass.MaximumStyle, CInt(innerNode.Attributes("Reel3DGlassStyle").InnerText)))
+                            If innerNode.Attributes("Reel3DDividers") IsNot Nothing Then score.Reel3DDividers = (innerNode.Attributes("Reel3DDividers").InnerText = "1")
+                            If innerNode.Attributes("Reel3DDividerWidth") IsNot Nothing Then score.Reel3DDividerWidth = Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, CInt(innerNode.Attributes("Reel3DDividerWidth").InnerText)))
                             score.Location = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                             score.Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
                             If score.Size.Width < 10 Then score.Size.Width = 10

@@ -91,6 +91,15 @@ Public Class B2SReelBox
 
     Private Sub PaintReelContent(ByVal graphics As Graphics)
 
+        ' Realistic style: the drum turns smoothly, so the shown number is
+        ' drawn with its roll instead of intermediate images.
+        If smoothRolling AndAlso Not String.IsNullOrEmpty(reelindex) Then
+            Dim rollingName As String = _ReelType & "_" & reelindex
+            Dim rollingIlluminatedName As String = rollingName & If(SetID > 0, "_" & SetID.ToString(), "")
+            DrawAvailableReelImage(graphics, B2SData.ReelImages, B2SData.ReelIlluImages, rollingName, rollingIlluminatedName)
+            Return
+        End If
+
         If Not String.IsNullOrEmpty(reelindex) Then
             If intermediates = -1 AndAlso timer.Enabled Then
                 Static firstintermediatecount As Integer = 1
@@ -126,10 +135,12 @@ Public Class B2SReelBox
                                             ByVal regularName As String,
                                             ByVal illuminatedName As String) As Boolean
         If _Illuminated AndAlso illuminatedImages.ContainsKey(illuminatedName) Then
+            drawnFromIlluminated = True
             DrawReelImage(graphics, illuminatedImages(illuminatedName), illuminatedName & "|illuminated")
             Return True
         End If
         If regularImages.ContainsKey(regularName) Then
+            drawnFromIlluminated = False
             DrawReelImage(graphics, regularImages(regularName), regularName & "|regular")
             Return True
         End If
@@ -137,6 +148,8 @@ Public Class B2SReelBox
     End Function
 
     Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
+        ' The Realistic style sizes the number itself, from the original artwork.
+        realisticSource = If(Reel3DEnabled AndAlso Reel3DStyle = ReelRealistic.StyleRealistic, reelImage, Nothing)
         If KeepDigitAspect Then
             Dim renderSize As Size = AuthoredReelSize()
             Using fitted As Bitmap = If(ReelDigitWidth > 0,
@@ -154,6 +167,7 @@ Public Class B2SReelBox
 
         Dim renderSize As Size = AuthoredReelSize()
         Dim imageToDraw As Image = reelImage
+        Dim rollingFrame As Bitmap = Nothing
         If Reel3DEnabled Then
             ' A triggered 3D reel keeps its depth and glass while inactive, but
             ' its backlight follows the same state as the legacy reel light.
@@ -163,7 +177,32 @@ Public Class B2SReelBox
             Dim effectiveTemperature As Integer = If(backlightOn, Reel3DTemperature, 4000)
             Dim cacheKey As String = cacheName & "|" & renderSize.Width.ToString() & "x" & renderSize.Height.ToString() &
                                      "|" & effectiveBrightness.ToString() & "|" & effectiveTemperature.ToString() & "|" & Reel3DDepth.ToString()
-            If Not reel3DImageCache.ContainsKey(cacheKey) Then
+            If realisticSource IsNot Nothing Then
+                ' The strip around the shown number: offsets -2 to +2 (+1 = next, above).
+                Dim numbers(4) As Image
+                For offset As Integer = -2 To 2
+                    numbers(offset + 2) = If(offset = 0, realisticSource, NeighbourReelImage(offset))
+                Next
+                Dim above As Image = numbers(3)
+                Dim below As Image = numbers(1)
+                If smoothRolling AndAlso smoothRoll <> 0.0 Then
+                    ' A turning drum changes every frame, so it is drawn, not cached.
+                    rollingFrame = Reel3DEffect.RenderRealisticReel(numbers, renderSize,
+                                                                    KeepDigitAspect, If(KeepDigitAspect, ReelDigitWidth, 0),
+                                                                    effectiveBrightness, effectiveTemperature, Reel3DDepth,
+                                                                    Reel3DCurve, Reel3DShadow, smoothRoll)
+                Else
+                    cacheKey &= "|realistic|" & Reel3DCurve.ToString() & "|" & Reel3DShadow.ToString() & "|" &
+                                If(above Is Nothing, "-", above.GetHashCode().ToString()) & "|" & If(below Is Nothing, "-", below.GetHashCode().ToString())
+                    If Not reel3DImageCache.ContainsKey(cacheKey) Then
+                        Dim realistic As Bitmap = Reel3DEffect.RenderRealisticReel(numbers, renderSize,
+                                                                                   KeepDigitAspect, If(KeepDigitAspect, ReelDigitWidth, 0),
+                                                                                   effectiveBrightness, effectiveTemperature, Reel3DDepth,
+                                                                                   Reel3DCurve, Reel3DShadow, 0.0)
+                        If realistic IsNot Nothing Then reel3DImageCache.Add(cacheKey, realistic)
+                    End If
+                End If
+            ElseIf Not reel3DImageCache.ContainsKey(cacheKey) Then
                 Dim enhanced As Bitmap = Reel3DEffect.RenderReel(reelImage,
                                                                  renderSize,
                                                                  effectiveBrightness,
@@ -171,7 +210,11 @@ Public Class B2SReelBox
                                                                  Reel3DDepth)
                 If enhanced IsNot Nothing Then reel3DImageCache.Add(cacheKey, enhanced)
             End If
-            If reel3DImageCache.ContainsKey(cacheKey) Then imageToDraw = reel3DImageCache(cacheKey)
+            If rollingFrame IsNot Nothing Then
+                imageToDraw = rollingFrame
+            ElseIf reel3DImageCache.ContainsKey(cacheKey) Then
+                imageToDraw = reel3DImageCache(cacheKey)
+            End If
         End If
 
         ' Legacy directB2S files and pre-unified B2S Pro exports keep the original
@@ -201,12 +244,16 @@ Public Class B2SReelBox
         If Reel3DEnabled AndAlso Reel3DDisplayWidth > 2 Then
             Dim overlayHeight As Integer = renderSize.Height
             Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & overlayHeight.ToString() &
-                                       "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString()
+                                       "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString() & "|" & Reel3DGlassStyle.ToString() &
+                                       "|" & Reel3DDividerWidth.ToString()
             If reel3DOverlayCache Is Nothing OrElse reel3DOverlayCacheKey <> overlayKey Then
                 If reel3DOverlayCache IsNot Nothing Then reel3DOverlayCache.Dispose()
                 reel3DOverlayCache = Reel3DEffect.CreateWindowOverlay(New Size(Reel3DDisplayWidth, overlayHeight),
                                                                       Reel3DDepth,
-                                                                      Reel3DGlass)
+                                                                      Reel3DGlass,
+                                                                      Reel3DGlassStyle,
+                                                                      Reel3DDividerCenters,
+                                                                      Reel3DDividerWidth)
                 reel3DOverlayCacheKey = overlayKey
             End If
             If reel3DOverlayCache IsNot Nothing Then
@@ -221,6 +268,8 @@ Public Class B2SReelBox
             End If
         End If
 
+        If rollingFrame IsNot Nothing Then rollingFrame.Dispose()
+
     End Sub
 
     ' Places this digit on its slice of the transformed score (design units).
@@ -230,6 +279,20 @@ Public Class B2SReelBox
         Me.Size = scoreSlice.Bounds.Size
         scoreSlice.ApplyRegion(Me)
     End Sub
+
+    ' The number next to the shown one on the reel strip (+1 = above, -1 =
+    ' below), from the same image set. Nothing when the reel shows no number.
+    Private Function NeighbourReelImage(ByVal offset As Integer) As Image
+        Dim digit As Integer
+        If String.IsNullOrEmpty(reelindex) OrElse Not Integer.TryParse(reelindex, digit) OrElse digit < 0 OrElse digit > 9 Then Return Nothing
+        Dim name As String = _ReelType & "_" & ConvertText((digit + offset + 10) Mod 10)
+        If drawnFromIlluminated Then
+            Dim illuminatedName As String = name & If(SetID > 0, "_" & SetID.ToString(), "")
+            If B2SData.ReelIlluImages.ContainsKey(illuminatedName) Then Return B2SData.ReelIlluImages(illuminatedName)
+        End If
+        If B2SData.ReelImages.ContainsKey(name) Then Return B2SData.ReelImages(name)
+        Return Nothing
+    End Function
 
     Private Function AuthoredReelSize() As Size
         If ReelDesignSize.Width > 0 AndAlso ReelDesignSize.Height > 0 Then Return ReelDesignSize
@@ -261,8 +324,104 @@ Public Class B2SReelBox
     Public Property Reel3DTemperature As Integer = 4000
     Public Property Reel3DDepth As Integer = 100
     Public Property Reel3DGlass As Integer = 55
+    Public Property Reel3DStyle As Integer = 0
+    Public Property Reel3DCurve As Integer = 100
+    Public Property Reel3DShadow As Integer = 100
+    Public Property Reel3DGlassStyle As Integer = 0
+    Private realisticSource As Image = Nothing
+
+    ' Realistic style: the drum turns smoothly from one number to the next,
+    ' one step taking the same time as a Classic step (ReelRealistic.StepMilliseconds).
+    Private Const SmoothFrameInterval As Integer = 15
+    Private smoothRolling As Boolean = False
+    Private smoothRoll As Double = 0.0
+    Private smoothStepStart As Double = 0.0
+    Private ReadOnly smoothClock As New Diagnostics.Stopwatch()
+
+    Private ReadOnly Property UsesSmoothRoll As Boolean
+        Get
+            Return Reel3DEnabled AndAlso Reel3DStyle = ReelRealistic.StyleRealistic AndAlso Not isLED
+        End Get
+    End Property
+
+    Private Sub StartSmoothRoll()
+        ' A roll in progress keeps turning toward the new number.
+        If smoothRolling Then Return
+        smoothRolling = True
+        smoothRoll = 0.0
+        smoothStepStart = 0.0
+        smoothClock.Restart()
+        timer.Stop()
+        timer.Interval = SmoothFrameInterval
+        timer.Start()
+    End Sub
+
+    Private Sub StopSmoothRoll()
+        smoothRolling = False
+        smoothRoll = 0.0
+        smoothClock.Stop()
+        timer.Stop()
+        timer.Interval = CInt(_RollingInterval / (If((intermediates = -1), 3, intermediates) + 2))
+    End Sub
+
+    ' Intermediate images of the shown number, as the plugin counts them.
+    Private Function SmoothIntermediateCount() As Integer
+        Dim count As Integer = 0
+        Do While B2SData.ReelIntermediateImages.ContainsKey(_ReelType & "_" & reelindex & "_" & (count + 1).ToString())
+            count += 1
+        Loop
+        Return count
+    End Function
+
+    Private Sub SmoothRollTick()
+        Dim stepMs As Double = ReelRealistic.StepMilliseconds(_RollingInterval, SmoothIntermediateCount())
+        Dim phase As Double = (smoothClock.Elapsed.TotalMilliseconds - smoothStepStart) / stepMs
+        Do While phase >= 1.0
+            smoothStepStart += stepMs
+            phase -= 1.0
+            ' add one reel step (as the Classic timer does)
+            _CurrentText += 1
+            If _CurrentText > 9 Then
+                _CurrentText = 0
+                RaiseEvent ReelRollOver(Me, New ReelRollOverEventArgs(ID))
+            End If
+            reelindex = ConvertText(_CurrentText)
+            Try
+                If Sound() IsNot Nothing Then
+                    My.Computer.Audio.Play(Sound(), AudioPlayMode.Background)
+                ElseIf SoundName() = "stille" Then
+                    ' no sound
+                Else
+                    My.Computer.Audio.Play(My.Resources.EMReel, AudioPlayMode.Background)
+                End If
+            Catch
+            End Try
+            If _CurrentText = _Text OrElse _Text >= 10 Then
+                StopSmoothRoll()
+                Me.Invalidate()
+                Return
+            End If
+        Loop
+        smoothRoll = phase
+        Me.Invalidate()
+    End Sub
+    Private drawnFromIlluminated As Boolean = False
     Public Property Reel3DDisplayWidth As Integer = 0
     Public Property Reel3DDisplayOffsetX As Integer = 0
+    ' B2S Pro reel dividers: line width in design pixels (0 = off) and the digit
+    ' boundaries of the whole display, in display (overlay) pixels.
+    Public Property Reel3DDividerWidth As Integer = 0
+    Public Property Reel3DDividerCenters As Double() = Nothing
+    ' B2S Pro: the gap to the next digit of a rotated/perspective display, in
+    ' design units (Nothing for the last digit or a straight-on display).
+    Friend Property Reel3DGapDesignQuad As PointF() = Nothing
+
+    ' Design-unit box of this digit's transformed slice (empty when straight on).
+    Friend ReadOnly Property ScoreSliceDesignBounds As Rectangle
+        Get
+            Return If(scoreSlice Is Nothing, Rectangle.Empty, scoreSlice.Bounds)
+        End Get
+    End Property
     'Protected Overrides Sub OnPaintBackground(pevent As System.Windows.Forms.PaintEventArgs)
 
     '    ' nothing to do but important
@@ -298,6 +457,11 @@ Public Class B2SReelBox
     End Sub
 
     Private Sub ReelAnimationTimer_Tick(ByVal sender As Object, ByVal e As System.EventArgs)
+
+        If smoothRolling Then
+            SmoothRollTick()
+            Return
+        End If
 
         If intermediates2go > 0 OrElse intermediates = -1 Then
 
@@ -414,7 +578,9 @@ Public Class B2SReelBox
             If value >= 0 Then
                 If _Text <> value Then
                     _Text = value
-                    If AnimateReelChange AndAlso Not isLED Then
+                    If AnimateReelChange AndAlso Not isLED AndAlso UsesSmoothRoll Then
+                        StartSmoothRoll()
+                    ElseIf AnimateReelChange AndAlso Not isLED Then
                         timer.Stop()
                         intermediates2go = intermediates
                         timer.Start()
@@ -447,6 +613,7 @@ Public Class B2SReelBox
 
     Public ReadOnly Property IsInReelRolling() As Boolean
         Get
+            If smoothRolling Then Return True
             Return (intermediates2go <= 0)
         End Get
     End Property
@@ -633,6 +800,112 @@ Friend NotInheritable Class ScoreTransform
             graphics.InterpolationMode = oldMode
         End Try
     End Sub
+End Class
+
+' B2S Pro: the strip between two digits of a 3D reel display. The Designer
+' draws the window overlay (inset shadow and glass) across the whole score
+' rectangle, gaps included; a B2SReelBox draws only its own part, so the
+' backglass draws the gap parts at the score's place in the layer deck.
+Friend NotInheritable Class ReelGapOverlay
+    Public ReadOnly ZOrder As Integer
+    Private ReadOnly leftReel As B2SReelBox
+    Private ReadOnly rightReel As B2SReelBox
+
+    Private Shared ReadOnly overlays As New Generic.Dictionary(Of String, Bitmap)()
+    Private Shared ReadOnly slices As New Generic.Dictionary(Of String, Bitmap)()
+
+    Private Sub New(ByVal leftReel As B2SReelBox, ByVal rightReel As B2SReelBox)
+        Me.leftReel = leftReel
+        Me.rightReel = rightReel
+        ZOrder = leftReel.UnifiedLayerZOrder
+    End Sub
+
+    ' The gaps of the visible 3D reel displays on this parent, back to front.
+    ' Empty for legacy files and for displays without 3D reels.
+    Public Shared Function Collect(ByVal parent As Control) As Generic.List(Of ReelGapOverlay)
+        Dim result As New Generic.List(Of ReelGapOverlay)()
+        If Not B2SData.UnifiedLayerDeck OrElse parent Is Nothing Then Return result
+        For Each display As B2SReelDisplay In B2SData.ReelDisplays.Values
+            Dim reels As New Generic.List(Of B2SReelBox)()
+            For Each reel As B2SReelBox In display.Reels.Values
+                If reel IsNot Nothing AndAlso reel.Parent Is parent AndAlso reel.Visible AndAlso
+                   reel.Reel3DEnabled AndAlso reel.Reel3DDisplayWidth > 2 AndAlso reel.ReelDesignSize.Height > 0 Then
+                    reels.Add(reel)
+                End If
+            Next
+            reels.Sort(Function(a, b) a.Reel3DDisplayOffsetX.CompareTo(b.Reel3DDisplayOffsetX))
+            For i As Integer = 0 To reels.Count - 2
+                If reels(i + 1).Reel3DDisplayOffsetX > reels(i).Reel3DDisplayOffsetX + reels(i).ReelDesignSize.Width Then
+                    result.Add(New ReelGapOverlay(reels(i), reels(i + 1)))
+                End If
+            Next
+        Next
+        result.Sort(Function(a, b) a.ZOrder.CompareTo(b.ZOrder))
+        Return result
+    End Function
+
+    ' Draws this gap's part of the display-wide overlay: the same overlay the
+    ' digits crop from, mapped like the digits (flat box or warped slice).
+    Public Sub Draw(ByVal graphics As Graphics)
+        Dim overlay As Bitmap = DisplayOverlay(leftReel)
+        If overlay Is Nothing Then Return
+        Dim sourceX0 As Integer = Math.Max(0, Math.Min(overlay.Width, leftReel.Reel3DDisplayOffsetX + leftReel.ReelDesignSize.Width))
+        Dim sourceX1 As Integer = Math.Max(sourceX0, Math.Min(overlay.Width, rightReel.Reel3DDisplayOffsetX))
+        If sourceX1 <= sourceX0 Then Return
+        Dim source As New Rectangle(sourceX0, 0, sourceX1 - sourceX0, overlay.Height)
+        Dim state As Drawing2D.GraphicsState = graphics.Save()
+        Try
+            graphics.CompositingMode = Drawing2D.CompositingMode.SourceOver
+            Dim gapQuad As PointF() = leftReel.Reel3DGapDesignQuad
+            If gapQuad Is Nothing Then
+                ' Same interpolation the digit uses for its overlay part.
+                graphics.InterpolationMode = Drawing2D.InterpolationMode.Bilinear
+                graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.Default
+                Dim target As Rectangle = Rectangle.FromLTRB(leftReel.Right, leftReel.Top, rightReel.Left, leftReel.Bottom)
+                If target.Width > 0 AndAlso target.Height > 0 Then graphics.DrawImage(overlay, target, source, GraphicsUnit.Pixel)
+            Else
+                Dim design As Rectangle = leftReel.ScoreSliceDesignBounds
+                If design.Width <= 0 OrElse design.Height <= 0 Then Return
+                Dim scaleX As Single = leftReel.Width / CSng(design.Width)
+                Dim scaleY As Single = leftReel.Height / CSng(design.Height)
+                Dim target As PointF() = gapQuad.Select(Function(point) New PointF(leftReel.Left + (point.X - design.X) * scaleX,
+                                                                                    leftReel.Top + (point.Y - design.Y) * scaleY)).ToArray()
+                ScoreTransform.DrawWarped(graphics, OverlaySlice(overlay, source), target)
+            End If
+        Finally
+            graphics.Restore(state)
+        End Try
+    End Sub
+
+    ' The display overlay exactly as B2SReelBox builds it (same size and settings).
+    Private Shared Function DisplayOverlay(ByVal reel As B2SReelBox) As Bitmap
+        Dim size As New Size(reel.Reel3DDisplayWidth, reel.ReelDesignSize.Height)
+        Dim key As String = size.Width.ToString() & "x" & size.Height.ToString() & "|" & reel.Reel3DDepth.ToString() &
+                            "|" & reel.Reel3DGlass.ToString() & "|" & reel.Reel3DGlassStyle.ToString() &
+                            "|" & reel.Reel3DDividerWidth.ToString() & "|" & DividerKey(reel.Reel3DDividerCenters)
+        Dim overlay As Bitmap = Nothing
+        If Not overlays.TryGetValue(key, overlay) Then
+            overlay = Reel3DEffect.CreateWindowOverlay(size, reel.Reel3DDepth, reel.Reel3DGlass, reel.Reel3DGlassStyle,
+                                                       reel.Reel3DDividerCenters, reel.Reel3DDividerWidth)
+            overlays(key) = overlay
+        End If
+        Return overlay
+    End Function
+
+    Private Shared Function DividerKey(ByVal centers As Double()) As String
+        If centers Is Nothing Then Return "-"
+        Return String.Join(",", centers.Select(Function(center) center.ToString(Globalization.CultureInfo.InvariantCulture)))
+    End Function
+
+    Private Shared Function OverlaySlice(ByVal overlay As Bitmap, ByVal source As Rectangle) As Bitmap
+        Dim key As String = overlay.GetHashCode().ToString() & "|" & source.ToString()
+        Dim slice As Bitmap = Nothing
+        If Not slices.TryGetValue(key, slice) Then
+            slice = overlay.Clone(source, overlay.PixelFormat)
+            slices(key) = slice
+        End If
+        Return slice
+    End Function
 End Class
 
 ' The slice of a transformed score that one control shows, in design units

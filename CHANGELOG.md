@@ -2,6 +2,41 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 2.1.0 / Server 3.0.13 — 2026-11-17
+
+**Feature Update — Realistic 3D Reels, Reel Dividers, and Quieter Update Checks**
+
+### Important
+
+- Update the Designer and the Server together.
+- 3D reels in existing B2S Pro backglasses now match the Designer: full 3D depth at every screen size, and shading and glass across the gaps between the numbers.
+- The update checker no longer asks every day once you are up to date.
+
+### Designer
+
+- Reel Lighting & 3D: new Realistic reel style (a curved drum showing the next and previous numbers, with a window shadow), Drum curve up to 300, and a Glass look choice.
+- Reel dividers: a black line between the numbers, with adjustable width, so each number reads as its own reel.
+- Reel roll time slider to slow the reels down a little.
+- Test spin shows the selected score rolling the way VPX will.
+- 3D reel effects scale with the backglass, so they look the same at any screen size.
+
+### Server
+
+- 3D reels keep their full depth at every backglass size (Server 3.0.12 drew them flatter on smaller screens).
+- The 3D shading and glass now cover the gaps between reels, matching the Designer.
+- Realistic reels roll smoothly; reel dividers and the new glass looks are drawn exactly as in the Designer.
+
+### Setup
+
+- Setup records the installed package, so the update checker stops asking once the current version is installed.
+
+### Compatibility
+
+- Legacy .directb2s backglasses run unchanged.
+- The Realistic style, dividers, glass looks and roll speed appear only after you turn them on and export again with Step 1 – Create DirectB2S File.
+- ScreenRes files, Server registration, table settings, projects and backglasses are preserved.
+- The B2S Pro VPX plugin is released separately.
+
 ## Designer 2.0.0 / Server 3.0.12 — 2026-11-15
 
 **Major Update — New Layer System, DMD Layering, and Smoother Rotation**

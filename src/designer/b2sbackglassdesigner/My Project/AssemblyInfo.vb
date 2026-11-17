@@ -32,5 +32,5 @@ Imports System.Runtime.InteropServices
 ' <Assembly: AssemblyVersion("3.0.10.0")> 
 
 <Assembly: AssemblyVersion("3.0.10.0")>
-<Assembly: AssemblyFileVersion("2.0.0.0")>
-<Assembly: AssemblyInformationalVersion("2.0.0")>
+<Assembly: AssemblyFileVersion("2.1.0.0")>
+<Assembly: AssemblyInformationalVersion("2.1.0")>

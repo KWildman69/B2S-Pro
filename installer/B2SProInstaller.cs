@@ -21,15 +21,15 @@ using System.Windows.Forms;
 #if SERVER_ONLY
 [assembly: AssemblyTitle("B2S Pro Server Setup")]
 [assembly: AssemblyProduct("B2S Pro Server")]
-[assembly: AssemblyVersion("3.0.12.0")]
-[assembly: AssemblyFileVersion("3.0.12.0")]
-[assembly: AssemblyInformationalVersion("3.0.12")]
+[assembly: AssemblyVersion("3.0.13.0")]
+[assembly: AssemblyFileVersion("3.0.13.0")]
+[assembly: AssemblyInformationalVersion("3.0.13")]
 #else
 [assembly: AssemblyTitle("B2S Pro Setup")]
 [assembly: AssemblyProduct("B2S Pro Backglass Designer")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
-[assembly: AssemblyInformationalVersion("2.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyInformationalVersion("2.1.0")]
 #endif
 [assembly: AssemblyCompany("B2S Pro")]
 [assembly: AssemblyCopyright("Copyright © 2026 Ken Wildman")]
@@ -1020,7 +1020,7 @@ namespace B2SPro.Setup
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             using (var client = new HttpClient())
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(serverOnly ? "B2S-Server-Updater/3.0.12" : "B2S-Pro-Installer/2.0.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(serverOnly ? "B2S-Server-Updater/3.0.13" : "B2S-Pro-Installer/2.1.0");
                 string json;
                 try
                 {
@@ -1635,6 +1635,12 @@ namespace B2SPro.Setup
                 selected.Add(item.Destination);
                 if (!File.Exists(item.Destination)) additions.Add(item.Destination);
             }
+            foreach (string root in roots)
+            {
+                string receipt = Path.Combine(root, PackageReceiptName);
+                selected.Add(receipt);
+                if (!File.Exists(receipt)) additions.Add(receipt);
+            }
             return FolderRecovery.CreateSelected(roots, additions, backupRoot ?? FolderRecovery.DefaultRoot, selected);
         }
 
@@ -1783,6 +1789,11 @@ namespace B2SPro.Setup
                     installed++;
                 }
 
+                // B2SUpdateChecker compares this receipt with the GitHub package digest when the
+                // installed version equals the latest release; without it every check re-prompts.
+                if (_installDesigner) WritePackageReceipt(_designer, designerBackup, _designerDigest, changed);
+                if (_installServer) WritePackageReceipt(_server, serverBackup, _serverDigest, changed);
+
                 string registrationError = null;
                 if (_installServer && registerServer)
                 {
@@ -1813,6 +1824,23 @@ namespace B2SPro.Setup
                         try { Directory.Delete(temporaryBackup, true); } catch { /* A locked temporary copy may be removed by normal temp cleanup. */ }
             }
         }
+
+        private static void WritePackageReceipt(string folder, string backupFolder, string digest, List<RollbackItem> changed)
+        {
+            if (String.IsNullOrWhiteSpace(digest)) throw new InvalidDataException("The package fingerprint is missing. Nothing was installed.");
+            string destination = Path.Combine(folder, PackageReceiptName);
+            bool existed = File.Exists(destination);
+            string backup = Path.Combine(backupFolder, PackageReceiptName);
+            if (existed)
+            {
+                Directory.CreateDirectory(backupFolder);
+                File.Copy(destination, backup, true);
+            }
+            changed.Add(new RollbackItem(destination, existed ? backup : null, existed));
+            File.WriteAllText(destination, digest + Environment.NewLine);
+        }
+
+        internal const string PackageReceiptName = "B2S-Package.sha256";
 
         private void RegisterServer()
         {
@@ -2246,6 +2274,16 @@ namespace B2SPro.Setup
 
     internal static class SelfTest
     {
+        // The update checker treats a matching receipt as "this exact package is installed".
+        private static void AssertPackageReceipt(string folder, string packagePath, string description)
+        {
+            string receipt = Path.Combine(folder, InstallPlan.PackageReceiptName);
+            if (!File.Exists(receipt)) throw new Exception(description + " did not write the package receipt.");
+            string recorded = File.ReadAllText(receipt).Trim();
+            if (!String.Equals(recorded, Hashing.Sha256(packagePath), StringComparison.OrdinalIgnoreCase))
+                throw new Exception(description + " wrote a package receipt that does not match the installed package.");
+        }
+
         private static int RunServerOnly(string[] args)
         {
             if (args.Length < 2 || !File.Exists(args[1]))
@@ -2289,6 +2327,7 @@ namespace B2SPro.Setup
             if (File.ReadAllText(Path.Combine(existingServer, "README.txt")) != "KEEP-README") throw new Exception("The existing Server update changed an existing unapproved file.");
             if (File.ReadAllText(Path.Combine(existingServer, "ScreenRes.txt")) != "KEEP-SCREENRES") throw new Exception("The existing Server update changed ScreenRes.txt.");
             if (File.ReadAllText(Path.Combine(existingServer, "Plugins", "Plugins.txt")) != "KEEP-PLUGINS") throw new Exception("The existing Server update changed Plugins.");
+            AssertPackageReceipt(existingServer, args[1], "Existing Server update");
 
             string freshServer = Path.Combine(sandbox, "FreshServer");
             using (var package = new ReleaseBundle(null, args[1]))
@@ -2300,6 +2339,7 @@ namespace B2SPro.Setup
             }
             foreach (string required in new[] { "B2SBackglassServer.dll", "B2SBackglassServerEXE.exe", "B2SBackglassServerRegisterApp.exe", "B2SInit.cmd", "B2SUpdateChecker.exe", "ScreenResTemplate.txt" })
                 if (!File.Exists(Path.Combine(freshServer, required))) throw new Exception("The fresh Server package did not install: " + required);
+            AssertPackageReceipt(freshServer, args[1], "Fresh Server install");
 
             Directory.Delete(sandbox, true);
             Console.WriteLine("SELF-TEST PASSED: an existing Server updates only the approved Server files, restores missing package files including nested files, and preserves existing unapproved files, ScreenRes and Plugins; a missing Server receives the complete package; live registration skipped");
@@ -2358,6 +2398,8 @@ namespace B2SPro.Setup
                     File.ReadAllText(Path.Combine(server, "B2SBackglassServerEXE.exe")) != "KEEP-SERVER-EXE" ||
                     File.ReadAllText(Path.Combine(server, "ScreenRes.txt")) != "KEEP-SCREENRES")
                     throw new Exception(arch + " Designer setup changed the existing Server installation.");
+                AssertPackageReceipt(designer, args[1], arch + " existing Designer update");
+                if (File.Exists(Path.Combine(server, InstallPlan.PackageReceiptName))) throw new Exception(arch + " Designer setup wrote a package receipt into the Server folder.");
             }
 
             string freshVpx = Path.Combine(sandbox, "FreshVisualPinball");
@@ -2377,6 +2419,7 @@ namespace B2SPro.Setup
 
             foreach (string required in new[] { "B2SPro.exe", "B2SPro.exe.config", "B2SUpdateChecker.exe", "B2SProHelp.html", "B2SVPinMAMEStarter.exe" })
                 if (!File.Exists(Path.Combine(freshDesigner, required))) throw new Exception("The fresh Designer package did not install: " + required);
+            AssertPackageReceipt(freshDesigner, args[1], "Fresh Designer install");
             if (File.ReadAllText(Path.Combine(separateServer, "B2SBackglassServer.dll")) != "KEEP-SEPARATE-SERVER")
                 throw new Exception("The fresh Designer setup changed a separate Server installation.");
             if (Directory.Exists(Path.Combine(freshVpx, "B2SServer"))) throw new Exception("The Designer setup created a B2SServer folder.");
@@ -2452,7 +2495,8 @@ namespace B2SPro.Setup
                         if (File.ReadAllText(Path.Combine(designer, "B2SPro.exe.config")) != "UNCHANGED-DESIGNER-CONFIG") throw new Exception(arch + " existing install changed the Designer config.");
                         if (File.ReadAllText(Path.Combine(server, "B2SBackglassServerEXE.exe.config")) != "UNCHANGED-SERVER-CONFIG") throw new Exception(arch + " existing install changed the Server config.");
                         if (File.ReadAllText(Path.Combine(server, "README.txt")) != "UNCHANGED-SERVER-README") throw new Exception(arch + " existing install changed the Server README.");
-                        if (File.Exists(Path.Combine(server, "B2S-Package.sha256"))) throw new Exception(arch + " existing install created an unapproved package receipt.");
+                        if (File.Exists(Path.Combine(server, "B2S-Package.sha256"))) throw new Exception(arch + " Designer setup wrote a package receipt into the Server folder.");
+                        AssertPackageReceipt(designer, args[1], arch + " Designer update");
                         if (File.Exists(Path.Combine(designer, "B2SPro-Install.log")) || File.Exists(Path.Combine(server, "B2SServer-Install.log"))) throw new Exception(arch + " existing install created an unapproved install log.");
                         if (Directory.Exists(Path.Combine(designer, "B2SPro-Backups"))) throw new Exception(arch + " Designer recovery archive should not be retained.");
                         if (Directory.Exists(Path.Combine(server, "B2SPro-Backups"))) throw new Exception(arch + " temporary rollback files were retained inside the Server folder.");
@@ -2575,7 +2619,7 @@ namespace B2SPro.Setup
                     }
                     if (Directory.Exists(Path.Combine(serverOnlyRoot, "B2SPro-Backups"))) throw new Exception("Server-only setup retained temporary rollback files inside the Server folder.");
                     if (File.Exists(Path.Combine(serverOnlyRoot, "B2SServer-Install.log"))) throw new Exception("Server-only update created an unapproved install log.");
-                    if (File.Exists(Path.Combine(serverOnlyRoot, "B2S-Package.sha256"))) throw new Exception("Server-only update created an unapproved package receipt.");
+                    AssertPackageReceipt(serverOnlyRoot, args[2], "Server-only update");
                     if (Directory.GetFiles(serverOnlyRoot, "B2SPro.exe", SearchOption.AllDirectories).Length != 0) throw new Exception("Server-only setup installed Designer files.");
                 }
 
@@ -2633,6 +2677,8 @@ namespace B2SPro.Setup
                 }
                 if (File.Exists(Path.Combine(replacementServer, "B2SBackglassServer.dll")))
                     throw new Exception("Restore left the replacement server DLL behind.");
+                if (File.Exists(Path.Combine(replacementServer, InstallPlan.PackageReceiptName)))
+                    throw new Exception("Restore left the new package receipt behind.");
 
                 Directory.Delete(sandbox, true);
                 Console.WriteLine("SELF-TEST PASSED: Designer and Server packages install independently; fresh components receive complete packages; an existing Designer replaces only release-approved files; an existing Server replaces only approved Server files; neither setup touches the other component or unrelated locations; recovery restores only files covered by the install; live registration skipped");

@@ -685,14 +685,28 @@ Public Class formBackglass
 
             ' The same normal image stack is used on both sides. The canvas is
             ' only the fixed card inserted at the saved position.
+            ' 3D reel displays: the strips between their digits get the window
+            ' overlay at the score's place in the deck (none: unchanged paint).
+            Dim reelGaps As Generic.List(Of ReelGapOverlay) = If(B2SData.UnifiedLayerDeck, ReelGapOverlay.Collect(Me), Nothing)
+            Dim hasReelGaps As Boolean = reelGaps IsNot Nothing AndAlso reelGaps.Count > 0
             If B2SData.UnifiedLayerDeck Then
-                DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder <= B2SData.CanvasLayerPosition))
+                If hasReelGaps Then
+                    DrawDeckSegmentWithReelGaps(e, deck.Where(Function(image) image.ZOrder <= B2SData.CanvasLayerPosition).ToList(),
+                                                reelGaps.Where(Function(gap) gap.ZOrder <= B2SData.CanvasLayerPosition))
+                Else
+                    DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder <= B2SData.CanvasLayerPosition))
+                End If
             Else
                 DrawIlluminationDeckSegment(e, deck.Take(canvasPosition))
             End If
             e.Graphics.DrawImage(Me.BackgroundImage, 0, 0)
             If B2SData.UnifiedLayerDeck Then
-                DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder > B2SData.CanvasLayerPosition))
+                If hasReelGaps Then
+                    DrawDeckSegmentWithReelGaps(e, deck.Where(Function(image) image.ZOrder > B2SData.CanvasLayerPosition).ToList(),
+                                                reelGaps.Where(Function(gap) gap.ZOrder > B2SData.CanvasLayerPosition))
+                Else
+                    DrawIlluminationDeckSegmentCached(e, deck.Where(Function(image) image.ZOrder > B2SData.CanvasLayerPosition))
+                End If
             Else
                 DrawIlluminationDeckSegment(e, deck.Skip(canvasPosition))
             End If
@@ -863,15 +877,48 @@ Public Class formBackglass
         Return drawme
     End Function
 
-    Private Sub DrawIlluminationDeckSegmentCached(ByVal e As PaintEventArgs,
-                                                  ByVal items As IEnumerable(Of B2SPictureBox))
-        Dim list As New Generic.List(Of B2SPictureBox)(items)
-        For Each image As B2SPictureBox In list
+    ' One deck segment with the reel gap overlays inserted at their scores'
+    ' places: the items up to each gap's rank, the gap, then the rest. The
+    ' dynamic front-light pass still covers the whole segment first.
+    Private Sub DrawDeckSegmentWithReelGaps(ByVal e As PaintEventArgs,
+                                            ByVal items As Generic.List(Of B2SPictureBox),
+                                            ByVal gaps As IEnumerable(Of ReelGapOverlay))
+        Dim gapList As New Generic.List(Of ReelGapOverlay)(gaps)
+        If gapList.Count = 0 Then
+            DrawIlluminationDeckSegmentCached(e, items)
+            Return
+        End If
+        For Each image As B2SPictureBox In items
             If image.DynamicFrontLighting AndAlso image.DynamicFrontShowLight AndAlso
                Not image.SeparateLightLayer AndAlso Not image.IsImageSnippit Then
                 DrawImage(e, image, True)
             End If
         Next
+        Dim start As Integer = 0
+        For Each gap As ReelGapOverlay In gapList
+            Dim finish As Integer = start
+            While finish < items.Count AndAlso items(finish).ZOrder <= gap.ZOrder
+                finish += 1
+            End While
+            DrawIlluminationDeckSegmentCached(e, items.GetRange(start, finish - start), False)
+            gap.Draw(e.Graphics)
+            start = finish
+        Next
+        DrawIlluminationDeckSegmentCached(e, items.GetRange(start, items.Count - start), False)
+    End Sub
+
+    Private Sub DrawIlluminationDeckSegmentCached(ByVal e As PaintEventArgs,
+                                                  ByVal items As IEnumerable(Of B2SPictureBox),
+                                                  Optional ByVal frontLightPass As Boolean = True)
+        Dim list As New Generic.List(Of B2SPictureBox)(items)
+        If frontLightPass Then
+            For Each image As B2SPictureBox In list
+                If image.DynamicFrontLighting AndAlso image.DynamicFrontShowLight AndAlso
+                   Not image.SeparateLightLayer AndAlso Not image.IsImageSnippit Then
+                    DrawImage(e, image, True)
+                End If
+            Next
+        End If
         Dim index As Integer = 0
         While index < list.Count
             Dim runEnd As Integer = index
@@ -4101,12 +4148,30 @@ Public Class formBackglass
                         Dim reel3DTemperature As Integer = 4000
                         Dim reel3DDepth As Integer = 100
                         Dim reel3DGlass As Integer = 55
+                        Dim reel3DStyle As Integer = 0
+                        Dim reel3DCurve As Integer = 100
+                        Dim reel3DShadow As Integer = 100
+                        Dim reel3DGlassStyle As Integer = 0
                         If innerNode.Attributes("Reel3DEnabled") IsNot Nothing Then reel3DEnabled = (innerNode.Attributes("Reel3DEnabled").InnerText = "1")
                         Dim parsedReel3DValue As Integer
                         If innerNode.Attributes("Reel3DBrightness") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DBrightness").InnerText, parsedReel3DValue) Then reel3DBrightness = parsedReel3DValue
                         If innerNode.Attributes("Reel3DTemperature") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DTemperature").InnerText, parsedReel3DValue) Then reel3DTemperature = parsedReel3DValue
                         If innerNode.Attributes("Reel3DDepth") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DDepth").InnerText, parsedReel3DValue) Then reel3DDepth = parsedReel3DValue
                         If innerNode.Attributes("Reel3DGlass") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DGlass").InnerText, parsedReel3DValue) Then reel3DGlass = parsedReel3DValue
+                        ' B2S Pro Realistic reel style (absent = Classic, the original 3D look)
+                        If innerNode.Attributes("Reel3DStyle") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DStyle").InnerText, parsedReel3DValue) Then reel3DStyle = Math.Max(0, Math.Min(1, parsedReel3DValue))
+                        If innerNode.Attributes("Reel3DCurve") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DCurve").InnerText, parsedReel3DValue) Then reel3DCurve = Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, parsedReel3DValue))
+                        If innerNode.Attributes("Reel3DShadow") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DShadow").InnerText, parsedReel3DValue) Then reel3DShadow = Math.Max(0, Math.Min(200, parsedReel3DValue))
+                        ' B2S Pro soft glass (absent = the original reflection lines)
+                        If innerNode.Attributes("Reel3DGlassStyle") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DGlassStyle").InnerText, parsedReel3DValue) Then reel3DGlassStyle = Math.Max(0, Math.Min(ReelGlass.MaximumStyle, parsedReel3DValue))
+                        ' B2S Pro reel dividers (0 = off; only written by the Designer when on).
+                        Dim reel3DDividerWidth As Integer = 0
+                        If innerNode.Attributes("Reel3DDividers") IsNot Nothing AndAlso innerNode.Attributes("Reel3DDividers").InnerText = "1" Then
+                            reel3DDividerWidth = ReelDivider.DefaultWidth
+                            If innerNode.Attributes("Reel3DDividerWidth") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DDividerWidth").InnerText, parsedReel3DValue) Then
+                                reel3DDividerWidth = Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, parsedReel3DValue))
+                            End If
+                        End If
                         reel3DBrightness = Math.Max(0, Math.Min(400, reel3DBrightness))
                         reel3DTemperature = Math.Max(2000, Math.Min(6500, reel3DTemperature))
                         reel3DDepth = Math.Max(0, Math.Min(200, reel3DDepth))
@@ -4294,6 +4359,17 @@ Public Class formBackglass
 
                         ' create reel or led boxes
                         Dim width As Integer = CInt((size.Width - (digits - 1) * spacing / 2) / digits)
+                        ' Reel divider centres in display pixels, from the same digit
+                        ' positions as the boxes below (x - loc.X).
+                        Dim reel3DDividerCenters As Double() = Nothing
+                        If reel3DEnabled AndAlso reel3DDividerWidth > 0 AndAlso digits > 1 Then
+                            Dim digitLefts(digits - 1) As Double
+                            For d As Integer = 1 To digits
+                                Dim digitX As Integer = loc.X + ((d - 1) * (width + spacing / 2))
+                                digitLefts(d - 1) = digitX - loc.X
+                            Next
+                            reel3DDividerCenters = ReelDivider.Centers(digitLefts, width)
+                        End If
                         For i As Integer = 1 To digits
                             Dim x As Integer = loc.X + ((i - 1) * (width + spacing / 2))
                             If isRenderedLEDs OrElse isDream7LEDs Then
@@ -4391,6 +4467,14 @@ Public Class formBackglass
                                 reel.Reel3DTemperature = reel3DTemperature
                                 reel.Reel3DDepth = reel3DDepth
                                 reel.Reel3DGlass = reel3DGlass
+                                reel.Reel3DStyle = reel3DStyle
+                                reel.Reel3DCurve = reel3DCurve
+                                reel.Reel3DShadow = reel3DShadow
+                                reel.Reel3DGlassStyle = reel3DGlassStyle
+                                If reel3DDividerCenters IsNot Nothing Then
+                                    reel.Reel3DDividerWidth = reel3DDividerWidth
+                                    reel.Reel3DDividerCenters = reel3DDividerCenters
+                                End If
                                 reel.Reel3DDisplayWidth = size.Width
                                 reel.Reel3DDisplayOffsetX = x - loc.X
                                 reel.ReelDesignSize = New Size(width, size.Height)
@@ -4406,6 +4490,11 @@ Public Class formBackglass
                                     Dim u1 As Single = Math.Min(1.0F, u0 + width / CSng(size.Width))
                                     Dim v0 As Single = 1.0F / size.Height
                                     reel.ApplyScoreTransform(ScoreTransform.SubQuad(displayQuad, u0, u1, v0, 1.0F))
+                                    ' The strip up to the next digit (its 3D window overlay is drawn by the backglass).
+                                    If i < digits Then
+                                        Dim nextU0 As Single = Math.Min(1.0F, (1.0F + i * (width + spacing / 2.0F)) / size.Width)
+                                        If nextU0 > u1 Then reel.Reel3DGapDesignQuad = ScoreTransform.SubQuad(displayQuad, u1, nextU0, v0, 1.0F)
+                                    End If
                                 End If
                                 reel.ReelType = reeltype.Substring(0, reeltype.Length - 2)
                                 reel.ScoreType = b2sscoretype

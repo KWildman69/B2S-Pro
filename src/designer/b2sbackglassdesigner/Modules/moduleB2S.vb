@@ -294,6 +294,25 @@ Module moduleB2S
             Return My.Resources.ResourceManager.GetObject(If(reeltype.EndsWith("0"), reeltype, reeltype & "_0"))
         End If
     End Function
+    ' One number (0-9) of a mechanical reel set, for the Realistic 3D reel style
+    ' (neighbouring numbers on the drum). Nothing when the set has no such image.
+    Public Function GetReelDigitImage(ByVal reeltype As String, ByVal digit As Integer) As Image
+        If (String.IsNullOrEmpty(reeltype) OrElse reeltype.Equals("0") OrElse reeltype.Equals("1") OrElse reeltype.Equals("2")) AndAlso Not String.IsNullOrEmpty(Backglass.currentData.ReelType) Then
+            reeltype = Backglass.currentData.ReelType
+        End If
+        If String.IsNullOrEmpty(reeltype) OrElse digit < 0 OrElse digit > 9 OrElse
+           IsReelImageRendered(reeltype) OrElse IsReelImageDream7(reeltype) Then Return Nothing
+        Try
+            If reeltype.StartsWith(ImportedStartString) Then
+                If Not reeltype.StartsWith(ImportedStartString & "EMR_T") Then Return Nothing
+                Return GeneralData.currentData.ImportedReelImageSets(CInt(reeltype.Substring(13).Replace("_0", "")))(digit)
+            End If
+            Dim baseName As String = If(reeltype.EndsWith("_0"), reeltype.Substring(0, reeltype.Length - 2), reeltype)
+            Return TryCast(My.Resources.ResourceManager.GetObject(baseName & "_" & digit.ToString()), Image)
+        Catch
+            Return Nothing
+        End Try
+    End Function
     Public Function GetDream7LEDType(ByVal type As String) As String
         Select Case type
             Case "7", "8"

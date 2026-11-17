@@ -6,8 +6,8 @@ B2S Pro is a modernized backglass designer and animation workspace for creating 
 
 ## Current release
 
-- B2S Pro Backglass Designer: **2.0.0**
-- B2S Pro Server: **3.0.12**
+- B2S Pro Backglass Designer: **2.1.0**
+- B2S Pro Server: **3.0.13**
 - Platform: Windows
 
 The tested Designer and Server runtime packages are distributed from the [B2S Pro Releases](https://github.com/KWildman69/B2S-Pro/releases/latest) page. GitHub provides the source code directly, and compiled release files are not stored in the source tree.
@@ -31,6 +31,7 @@ Designer and Server ZIPs, and their two SHA-256 checksum files.
 - One-picture and animated-GIF animation creation
 - One-image rotation, score rotation, pivot animation, and mechanical-wheel animation
 - Optional realistic 3D EM score reels with up to 400% backlighting, Player Up control, light temperature, drum depth, and glass reflection
+- Realistic curved-drum reel style, glass looks, reel dividers, roll speed, and a Test spin preview of the reels rolling as they will in VPX
 - Direct number entry beside adjustable sliders for exact, repeatable editor settings
 - Motion paths with editable entry and exit behavior
 - Trough animation with live ball-count updates, custom PNG artwork per ball, rolling, and feeder respawn
@@ -52,8 +53,8 @@ See [Speaker grill panels](docs/speaker-grill-panels.md) for the panel and saved
 
 ## Source layout
 
-- `src/designer` — B2S Pro Backglass Designer 2.0.0 source
-- `src/server` — B2S Pro Server 3.0.12 source
+- `src/designer` — B2S Pro Backglass Designer 2.1.0 source
+- `src/server` — B2S Pro Server 3.0.13 source
 - `docs/help-source` — complete help project and illustrated documentation
 - `CHANGELOG.md` — B2S Pro release history
 - `CREDITS.md` — acknowledgements and project lineage

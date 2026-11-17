@@ -273,6 +273,7 @@
   -->
   <ItemGroup>
     <Compile Include="..\..\..\shared\ReelImageSizing.vb"><Link>Shared\ReelImageSizing.vb</Link></Compile>
+    <Compile Include="..\..\..\shared\ReelRealistic.vb"><Link>Shared\ReelRealistic.vb</Link></Compile>
     <Compile Include="..\..\..\shared\PhysicsBallState.vb"><Link>Shared\PhysicsBallState.vb</Link></Compile>
     <Compile Include="..\..\..\shared\PhysicsSoundVolume.vb"><Link>Shared\PhysicsSoundVolume.vb</Link></Compile>
   </ItemGroup>

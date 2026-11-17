@@ -248,6 +248,12 @@ Public Class Save
                         score.Reel3DTemperature = ReadIntAttribute(innerNode, "Reel3DTemperature", 4000, 2000, 6500)
                         score.Reel3DDepth = ReadIntAttribute(innerNode, "Reel3DDepth", 100, 0, 200)
                         score.Reel3DGlass = ReadIntAttribute(innerNode, "Reel3DGlass", 55, 0, 200)
+                        score.Reel3DStyle = ReadIntAttribute(innerNode, "Reel3DStyle", 0, 0, 1)
+                        score.Reel3DCurve = ReadIntAttribute(innerNode, "Reel3DCurve", 100, 0, ReelRealistic.MaximumCurve)
+                        score.Reel3DShadow = ReadIntAttribute(innerNode, "Reel3DShadow", 100, 0, 200)
+                        score.Reel3DGlassStyle = ReadIntAttribute(innerNode, "Reel3DGlassStyle", 0, 0, ReelGlass.MaximumStyle)
+                        score.Reel3DDividers = (ReadIntAttribute(innerNode, "Reel3DDividers", 0, 0, 1) = 1)
+                        score.Reel3DDividerWidth = ReadIntAttribute(innerNode, "Reel3DDividerWidth", ReelDivider.DefaultWidth, ReelDivider.MinimumWidth, ReelDivider.MaximumWidth)
                         score.Location = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                         score.Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
                         If innerNode.Attributes("LayerOrder") IsNot Nothing Then score.LayerOrder = CInt(innerNode.Attributes("LayerOrder").InnerText)
@@ -833,6 +839,18 @@ Public Class Save
                                 nodeScore.SetAttribute("Reel3DTemperature", Math.Max(2000, Math.Min(6500, .Reel3DTemperature)).ToString())
                                 nodeScore.SetAttribute("Reel3DDepth", Math.Max(0, Math.Min(200, .Reel3DDepth)).ToString())
                                 nodeScore.SetAttribute("Reel3DGlass", Math.Max(0, Math.Min(200, .Reel3DGlass)).ToString())
+                                ' Classic files stay as before; the realistic settings are kept in
+                                ' the project once they differ from the defaults or are in use.
+                                If .Reel3DStyle <> 0 OrElse .Reel3DCurve <> 100 OrElse .Reel3DShadow <> 100 Then
+                                    nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(1, .Reel3DStyle)).ToString())
+                                    nodeScore.SetAttribute("Reel3DCurve", Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, .Reel3DCurve)).ToString())
+                                    nodeScore.SetAttribute("Reel3DShadow", Math.Max(0, Math.Min(200, .Reel3DShadow)).ToString())
+                                End If
+                                If .Reel3DGlassStyle <> 0 Then nodeScore.SetAttribute("Reel3DGlassStyle", Math.Max(0, Math.Min(ReelGlass.MaximumStyle, .Reel3DGlassStyle)).ToString())
+                                If .Reel3DDividers Then
+                                    nodeScore.SetAttribute("Reel3DDividers", "1")
+                                    nodeScore.SetAttribute("Reel3DDividerWidth", Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, .Reel3DDividerWidth)).ToString())
+                                End If
                             End If
                             nodeScore.SetAttribute("LocX", .Location.X)
                             nodeScore.SetAttribute("LocY", .Location.Y)
