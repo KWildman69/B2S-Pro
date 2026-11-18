@@ -26,6 +26,9 @@ Namespace PhysicsPreview
         Public PivotPhysicsKnockdownAngle As Single = 90.0F
         Public PivotPhysicsKnockdownDuration As Integer = 180
         Public PivotPhysicsResetDelay As Integer = 1000
+        Public PivotWeightEnabled As Boolean
+        Public PivotWeightArm As PointF = PointF.Empty
+        Public PivotWeightStrength As Single = 50.0F
         Public PhysicsCollisionMaskAlpha As Byte()
         Public PhysicsCollisionMaskSize As Size = Size.Empty
         Public PhysicsCollisionContour As PointF()
@@ -76,6 +79,11 @@ Namespace PhysicsPreview
             If PivotPhysicsResponseMode > 0 Then
                 AdvancePivotPhysicsResponse(elapsed)
                 PhysicsAngularVelocity = CSng((RotationAngle - PhysicsPreviousAngle) / elapsed)
+                Return
+            End If
+            If PivotWeightEnabled Then
+                B2SData.AdvanceWeightedPivot(RotationAngle, PhysicsAngularVelocity, elapsed, PivotWeightArm.X, PivotWeightArm.Y,
+                                             PivotWeightStrength, PivotPhysicsFriction)
                 Return
             End If
             RotationAngle = CSng((RotationAngle + PhysicsAngularVelocity * elapsed) Mod 360.0R)

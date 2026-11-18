@@ -2,6 +2,34 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 2.2.0 / Server 3.0.14 — 2026-11-18
+
+**Feature Update — Pivot Strikes, Counterweights, and DMD Positions from the VPX Plugin**
+
+### Important
+
+- Update the Designer and the Server together.
+- New pivot strikes, kicks and counterweights.
+- DMD positions saved by the VPX B2S plugin now carry over into B2S Pro files.
+
+### Designer
+
+- Pivot Animation: Strike a physics pivot, with target, strength 1-300%, Contact on (the hit follows the shapes touching) or off (a kick at the fastest point of the swing), spin direction, and Test Strike.
+- Counterweight for physics pivots: weight strength, Place Counterweight on the image, and Test Spin; the pivot swings back until the weight hangs straight down.
+- Reverse trigger: a pivot can rest while its solenoid, lamp, B2S ID or switch trigger is ON and move while it is OFF.
+- DMD positions saved into a .directb2s by the VPX B2S plugin (the Displays section) are kept when the file is imported, saved in the project, and written unchanged into the B2S Pro file by Step 1 – Create DirectB2S File.
+
+### Server
+
+- Runs pivot strikes, kicks, counterweights and reverse triggers exactly as the Designer previews them.
+
+### Compatibility
+
+- Legacy .directb2s backglasses run unchanged.
+- The new pivot settings and the DMD positions are written only when used, so existing B2S Pro files are unchanged until you use them and export again with Step 1 – Create DirectB2S File.
+- ScreenRes files, Server registration, table settings, projects and backglasses are preserved.
+- The B2S Pro VPX plugin is released separately.
+
 ## Designer 2.1.0 / Server 3.0.13 — 2026-11-17
 
 **Feature Update — Realistic 3D Reels, Reel Dividers, and Quieter Update Checks**

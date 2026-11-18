@@ -1315,7 +1315,7 @@ Public Class formToolLayers
         End If
         If Backglass.currentTabPage Is Nothing OrElse Backglass.currentTabPage.CurrentPictureBox Is Nothing OrElse
            Backglass.currentTabPage.CurrentPictureBox.Image Is Nothing Then Return
-        Using editor As New formPivotAnimation(snippet, Backglass.currentTabPage.CurrentPictureBox.Image)
+        Using editor As New formPivotAnimation(snippet, Backglass.currentTabPage.CurrentPictureBox.Image, Backglass.currentBulbs)
             If editor.ShowDialog(Me) <> DialogResult.OK Then Return
         End Using
         snippet.IsIlluminatedImageDirty = True

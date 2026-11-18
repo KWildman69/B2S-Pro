@@ -18,6 +18,7 @@ Public Class formPivotAnimation
     Private ReadOnly triggerID As New NumericUpDown()
     Private ReadOnly downTrigger As New TextBox()
     Private ReadOnly upTrigger As New TextBox()
+    Private ReadOnly reverseBox As New CheckBox With {.Text = "Reverse trigger: rest while ON, move up while OFF", .AutoSize = True}
     Private ReadOnly automaticPreview As New Button With {.Text = "Automatic Preview", .Width = 310, .Height = 31}
     Private ReadOnly previewTimer As New Timer With {.Interval = 15}
     Private ReadOnly previewClock As New Stopwatch()
@@ -28,9 +29,54 @@ Public Class formPivotAnimation
     ' Which one-time position preview is playing (True = Up, False = Down).
     Private previewOneShotUp As Boolean
     Private previewCurrentAngle As Single
+    ' Pivot-to-pivot strike settings and the Test Strike simulation.
+    Private ReadOnly strikeBox As New CheckBox With {.Text = "Strikes a physics pivot", .AutoSize = True}
+    Private ReadOnly strikeTarget As New ComboBox()
+    Private ReadOnly strikeStrength As New NumericUpDown()
+    Private ReadOnly strikeContactBox As New CheckBox With {.Text = "Contact: shapes must touch", .AutoSize = True}
+    Private ReadOnly strikeDirection As New ComboBox()
+    Private ReadOnly strikeKick As New PhysicsPreview.B2SData.PivotKickState()
+    Private ReadOnly testStrike As New Button With {.Text = "Test Strike", .Width = 310, .Height = 31}
+    Private ReadOnly strikeTimer As New Timer With {.Interval = 15}
+    Private ReadOnly strikeClock As New Stopwatch()
+    Private ReadOnly strikeCandidates As New List(Of Illumination.BulbInfo)()
+    Private strikeRunning As Boolean
+    Private strikeTestTarget As Illumination.BulbInfo
+    Private strikeDriverShape As PhysicsPreview.B2SData.PivotStrikeShape
+    Private strikeTargetShape As PhysicsPreview.B2SData.PivotStrikeShape
+    Private strikeTargetAngle As Single
+    Private strikeTargetVelocity As Single
+    Private strikeDriverAngle As Single
+    Private strikeTimeMs As Double
+    Private strikeLastClockMs As Double
+    Private strikeDownValue As Single
+    Private strikeUpValue As Single
+    ' Counterweight for a physics-impact pivot, and its Test Spin.
+    Private ReadOnly weightBox As New CheckBox With {.Text = "Counterweight: gravity pulls this point down", .AutoSize = True}
+    Private ReadOnly weightStrength As New NumericUpDown()
+    Private ReadOnly placeWeight As New Button With {.Text = "Place Counterweight", .Width = 310, .Height = 31}
+    Private ReadOnly testSpin As New Button With {.Text = "Test Spin", .Width = 310, .Height = 31}
+    Private ReadOnly weightLabel As New Label With {.Text = "Click Place Counterweight, then click the image where the weight sits (for example the boots). After a spin it rocks and always settles with that point hanging straight down.",
+                                                    .ForeColor = Color.White, .Width = 310, .Height = 70}
+    Private ReadOnly spinTimer As New Timer With {.Interval = 15}
+    Private ReadOnly spinClock As New Stopwatch()
+    Private spinRunning As Boolean
+    Private spinAngle As Single
+    Private spinVelocity As Single
+    Private spinLastClockMs As Double
+    Private spinTimeMs As Double
 
-    Public Sub New(ByVal source As Illumination.BulbInfo, ByVal backglassImage As Image)
+    Public Sub New(ByVal source As Illumination.BulbInfo, ByVal backglassImage As Image,
+                   Optional ByVal snippets As IEnumerable(Of Illumination.BulbInfo) = Nothing)
         snippet = source
+        If snippets IsNot Nothing Then
+            For Each candidate As Illumination.BulbInfo In snippets
+                If candidate IsNot source AndAlso candidate.IsImageSnippit AndAlso candidate.Image IsNot Nothing AndAlso
+                   candidate.SnippitInfo.PivotAnimationEnabled AndAlso Not String.IsNullOrWhiteSpace(candidate.Name) Then
+                    strikeCandidates.Add(candidate)
+                End If
+            Next
+        End If
         Text = "Pivot Animation — " & If(String.IsNullOrWhiteSpace(source.Name), "Snippet", source.Name)
         StartPosition = FormStartPosition.CenterParent : Size = New Size(920, 650) : MinimumSize = New Size(800, 560)
         enabledBox.Checked = source.SnippitInfo.PivotAnimationEnabled
@@ -67,6 +113,24 @@ Public Class formPivotAnimation
         fields.Controls.Add(physicsOnlyBox)
         fields.Controls.Add(New Label With {.Text = "Physics impact only: place one hinge point. Ball contact controls the direction and speed.",
                                              .ForeColor = Color.White, .Width = 310, .Height = 42})
+        weightBox.ForeColor = Color.White : weightBox.AutoSize = False : weightBox.Width = 310 : weightBox.Height = 30
+        weightBox.Checked = source.SnippitInfo.PivotWeightEnabled
+        fields.Controls.Add(weightBox)
+        SetupNumber(weightStrength, 1D, 100D, CDec(source.SnippitInfo.PivotWeightStrength), 0)
+        fields.Controls.Add(FieldRow("Weight strength", weightStrength))
+        fields.Controls.Add(placeWeight)
+        fields.Controls.Add(testSpin)
+        fields.Controls.Add(weightLabel)
+        canvas.WeightPoint = New PointF(source.SnippitInfo.PivotWeightX, source.SnippitInfo.PivotWeightY)
+        AddHandler weightBox.CheckedChanged, Sub() UpdatePhysicsOnlyState()
+        AddHandler placeWeight.Click, Sub()
+                                          StopSpinTest()
+                                          canvas.PlacingWeight = Not canvas.PlacingWeight
+                                          placeWeight.Text = If(canvas.PlacingWeight, "Click the image to place the weight", "Place Counterweight")
+                                      End Sub
+        AddHandler canvas.WeightPlaced, Sub() placeWeight.Text = "Place Counterweight"
+        AddHandler testSpin.Click, AddressOf ToggleSpinTest
+        AddHandler spinTimer.Tick, AddressOf SpinTestTick
         automaticBox.ForeColor = Color.White : automaticBox.AutoSize = False : automaticBox.Width = 310 : automaticBox.Height = 40
         fields.Controls.Add(automaticBox)
         fields.Controls.Add(FieldRow("Rest/down angle", downAngle))
@@ -103,8 +167,39 @@ Public Class formPivotAnimation
         fields.Controls.Add(SectionHeader("TRIGGER"))
         fields.Controls.Add(FieldRow("Trigger type", triggerType))
         fields.Controls.Add(FieldRow("Trigger ID", triggerID))
+        reverseBox.ForeColor = Color.White : reverseBox.AutoSize = False : reverseBox.Width = 310 : reverseBox.Height = 30
+        reverseBox.Checked = source.SnippitInfo.PivotTriggerReverse
+        fields.Controls.Add(reverseBox)
         fields.Controls.Add(FieldRow("Down command", downTrigger))
         fields.Controls.Add(FieldRow("Up command", upTrigger))
+        fields.Controls.Add(SectionHeader("STRIKE A PHYSICS PIVOT"))
+        strikeBox.ForeColor = Color.White : strikeBox.AutoSize = False : strikeBox.Width = 310 : strikeBox.Height = 26
+        fields.Controls.Add(strikeBox)
+        strikeTarget.DropDownStyle = ComboBoxStyle.DropDownList
+        For Each candidate As Illumination.BulbInfo In strikeCandidates
+            strikeTarget.Items.Add(candidate.Name)
+        Next
+        Dim savedTarget As Integer = strikeTarget.FindStringExact(source.SnippitInfo.PivotStrikeTarget)
+        strikeTarget.SelectedIndex = If(savedTarget >= 0, savedTarget, If(strikeTarget.Items.Count > 0, 0, -1))
+        strikeBox.Checked = savedTarget >= 0
+        SetupNumber(strikeStrength, 1D, 300D, CDec(source.SnippitInfo.PivotStrikeStrength), 0)
+        fields.Controls.Add(FieldRow("Target pivot", strikeTarget))
+        fields.Controls.Add(FieldRow("Strike strength (%)", strikeStrength))
+        strikeContactBox.ForeColor = Color.White : strikeContactBox.AutoSize = False : strikeContactBox.Width = 310 : strikeContactBox.Height = 26
+        strikeContactBox.Checked = source.SnippitInfo.PivotStrikeContact
+        fields.Controls.Add(strikeContactBox)
+        strikeDirection.DropDownStyle = ComboBoxStyle.DropDownList
+        strikeDirection.Items.AddRange(New Object() {"Clockwise", "Counter-clockwise"})
+        strikeDirection.SelectedIndex = If(source.SnippitInfo.PivotStrikeDirection < 0, 1, 0)
+        fields.Controls.Add(FieldRow("Spin direction", strikeDirection))
+        fields.Controls.Add(New Label With {.Text = "Contact on: this pivot's shape must hit the target to spin it. Contact off: each kick up spins the target (no touching needed); a faster kick spins it harder. Turn on Physics impact only for the target; its friction sets how fast it slows.",
+                                             .ForeColor = Color.White, .Width = 310, .Height = 98})
+        AddHandler strikeContactBox.CheckedChanged, Sub() UpdateStrikeState()
+        fields.Controls.Add(testStrike)
+        AddHandler strikeBox.CheckedChanged, Sub() UpdateStrikeState()
+        AddHandler strikeTarget.SelectedIndexChanged, Sub() UpdateStrikeState()
+        AddHandler testStrike.Click, AddressOf StartStrikeTest
+        AddHandler strikeTimer.Tick, AddressOf StrikeTestTick
         Dim save As New Button With {.Text = "Save Pivot Animation", .DialogResult = DialogResult.OK, .Width = 310, .Height = 32}
         Dim cancel As New Button With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .Width = 310, .Height = 32}
         Dim actions As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .Height = 44, .ColumnCount = 2,
@@ -122,6 +217,189 @@ Public Class formPivotAnimation
         AcceptButton = save : CancelButton = cancel
         TriggerTypeChanged(Nothing, EventArgs.Empty)
         UpdatePhysicsOnlyState()
+    End Sub
+
+    Private Function SelectedStrikeTarget() As Illumination.BulbInfo
+        If strikeTarget.SelectedIndex < 0 OrElse strikeTarget.SelectedIndex >= strikeCandidates.Count Then Return Nothing
+        Return strikeCandidates(strikeTarget.SelectedIndex)
+    End Function
+
+    Private Sub UpdateStrikeState()
+        Dim available As Boolean = Not physicsOnlyBox.Checked AndAlso strikeCandidates.Count > 0
+        strikeBox.Enabled = available
+        Dim active As Boolean = available AndAlso strikeBox.Checked
+        strikeTarget.Enabled = active
+        strikeStrength.Enabled = active
+        strikeContactBox.Enabled = active
+        strikeDirection.Enabled = active AndAlso Not strikeContactBox.Checked
+        testStrike.Enabled = active AndAlso SelectedStrikeTarget() IsNot Nothing
+        If Not active Then StopStrikeTest(False)
+        Dim target As Illumination.BulbInfo = If(active, SelectedStrikeTarget(), Nothing)
+        If target Is Nothing Then
+            canvas.StrikeImage = Nothing
+        Else
+            canvas.StrikeImage = target.Image
+            canvas.StrikeBounds = New RectangleF(target.Location.X, target.Location.Y,
+                                                 Math.Max(1, target.Size.Width), Math.Max(1, target.Size.Height))
+            canvas.StrikePivot = New PointF(target.SnippitInfo.PivotX, target.SnippitInfo.PivotY)
+        End If
+        If Not strikeRunning Then canvas.StrikeAngle = 0.0F
+    End Sub
+
+    ' Builds the same collision outline the Server builds from the authored size.
+    Private Shared Function BuildStrikeShape(ByVal source As Image, ByVal authoredSize As Size,
+                                             ByVal pivot As PointF) As PhysicsPreview.B2SData.PivotStrikeShape
+        If source Is Nothing OrElse authoredSize.Width <= 0 OrElse authoredSize.Height <= 0 Then Return Nothing
+        Dim maskWidth As Integer = Math.Max(1, Math.Min(512, authoredSize.Width))
+        Dim maskHeight As Integer = Math.Max(1, Math.Min(512, authoredSize.Height))
+        Dim alpha(maskWidth * maskHeight - 1) As Byte
+        Dim hasSolid As Boolean = False
+        Using bitmap As New Bitmap(maskWidth, maskHeight, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+            Using graphics As Graphics = Graphics.FromImage(bitmap)
+                graphics.CompositingMode = CompositingMode.SourceCopy
+                graphics.CompositingQuality = CompositingQuality.HighQuality
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality
+                graphics.Clear(Color.Transparent)
+                graphics.DrawImage(source, New Rectangle(0, 0, maskWidth, maskHeight))
+            End Using
+            Dim data As System.Drawing.Imaging.BitmapData = bitmap.LockBits(New Rectangle(0, 0, maskWidth, maskHeight),
+                System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+            Try
+                Dim row(maskWidth * 4 - 1) As Byte
+                For y As Integer = 0 To maskHeight - 1
+                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                    For x As Integer = 0 To maskWidth - 1
+                        Dim value As Byte = If(row(x * 4 + 3) > 0, CByte(255), CByte(0))
+                        alpha(y * maskWidth + x) = value
+                        If value <> 0 Then hasSolid = True
+                    Next
+                Next
+            Finally
+                bitmap.UnlockBits(data)
+            End Try
+        End Using
+        If Not hasSolid Then Return Nothing
+        Dim contour As PointF() = PhysicsPreview.B2SData.BuildPhysicsContour(alpha, maskWidth, maskHeight, pivot.X, pivot.Y)
+        If contour Is Nothing Then Return Nothing
+        Dim shape As New PhysicsPreview.B2SData.PivotStrikeShape(contour, maskWidth, maskHeight, pivot.X, pivot.Y)
+        Return If(shape.IsUsable, shape, Nothing)
+    End Function
+
+    Private Sub StartStrikeTest(ByVal sender As Object, ByVal e As EventArgs)
+        Dim target As Illumination.BulbInfo = SelectedStrikeTarget()
+        If target Is Nothing Then Return
+        StopStrikeTest(False)
+        StopAutomaticPreview()
+        strikeDownValue = CSng(downAngle.Value)
+        strikeUpValue = If(automaticBox.Checked, CSng(upAngle.Value), DirectedUpAngle())
+        If Math.Abs(strikeUpValue - strikeDownValue) < 0.1F Then
+            MessageBox.Show(Me, "Choose two different angles so this pivot can swing into the target.", "Test Strike", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        strikeDriverShape = BuildStrikeShape(snippet.Image, snippet.Size, canvas.Pivot)
+        strikeTargetShape = BuildStrikeShape(target.Image, target.Size, New PointF(target.SnippitInfo.PivotX, target.SnippitInfo.PivotY))
+        If strikeContactBox.Checked AndAlso (strikeDriverShape Is Nothing OrElse strikeTargetShape Is Nothing) Then
+            MessageBox.Show(Me, "One of the two images has no solid pixels to collide with.", "Test Strike", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        strikeTestTarget = target
+        strikeKick.Reset()
+        strikeTargetAngle = 0.0F
+        strikeTargetVelocity = 0.0F
+        strikeDriverAngle = strikeDownValue
+        strikeTimeMs = 0.0R
+        strikeLastClockMs = 0.0R
+        strikeRunning = True
+        testStrike.Text = "Stop Test"
+        RemoveHandler testStrike.Click, AddressOf StartStrikeTest
+        AddHandler testStrike.Click, AddressOf StopStrikeTestClicked
+        SetPreviewAngle(strikeDriverAngle)
+        canvas.StrikeAngle = 0.0F
+        strikeClock.Restart()
+        strikeTimer.Start()
+    End Sub
+
+    Private Sub StopStrikeTestClicked(ByVal sender As Object, ByVal e As EventArgs)
+        StopStrikeTest(True)
+    End Sub
+
+    Private Sub StopStrikeTest(ByVal keepPose As Boolean)
+        If Not strikeRunning Then Return
+        strikeTimer.Stop()
+        strikeClock.Reset()
+        strikeRunning = False
+        testStrike.Text = "Test Strike"
+        RemoveHandler testStrike.Click, AddressOf StopStrikeTestClicked
+        AddHandler testStrike.Click, AddressOf StartStrikeTest
+        If Not keepPose Then
+            canvas.StrikeAngle = 0.0F
+            SetPreviewAngle(0.0F)
+        End If
+    End Sub
+
+    ' Swing up then back down at the saved swing time, stepping 1 ms at a time
+    ' like the Server: move both pivots, then resolve the strike.
+    Private Function StrikeDriverAngleAt(ByVal timeMs As Double) As Single
+        Dim swing As Double = CDbl(duration.Value)
+        Dim legStart As Single, legEnd As Single, legTime As Double
+        If timeMs < swing Then
+            legStart = strikeDownValue : legEnd = strikeUpValue : legTime = timeMs
+        Else
+            legStart = strikeUpValue : legEnd = strikeDownValue : legTime = timeMs - swing
+        End If
+        Dim progress As Single = CSng(Math.Max(0.0R, Math.Min(1.0R, legTime / swing)))
+        Dim eased As Single = progress * progress * (3.0F - 2.0F * progress)
+        Return legStart + (legEnd - legStart) * eased
+    End Function
+
+    Private Sub StrikeTestTick(ByVal sender As Object, ByVal e As EventArgs)
+        If Not strikeRunning OrElse strikeTestTarget Is Nothing Then Return
+        Dim nowMs As Double = strikeClock.Elapsed.TotalMilliseconds
+        Dim steps As Integer = CInt(Math.Min(100.0R, Math.Floor(nowMs - strikeLastClockMs)))
+        If steps <= 0 Then Return
+        strikeLastClockMs += steps
+        Dim driverBounds As New RectangleF(snippet.Location.X, snippet.Location.Y, Math.Max(1, snippet.Size.Width), Math.Max(1, snippet.Size.Height))
+        Dim targetBounds As New RectangleF(strikeTestTarget.Location.X, strikeTestTarget.Location.Y,
+                                           Math.Max(1, strikeTestTarget.Size.Width), Math.Max(1, strikeTestTarget.Size.Height))
+        Dim friction As Single = Math.Max(0.0F, strikeTestTarget.SnippitInfo.PivotPhysicsFriction)
+        Const stepSeconds As Single = 0.001F
+        For index As Integer = 1 To steps
+            strikeTimeMs += 1.0R
+            Dim previousDriverAngle As Single = strikeDriverAngle
+            strikeDriverAngle = StrikeDriverAngleAt(strikeTimeMs)
+            With strikeTestTarget.SnippitInfo
+                AdvanceTestPivot(strikeTargetAngle, strikeTargetVelocity, stepSeconds, .PivotWeightEnabled,
+                                 (.PivotWeightX - .PivotX) * targetBounds.Width, (.PivotWeightY - .PivotY) * targetBounds.Height,
+                                 .PivotWeightStrength, friction)
+            End With
+            Dim delta As Single
+            If strikeContactBox.Checked Then
+                delta = PhysicsPreview.B2SData.PivotStrikeAngularDelta(
+                    strikeDriverShape, driverBounds, strikeDriverAngle, (strikeDriverAngle - previousDriverAngle) / stepSeconds,
+                    strikeTargetShape, targetBounds, strikeTargetAngle, strikeTargetVelocity, CSng(strikeStrength.Value))
+            Else
+                Dim kickSpeed As Single = strikeKick.Advance(strikeDriverAngle - previousDriverAngle, stepSeconds,
+                                                             Math.Sign(strikeUpValue - strikeDownValue))
+                delta = PhysicsPreview.B2SData.PivotKickAngularDelta(kickSpeed, If(strikeDirection.SelectedIndex = 1, -1, 1),
+                                                                     CSng(strikeStrength.Value))
+            End If
+            If delta <> 0.0F Then strikeTargetVelocity = Math.Max(-2160.0F, Math.Min(2160.0F, strikeTargetVelocity + delta))
+        Next
+        SetPreviewAngle(strikeDriverAngle)
+        canvas.StrikeAngle = strikeTargetAngle
+        Dim swingDone As Boolean = strikeTimeMs >= 2.0R * CDbl(duration.Value)
+        Dim targetResting As Boolean = strikeTargetVelocity = 0.0F
+        If strikeTestTarget.SnippitInfo.PivotWeightEnabled Then
+            With strikeTestTarget.SnippitInfo
+                targetResting = targetResting AndAlso Math.Abs(PhysicsPreview.B2SData.PivotWeightAngularAcceleration(
+                    strikeTargetAngle, (.PivotWeightX - .PivotX) * targetBounds.Width, (.PivotWeightY - .PivotY) * targetBounds.Height,
+                    .PivotWeightStrength)) < 0.5F
+            End With
+        End If
+        If swingDone AndAlso (targetResting OrElse strikeTimeMs > 2.0R * CDbl(duration.Value) + 15000.0R) Then
+            StopStrikeTest(True)
+        End If
     End Sub
 
     Private Sub PhysicsOnlyChanged(ByVal sender As Object, ByVal e As EventArgs)
@@ -145,11 +423,88 @@ Public Class formPivotAnimation
         triggerID.Enabled = Not physicsOnly AndAlso triggerType.SelectedIndex > 0 AndAlso triggerType.SelectedIndex <> 4
         downTrigger.Enabled = Not physicsOnly AndAlso triggerType.SelectedIndex = 0
         upTrigger.Enabled = downTrigger.Enabled
+        reverseBox.Enabled = Not physicsOnly AndAlso ReverseTriggerAllowed()
         automaticPreview.Visible = Not physicsOnly AndAlso automaticBox.Checked
+        weightBox.Enabled = physicsOnly
+        weightStrength.Enabled = physicsOnly AndAlso weightBox.Checked
+        placeWeight.Enabled = physicsOnly AndAlso weightBox.Checked
+        testSpin.Enabled = physicsOnly
+        canvas.ShowWeight = physicsOnly AndAlso weightBox.Checked
+        If Not canvas.ShowWeight Then
+            canvas.PlacingWeight = False
+            placeWeight.Text = "Place Counterweight"
+        End If
+        If Not physicsOnly Then StopSpinTest()
+        UpdateStrikeState()
     End Sub
+
+    ' Spins this physics pivot at 900 deg/s and shows it slow down, using the
+    ' counterweight and friction the Server uses.
+    Private Sub ToggleSpinTest(ByVal sender As Object, ByVal e As EventArgs)
+        If spinRunning Then
+            StopSpinTest()
+            Return
+        End If
+        StopStrikeTest(False)
+        StopAutomaticPreview()
+        canvas.PlacingWeight = False
+        placeWeight.Text = "Place Counterweight"
+        spinAngle = 0.0F
+        spinVelocity = 900.0F
+        spinTimeMs = 0.0R
+        spinLastClockMs = 0.0R
+        spinRunning = True
+        testSpin.Text = "Stop Test Spin"
+        SetPreviewAngle(0.0F)
+        spinClock.Restart()
+        spinTimer.Start()
+    End Sub
+
+    Private Sub StopSpinTest()
+        If Not spinRunning Then Return
+        spinTimer.Stop()
+        spinClock.Reset()
+        spinRunning = False
+        testSpin.Text = "Test Spin"
+    End Sub
+
+    Private Sub SpinTestTick(ByVal sender As Object, ByVal e As EventArgs)
+        If Not spinRunning Then Return
+        Dim nowMs As Double = spinClock.Elapsed.TotalMilliseconds
+        Dim steps As Integer = CInt(Math.Min(100.0R, Math.Floor(nowMs - spinLastClockMs)))
+        If steps <= 0 Then Return
+        spinLastClockMs += steps
+        Dim friction As Single = Math.Max(0.0F, snippet.SnippitInfo.PivotPhysicsFriction)
+        Dim moving As Boolean = True
+        For index As Integer = 1 To steps
+            spinTimeMs += 1.0R
+            moving = AdvanceTestPivot(spinAngle, spinVelocity, 0.001R, weightBox.Checked,
+                                      (canvas.WeightPoint.X - canvas.Pivot.X) * Math.Max(1, snippet.Size.Width),
+                                      (canvas.WeightPoint.Y - canvas.Pivot.Y) * Math.Max(1, snippet.Size.Height),
+                                      CSng(weightStrength.Value), friction)
+        Next
+        SetPreviewAngle(spinAngle)
+        If Not moving OrElse spinTimeMs > 30000.0R Then StopSpinTest()
+    End Sub
+
+    ' One 1 ms free-spin step, matching the Server's AdvancePhysicsPivot.
+    Private Shared Function AdvanceTestPivot(ByRef angle As Single, ByRef velocity As Single, ByVal elapsed As Double,
+                                             ByVal useWeight As Boolean, ByVal armX As Single, ByVal armY As Single,
+                                             ByVal strength As Single, ByVal friction As Single) As Boolean
+        If useWeight Then
+            Return PhysicsPreview.B2SData.AdvanceWeightedPivot(angle, velocity, elapsed, armX, armY, strength, friction)
+        End If
+        If Math.Abs(velocity) < 0.0001F Then Return False
+        angle = CSng((angle + velocity * elapsed) Mod 360.0R)
+        velocity = CSng(velocity * Math.Exp(-friction * elapsed))
+        If Math.Abs(velocity) < 0.01F Then velocity = 0.0F
+        Return True
+    End Function
 
     Private Sub CanvasPointEditStarted(ByVal sender As Object, ByVal e As MouseEventArgs)
         If e.Button <> MouseButtons.Left Then Return
+        StopSpinTest()
+        StopStrikeTest(False)
         StopAutomaticPreview()
         SetPreviewAngle(0.0F)
     End Sub
@@ -162,6 +517,7 @@ Public Class formPivotAnimation
             Return
         End If
         If Not automaticBox.Checked Then Return
+        StopStrikeTest(False)
         If downAngle.Value = upAngle.Value Then
             MessageBox.Show(Me, "Choose two different angles to preview the automatic swing.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information)
             Return
@@ -174,6 +530,11 @@ Public Class formPivotAnimation
     End Sub
 
     Private Sub StartPositionPreview(ByVal targetAngle As Single, ByVal isUp As Boolean)
+        StopSpinTest()
+        If strikeRunning Then
+            StopStrikeTest(False)
+            previewCurrentAngle = 0.0F
+        End If
         previewTimer.Stop()
         previewClock.Reset()
         previewRunning = True
@@ -240,6 +601,10 @@ Public Class formPivotAnimation
     End Sub
 
     Protected Overrides Sub OnFormClosed(ByVal e As FormClosedEventArgs)
+        StopSpinTest()
+        spinTimer.Dispose()
+        StopStrikeTest(True)
+        strikeTimer.Dispose()
         StopAutomaticPreview()
         previewTimer.Dispose()
         MyBase.OnFormClosed(e)
@@ -281,16 +646,38 @@ Public Class formPivotAnimation
         If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso automaticBox.Checked AndAlso Math.Abs(CSng(upAngle.Value - downAngle.Value)) < 0.1F Then
             MessageBox.Show(Me, "Choose two different angles for the automatic swing.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
         End If
+        Dim strikeName As String = String.Empty
+        If Not physicsOnlyBox.Checked AndAlso enabledBox.Checked AndAlso strikeBox.Checked Then
+            Dim target As Illumination.BulbInfo = SelectedStrikeTarget()
+            If target Is Nothing Then
+                MessageBox.Show(Me, "Choose the target pivot for the strike.", "Pivot Animation", MessageBoxButtons.OK, MessageBoxIcon.Information) : DialogResult = DialogResult.None : Return
+            End If
+            If Not target.SnippitInfo.PivotPhysicsEnabled AndAlso
+               MessageBox.Show(Me, target.Name & " does not have Physics impact only turned on, so it will not spin until you turn it on." &
+                               Environment.NewLine & Environment.NewLine & "Save anyway?", "Pivot Animation",
+                               MessageBoxButtons.YesNo, MessageBoxIcon.Information) <> DialogResult.Yes Then
+                DialogResult = DialogResult.None : Return
+            End If
+            strikeName = target.Name.Trim()
+        End If
         If Not physicsOnlyBox.Checked AndAlso Not automaticBox.Checked Then upAngle.Value = CDec(DirectedUpAngle())
         With snippet.SnippitInfo
+            .PivotStrikeTarget = strikeName
+            .PivotStrikeStrength = CSng(strikeStrength.Value)
+            .PivotStrikeContact = strikeContactBox.Checked
+            .PivotStrikeDirection = If(strikeDirection.SelectedIndex = 1, -1, 1)
             .PivotAnimationEnabled = enabledBox.Checked : .PivotX = canvas.Pivot.X : .PivotY = canvas.Pivot.Y
             .PivotTipX = canvas.Tip.X : .PivotTipY = canvas.Tip.Y
             .PivotDownAngle = CSng(downAngle.Value) : .PivotUpAngle = CSng(upAngle.Value) : .PivotDuration = CInt(duration.Value)
             .PivotAutomaticOscillation = automaticBox.Checked AndAlso Not physicsOnlyBox.Checked
             .PivotPhysicsEnabled = physicsOnlyBox.Checked
+            .PivotWeightEnabled = physicsOnlyBox.Checked AndAlso weightBox.Checked
+            .PivotWeightX = canvas.WeightPoint.X : .PivotWeightY = canvas.WeightPoint.Y
+            .PivotWeightStrength = CSng(weightStrength.Value)
             .PivotRandomStrength = CSng(randomStrength.Value)
             .PivotTriggerType = triggerType.SelectedIndex : .PivotTriggerID = CInt(triggerID.Value)
             .PivotDownTrigger = downTrigger.Text.Trim() : .PivotUpTrigger = upTrigger.Text.Trim()
+            .PivotTriggerReverse = reverseBox.Checked AndAlso Not physicsOnlyBox.Checked AndAlso ReverseTriggerAllowed()
         End With
     End Sub
 
@@ -311,7 +698,14 @@ Public Class formPivotAnimation
         Return dx * Math.Sin(radians) + dy * Math.Cos(radians)
     End Function
 
+    ' Only on/off triggers can be reversed: ROM solenoid, ROM lamp, B2S ID and SW.
+    Private Function ReverseTriggerAllowed() As Boolean
+        Dim index As Integer = triggerType.SelectedIndex
+        Return index = 1 OrElse index = 2 OrElse index = 3 OrElse index = 5
+    End Function
+
     Private Sub TriggerTypeChanged(ByVal sender As Object, ByVal e As EventArgs)
+        reverseBox.Enabled = Not physicsOnlyBox.Checked AndAlso ReverseTriggerAllowed()
         If physicsOnlyBox.Checked Then
             triggerID.Enabled = False : downTrigger.Enabled = False : upTrigger.Enabled = False
             Return
@@ -327,10 +721,61 @@ Public Class formPivotAnimation
         Public Enum PointMode
             Hinge
             Tip
+            Weight
         End Enum
+        ' Counterweight marker of a physics pivot.
+        Private weightValue As New PointF(0.5F, 1.0F)
+        Private showWeightValue As Boolean
+        Public PlacingWeight As Boolean
+        Public Event WeightPlaced As EventHandler
+        Public Property WeightPoint As PointF
+            Get
+                Return weightValue
+            End Get
+            Set(value As PointF)
+                weightValue = value : Invalidate()
+            End Set
+        End Property
+        Public Property ShowWeight As Boolean
+            Get
+                Return showWeightValue
+            End Get
+            Set(value As Boolean)
+                showWeightValue = value : Invalidate()
+            End Set
+        End Property
+        ' The weight marker turns with the image around the hinge.
+        Private Function WeightScreenPoint(ByVal r As RectangleF) As PointF
+            Dim px As Single = r.X + pivotValue.X * r.Width, py As Single = r.Y + pivotValue.Y * r.Height
+            Dim wx As Single = r.X + weightValue.X * r.Width - px, wy As Single = r.Y + weightValue.Y * r.Height - py
+            Dim radians As Double = angleValue * Math.PI / 180.0R
+            Return New PointF(CSng(px + wx * Math.Cos(radians) - wy * Math.Sin(radians)),
+                              CSng(py + wx * Math.Sin(radians) + wy * Math.Cos(radians)))
+        End Function
         Public BackglassImage As Image
         Public SnippetBounds As RectangleF
         Public SourceImage As Image
+        ' Strike target shown behind the edited pivot (backglass coordinates).
+        Private strikeImageValue As Image
+        Public StrikeBounds As RectangleF
+        Public StrikePivot As PointF
+        Private strikeAngleValue As Single
+        Public Property StrikeImage As Image
+            Get
+                Return strikeImageValue
+            End Get
+            Set(value As Image)
+                strikeImageValue = value : Invalidate()
+            End Set
+        End Property
+        Public Property StrikeAngle As Single
+            Get
+                Return strikeAngleValue
+            End Get
+            Set(value As Single)
+                strikeAngleValue = value : Invalidate()
+            End Set
+        End Property
         Private pivotValue As New PointF(0.5F, 0.5F), tipValue As New PointF(0.9F, 0.5F), angleValue As Single
         Private editPointValue As PointMode = PointMode.Hinge
         Private draggingPoint As Nullable(Of PointMode) = Nothing
@@ -430,6 +875,21 @@ Public Class formPivotAnimation
             Dim hingeDistance As Single = (e.X - hinge.X) * (e.X - hinge.X) + (e.Y - hinge.Y) * (e.Y - hinge.Y)
             Dim referenceDistance As Single = (e.X - reference.X) * (e.X - reference.X) + (e.Y - reference.Y) * (e.Y - reference.Y)
             Dim markerRadiusSquared As Single = 14.0F * 14.0F
+            If showWeightValue Then
+                Dim weightPoint As PointF = WeightScreenPoint(r)
+                Dim weightDistance As Single = (e.X - weightPoint.X) * (e.X - weightPoint.X) + (e.Y - weightPoint.Y) * (e.Y - weightPoint.Y)
+                If PlacingWeight OrElse (weightDistance <= markerRadiusSquared AndAlso weightDistance < hingeDistance) Then
+                    draggingPoint = PointMode.Weight
+                    If PlacingWeight Then
+                        dragOffset = PointF.Empty
+                        MoveSelectedPoint(e.Location)
+                    Else
+                        dragOffset = New PointF(weightPoint.X - e.X, weightPoint.Y - e.Y)
+                    End If
+                    Capture = True
+                    Return
+                End If
+            End If
             If hingeDistance <= markerRadiusSquared AndAlso hingeDistance <= referenceDistance Then
                 draggingPoint = PointMode.Hinge
                 dragOffset = New PointF(hinge.X - e.X, hinge.Y - e.Y)
@@ -465,8 +925,13 @@ Public Class formPivotAnimation
             End If
             If e.Button <> MouseButtons.Left OrElse Not draggingPoint.HasValue Then Return
             MoveSelectedPoint(e.Location)
+            Dim placedWeight As Boolean = draggingPoint.Value = PointMode.Weight AndAlso PlacingWeight
             draggingPoint = Nothing
             Capture = False
+            If placedWeight Then
+                PlacingWeight = False
+                RaiseEvent WeightPlaced(Me, EventArgs.Empty)
+            End If
         End Sub
         Private Sub MoveSelectedPoint(ByVal location As Point)
             If Not draggingPoint.HasValue Then Return
@@ -479,15 +944,40 @@ Public Class formPivotAnimation
                 y = Math.Max(0.0F, Math.Min(1.0F, y))
             End If
             Dim point As New PointF(x, y)
-            If draggingPoint.Value = PointMode.Hinge Then Pivot = point Else Tip = point
+            If draggingPoint.Value = PointMode.Weight Then
+                WeightPoint = point
+            ElseIf draggingPoint.Value = PointMode.Hinge Then
+                Pivot = point
+            Else
+                Tip = point
+            End If
         End Sub
         Protected Overrides Sub OnPaint(e As PaintEventArgs)
             MyBase.OnPaint(e) : If SourceImage Is Nothing Then Return
             Dim r = ImageRect(), px = r.X + pivotValue.X * r.Width, py = r.Y + pivotValue.Y * r.Height
             Dim tx = r.X + tipValue.X * r.Width, ty = r.Y + tipValue.Y * r.Height
             If BackglassImage IsNot Nothing Then e.Graphics.DrawImage(BackglassImage, BackglassRect())
+            If strikeImageValue IsNot Nothing AndAlso BackglassImage IsNot Nothing Then
+                Dim view As RectangleF = BackglassRect()
+                Dim backglassScale As Single = view.Width / BackglassImage.Width
+                Dim sr As New RectangleF(view.X + StrikeBounds.X * backglassScale, view.Y + StrikeBounds.Y * backglassScale,
+                                         StrikeBounds.Width * backglassScale, StrikeBounds.Height * backglassScale)
+                Dim sx As Single = sr.X + StrikePivot.X * sr.Width, sy As Single = sr.Y + StrikePivot.Y * sr.Height
+                e.Graphics.SmoothingMode = SmoothingMode.HighQuality
+                e.Graphics.TranslateTransform(sx, sy) : e.Graphics.RotateTransform(strikeAngleValue) : e.Graphics.TranslateTransform(-sx, -sy)
+                e.Graphics.DrawImage(strikeImageValue, sr) : e.Graphics.ResetTransform()
+                Using p As New Pen(Color.Orange, 2) : e.Graphics.DrawEllipse(p, sx - 6, sy - 6, 12, 12) : End Using
+            End If
             e.Graphics.SmoothingMode = SmoothingMode.HighQuality : e.Graphics.TranslateTransform(px, py) : e.Graphics.RotateTransform(angleValue) : e.Graphics.TranslateTransform(-px, -py)
             e.Graphics.DrawImage(SourceImage, r) : e.Graphics.ResetTransform()
+            If showWeightValue Then
+                Dim wp As PointF = WeightScreenPoint(r)
+                Using p As New Pen(Color.Magenta, 2), b As New SolidBrush(Color.FromArgb(200, 255, 0, 200))
+                    e.Graphics.DrawLine(p, px, py, wp.X, wp.Y)
+                    e.Graphics.FillEllipse(b, wp.X - 7, wp.Y - 7, 14, 14)
+                    e.Graphics.DrawEllipse(Pens.White, wp.X - 7, wp.Y - 7, 14, 14)
+                End Using
+            End If
             Using p As New Pen(Color.Cyan, 2) : e.Graphics.DrawEllipse(p, px - 8, py - 8, 16, 16) : e.Graphics.DrawLine(p, px - 12, py, px + 12, py) : e.Graphics.DrawLine(p, px, py - 12, px, py + 12) : End Using
             If Not physicsOnlyValue Then
                 Using p As New Pen(Color.Lime, 2) : e.Graphics.DrawLine(p, px, py, tx, ty) : e.Graphics.DrawEllipse(p, tx - 7, ty - 7, 14, 14) : End Using

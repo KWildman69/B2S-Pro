@@ -3661,6 +3661,15 @@ Public Class formBackglass
                         Dim pivotUpAngle As Single = -30.0F
                         Dim pivotDownTrigger As String = String.Empty
                         Dim pivotUpTrigger As String = String.Empty
+                        Dim pivotStrikeTarget As String = String.Empty
+                        Dim pivotStrikeStrength As Single = 100.0F
+                        Dim pivotTriggerReverse As Boolean = False
+                        Dim pivotWeight As Boolean = False
+                        Dim pivotWeightX As Single = 0.5F
+                        Dim pivotWeightY As Single = 1.0F
+                        Dim pivotWeightStrength As Single = 50.0F
+                        Dim pivotStrikeContact As Boolean = True
+                        Dim pivotStrikeDirection As Integer = 1
                         Dim pivotTriggerType As Integer = 1
                         Dim pivotTriggerID As Integer = 0
                         Dim physicsBall As Boolean = False
@@ -3713,6 +3722,15 @@ Public Class formBackglass
                         If innerNode.Attributes("PivotDuration") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotDuration").InnerText, externalPivotDuration)
                         If innerNode.Attributes("PivotDownTrigger") IsNot Nothing Then pivotDownTrigger = innerNode.Attributes("PivotDownTrigger").InnerText.Trim()
                         If innerNode.Attributes("PivotUpTrigger") IsNot Nothing Then pivotUpTrigger = innerNode.Attributes("PivotUpTrigger").InnerText.Trim()
+                        If innerNode.Attributes("PivotStrikeTarget") IsNot Nothing Then pivotStrikeTarget = innerNode.Attributes("PivotStrikeTarget").InnerText.Trim()
+                        If innerNode.Attributes("PivotStrikeStrength") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotStrikeStrength").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotStrikeStrength)
+                        If innerNode.Attributes("PivotTriggerReverse") IsNot Nothing Then pivotTriggerReverse = (innerNode.Attributes("PivotTriggerReverse").InnerText.Trim() = "1")
+                        If innerNode.Attributes("PivotWeight") IsNot Nothing Then pivotWeight = (innerNode.Attributes("PivotWeight").InnerText.Trim() = "1")
+                        If innerNode.Attributes("PivotWeightX") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotWeightX").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotWeightX)
+                        If innerNode.Attributes("PivotWeightY") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotWeightY").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotWeightY)
+                        If innerNode.Attributes("PivotWeightStrength") IsNot Nothing Then Single.TryParse(innerNode.Attributes("PivotWeightStrength").InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, pivotWeightStrength)
+                        If innerNode.Attributes("PivotStrikeContact") IsNot Nothing Then pivotStrikeContact = (innerNode.Attributes("PivotStrikeContact").InnerText.Trim() <> "0")
+                        If innerNode.Attributes("PivotStrikeDirection") IsNot Nothing AndAlso innerNode.Attributes("PivotStrikeDirection").InnerText.Trim() = "-1" Then pivotStrikeDirection = -1
                         If innerNode.Attributes("PivotTriggerType") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotTriggerType").InnerText, pivotTriggerType)
                         If innerNode.Attributes("PivotTriggerID") IsNot Nothing Then Integer.TryParse(innerNode.Attributes("PivotTriggerID").InnerText, pivotTriggerID)
                         If innerNode.Attributes("PhysicsBall") IsNot Nothing Then physicsBall = (innerNode.Attributes("PhysicsBall").InnerText = "1")
@@ -3951,6 +3969,9 @@ Public Class formBackglass
                         picbox.PivotPhysicsKnockdownAngle = Math.Max(-360.0F, Math.Min(360.0F, pivotPhysicsKnockdownAngle))
                         picbox.PivotPhysicsKnockdownDuration = Math.Max(10, Math.Min(5000, pivotPhysicsKnockdownDuration))
                         picbox.PivotPhysicsResetDelay = Math.Max(0, Math.Min(30000, pivotPhysicsResetDelay))
+                        picbox.PivotWeightEnabled = pivotWeight AndAlso picbox.PivotPhysicsEnabled
+                        picbox.PivotWeightArm = New PointF((pivotWeightX - externalPivotX) * picbox.Width, (pivotWeightY - externalPivotY) * picbox.Height)
+                        picbox.PivotWeightStrength = Math.Max(1.0F, Math.Min(100.0F, pivotWeightStrength))
                         If pivotAnimation AndAlso image IsNot Nothing Then picbox.ConfigurePhysicsCollisionOutline(image)
                         picbox.MotionPathDuration = motionPathDuration
                         picbox.MotionPathLoop = motionPathLoop
@@ -4033,8 +4054,14 @@ Public Class formBackglass
                                 If pivotTriggerType = 0 Then
                                     B2SData.RegisterSingleImagePivot(picbox, "Pivot:" & name, pivotDownTrigger, pivotDownAngle, pivotUpTrigger, pivotUpAngle, externalPivotDuration)
                                 Else
+                                    picbox.PivotTriggerReverse = pivotTriggerReverse AndAlso pivotTriggerType <> 4
                                     B2SData.RegisterPivotTrigger(picbox, pivotTriggerType, pivotTriggerID, pivotDownAngle, pivotUpAngle, externalPivotDuration, pivotAutomaticOscillation)
                                 End If
+                            End If
+                            ' Optional pivot-to-pivot strike (B2S Pro files only; absent attribute = unchanged).
+                            If pivotStrikeTarget.Length > 0 Then
+                                B2SData.RegisterPivotStrike(picbox, pivotStrikeTarget, pivotStrikeStrength, pivotStrikeContact,
+                                                            pivotStrikeDirection, If(pivotUpAngle < pivotDownAngle, -1, 1))
                             End If
                         End If
                         If physicsBall AndAlso Not physicsBounds.IsEmpty Then

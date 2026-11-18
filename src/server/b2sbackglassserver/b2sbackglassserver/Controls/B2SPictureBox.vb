@@ -198,17 +198,26 @@ Public Class B2SPictureBox
     Public Property PivotPhysicsKnockdownAngle() As Single = 90.0F
     Public Property PivotPhysicsKnockdownDuration() As Integer = 180
     Public Property PivotPhysicsResetDelay() As Integer = 1000
+    ' Optional counterweight of a free-spin physics pivot: offset of the weight
+    ' from the hinge in the unrotated authored image, and gravity strength.
+    Public Property PivotWeightEnabled() As Boolean = False
+    Public Property PivotWeightArm() As PointF = PointF.Empty
+    Public Property PivotWeightStrength() As Single = 50.0F
     Public Property PhysicsCollisionMaskAlpha() As Byte()
     Public Property PhysicsCollisionMaskSize() As Size = Size.Empty
     Public Property PhysicsCollisionContour() As PointF()
     Public Property PhysicsAngularVelocity() As Single = 0.0F
     Private pivotAutomaticActive As Boolean = False
 
+    ' Reverse trigger: rest while the trigger is on, move up while it is off.
+    Public Property PivotTriggerReverse() As Boolean = False
+
     Public Sub SetPivotTriggerState(ByVal enabled As Boolean)
         If Me.Parent IsNot Nothing AndAlso Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
             Me.Parent.BeginInvoke(New MethodInvoker(Sub() SetPivotTriggerState(enabled)))
             Return
         End If
+        If PivotTriggerReverse Then enabled = Not enabled
         If PivotAutomaticOscillation Then
             If enabled = pivotAutomaticActive Then Return
             pivotAutomaticActive = enabled
@@ -760,6 +769,17 @@ Public Class B2SPictureBox
                 End If
             End If
             physicsPivotNeedsRedraw = True
+            Return
+        End If
+        If PivotPhysicsEnabled AndAlso PivotWeightEnabled Then
+            Dim weightedAngle As Single = RotationAngle
+            Dim weightedVelocity As Single = PhysicsAngularVelocity
+            If B2SData.AdvanceWeightedPivot(weightedAngle, weightedVelocity, elapsed, PivotWeightArm.X, PivotWeightArm.Y,
+                                            PivotWeightStrength, PivotPhysicsFriction) Then
+                RotationAngle = weightedAngle
+                physicsPivotNeedsRedraw = True
+            End If
+            PhysicsAngularVelocity = weightedVelocity
             Return
         End If
         If Not PivotPhysicsEnabled OrElse elapsed <= 0.0R OrElse Math.Abs(PhysicsAngularVelocity) < 0.0001F Then Return

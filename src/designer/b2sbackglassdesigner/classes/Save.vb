@@ -123,6 +123,9 @@ Public Class Save
                     .DMDCopyArea.Location = New Point(CInt(topnode.SelectSingleNode("DMDCopyAreaX").Attributes("Value").InnerText), CInt(topnode.SelectSingleNode("DMDCopyAreaY").Attributes("Value").InnerText))
                     .DMDCopyArea.Size = New Size(CInt(topnode.SelectSingleNode("DMDCopyAreaWidth").Attributes("Value").InnerText), CInt(topnode.SelectSingleNode("DMDCopyAreaHeight").Attributes("Value").InnerText))
                 End If
+                ' B2S Pro: DMD positions saved by the VPX B2S plugin, kept for the .B2SPro export
+                Dim projectDisplaysNode As Xml.XmlNode = topnode.SelectSingleNode("Displays")
+                If projectDisplaysNode IsNot Nothing Then .DisplaysXml = projectDisplaysNode.OuterXml
 
                 ' get all animations
                 If topnode.SelectSingleNode("Animations") IsNot Nothing AndAlso topnode.SelectNodes("Animations/Animation") IsNot Nothing Then
@@ -487,10 +490,19 @@ Public Class Save
                         bulb.SnippitInfo.PivotPhysicsKnockdownAngle = ReadSingleAttribute(innerNode, "PivotPhysicsKnockdownAngle", 90.0F, -360.0F, 360.0F)
                         bulb.SnippitInfo.PivotPhysicsKnockdownDuration = ReadIntAttribute(innerNode, "PivotPhysicsKnockdownDuration", 180, 10, 5000)
                         bulb.SnippitInfo.PivotPhysicsResetDelay = ReadIntAttribute(innerNode, "PivotPhysicsResetDelay", 1000, 0, 30000)
+                        bulb.SnippitInfo.PivotWeightEnabled = ReadIntAttribute(innerNode, "PivotWeight", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PivotWeightX = ReadSingleAttribute(innerNode, "PivotWeightX", 0.5F, -100000.0F, 100000.0F)
+                        bulb.SnippitInfo.PivotWeightY = ReadSingleAttribute(innerNode, "PivotWeightY", 1.0F, -100000.0F, 100000.0F)
+                        bulb.SnippitInfo.PivotWeightStrength = ReadSingleAttribute(innerNode, "PivotWeightStrength", 50.0F, 1.0F, 100.0F)
                         bulb.SnippitInfo.PivotTriggerType = ReadIntAttribute(innerNode, "PivotTriggerType", 1, 0, 5)
                         bulb.SnippitInfo.PivotTriggerID = ReadIntAttribute(innerNode, "PivotTriggerID", 0, 0, 255)
                         bulb.SnippitInfo.PivotDownTrigger = If(innerNode.Attributes("PivotDownTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotDownTrigger").InnerText.Trim())
                         bulb.SnippitInfo.PivotUpTrigger = If(innerNode.Attributes("PivotUpTrigger") Is Nothing, String.Empty, innerNode.Attributes("PivotUpTrigger").InnerText.Trim())
+                        bulb.SnippitInfo.PivotTriggerReverse = ReadIntAttribute(innerNode, "PivotTriggerReverse", 0, 0, 1) = 1
+                        bulb.SnippitInfo.PivotStrikeTarget = If(innerNode.Attributes("PivotStrikeTarget") Is Nothing, String.Empty, innerNode.Attributes("PivotStrikeTarget").InnerText.Trim())
+                        bulb.SnippitInfo.PivotStrikeStrength = ReadSingleAttribute(innerNode, "PivotStrikeStrength", 100.0F, 1.0F, 300.0F)
+                        bulb.SnippitInfo.PivotStrikeContact = Not (innerNode.Attributes("PivotStrikeContact") IsNot Nothing AndAlso innerNode.Attributes("PivotStrikeContact").InnerText.Trim() = "0")
+                        bulb.SnippitInfo.PivotStrikeDirection = If(ReadIntAttribute(innerNode, "PivotStrikeDirection", 1, -1, 1) < 0, -1, 1)
                         bulb.SnippitInfo.PhysicsBall = (ReadIntAttribute(innerNode, "PhysicsBall", 0, 0, 1) = 1)
                         bulb.SnippitInfo.PhysicsFlipperName = If(innerNode.Attributes("PhysicsFlipperName") Is Nothing, String.Empty, innerNode.Attributes("PhysicsFlipperName").InnerText.Trim())
                         bulb.SnippitInfo.PhysicsPivotTargetNames.Clear()
@@ -736,6 +748,12 @@ Public Class Save
                     AddXMLAttribute(XML, nodeHeader, "DMDCopyAreaY", "Value", CInt(.DMDCopyArea.Location.Y).ToString())
                     AddXMLAttribute(XML, nodeHeader, "DMDCopyAreaWidth", "Value", CInt(.DMDCopyArea.Size.Width).ToString())
                     AddXMLAttribute(XML, nodeHeader, "DMDCopyAreaHeight", "Value", CInt(.DMDCopyArea.Size.Height).ToString())
+                End If
+                ' B2S Pro: the imported <Displays> element (VPX B2S plugin DMD positions), unchanged
+                If Not String.IsNullOrEmpty(.DisplaysXml) Then
+                    Dim displaysDoc As New Xml.XmlDocument()
+                    displaysDoc.LoadXml(.DisplaysXml)
+                    nodeHeader.AppendChild(XML.ImportNode(displaysDoc.DocumentElement, True))
                 End If
 
                 ' add animations
@@ -990,10 +1008,25 @@ Public Class Save
                                 nodeBulb.SetAttribute("PivotPhysicsKnockdownAngle", Math.Max(-360.0F, Math.Min(360.0F, .SnippitInfo.PivotPhysicsKnockdownAngle)).ToString("R", Globalization.CultureInfo.InvariantCulture))
                                 nodeBulb.SetAttribute("PivotPhysicsKnockdownDuration", Math.Max(10, Math.Min(5000, .SnippitInfo.PivotPhysicsKnockdownDuration)).ToString())
                                 nodeBulb.SetAttribute("PivotPhysicsResetDelay", Math.Max(0, Math.Min(30000, .SnippitInfo.PivotPhysicsResetDelay)).ToString())
+                                If .SnippitInfo.PivotPhysicsEnabled AndAlso .SnippitInfo.PivotWeightEnabled Then
+                                    nodeBulb.SetAttribute("PivotWeight", "1")
+                                    nodeBulb.SetAttribute("PivotWeightX", .SnippitInfo.PivotWeightX.ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                    nodeBulb.SetAttribute("PivotWeightY", .SnippitInfo.PivotWeightY.ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                    nodeBulb.SetAttribute("PivotWeightStrength", Math.Max(1.0F, Math.Min(100.0F, .SnippitInfo.PivotWeightStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                End If
                                 nodeBulb.SetAttribute("PivotTriggerType", Math.Max(0, Math.Min(5, .SnippitInfo.PivotTriggerType)).ToString())
                                 nodeBulb.SetAttribute("PivotTriggerID", Math.Max(0, Math.Min(255, .SnippitInfo.PivotTriggerID)).ToString())
                                 nodeBulb.SetAttribute("PivotDownTrigger", .SnippitInfo.PivotDownTrigger.Trim())
                                 nodeBulb.SetAttribute("PivotUpTrigger", .SnippitInfo.PivotUpTrigger.Trim())
+                                If .SnippitInfo.PivotTriggerReverse Then nodeBulb.SetAttribute("PivotTriggerReverse", "1")
+                                If .SnippitInfo.PivotAnimationEnabled AndAlso Not String.IsNullOrWhiteSpace(.SnippitInfo.PivotStrikeTarget) Then
+                                    nodeBulb.SetAttribute("PivotStrikeTarget", .SnippitInfo.PivotStrikeTarget.Trim())
+                                    nodeBulb.SetAttribute("PivotStrikeStrength", Math.Max(1.0F, Math.Min(300.0F, .SnippitInfo.PivotStrikeStrength)).ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                    If Not .SnippitInfo.PivotStrikeContact Then
+                                        nodeBulb.SetAttribute("PivotStrikeContact", "0")
+                                        nodeBulb.SetAttribute("PivotStrikeDirection", If(.SnippitInfo.PivotStrikeDirection < 0, "-1", "1"))
+                                    End If
+                                End If
                                 If .SnippitInfo.PhysicsBall OrElse .SnippitInfo.PhysicsFloorPoints.Count >= 2 OrElse .SnippitInfo.PhysicsBoundaryPaths.Count > 0 Then
                                     nodeBulb.SetAttribute("PhysicsBall", If(.SnippitInfo.PhysicsBall, "1", "0"))
                                     nodeBulb.SetAttribute("PhysicsFlipperName", .SnippitInfo.PhysicsFlipperName.Trim())

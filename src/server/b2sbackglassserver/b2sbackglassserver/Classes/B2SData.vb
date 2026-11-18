@@ -444,11 +444,19 @@ Public Partial Class B2SData
                     pivots.Add(pivot)
                 Next
             Next
+            For Each link As PivotStrikeLink In PivotStrikeLinks
+                pivots.Add(link.Driver)
+                Dim strikeTarget As B2SPictureBox = link.Target
+                If strikeTarget IsNot Nothing Then pivots.Add(strikeTarget)
+            Next
             physicsPendingSeconds += elapsed
             Dim steps As Integer = CInt(Math.Floor((physicsPendingSeconds + 0.000000001R) / 0.001R))
             For index As Integer = 1 To steps
                 For Each pivot As B2SPictureBox In pivots
                     pivot.AdvancePhysicsPivot(0.001R)
+                Next
+                For Each link As PivotStrikeLink In PivotStrikeLinks
+                    link.Resolve(0.001R)
                 Next
                 For Each state As PhysicsBallState In PhysicsBalls
                     state.AdvanceServerStep()
@@ -475,8 +483,78 @@ Public Partial Class B2SData
     End Property
 
     Friend Shared Function IsPhysicsPivot(ByVal pivot As B2SPictureBox) As Boolean
-        Return PhysicsBalls.Any(Function(state) state.PhysicsPivots.Contains(pivot))
+        Return PhysicsBalls.Any(Function(state) state.PhysicsPivots.Contains(pivot)) OrElse
+               PivotStrikeLinks.Any(Function(link) link.Driver Is pivot OrElse link.Target Is pivot)
     End Function
+
+    ' A triggered pivot whose silhouette strikes a named physics pivot. Its
+    ' motion runs in the same 1 ms physics step as the target so the strike
+    ' uses the exact angle change of every step.
+    Private NotInheritable Class PivotStrikeLink
+        Public Driver As B2SPictureBox
+        Public TargetName As String
+        Public Strength As Single
+        ' False: no-contact kick in Direction (1 clockwise, -1 counter-clockwise).
+        Public Contact As Boolean = True
+        Public Direction As Integer = 1
+        Public UpSign As Integer = 1
+        Private ReadOnly kick As New PivotKickState()
+        Private driverShape As PivotStrikeShape
+        Private targetShape As PivotStrikeShape
+        Private shapeTarget As B2SPictureBox
+
+        Public ReadOnly Property Target As B2SPictureBox
+            Get
+                Dim found As B2SPictureBox = FindPivotPicture(TargetName)
+                If found Is Nothing OrElse found Is Driver OrElse Not found.PivotPhysicsEnabled Then Return Nothing
+                Return found
+            End Get
+        End Property
+
+        Public Sub Resolve(ByVal elapsed As Double)
+            Dim strikeTarget As B2SPictureBox = Target
+            If strikeTarget Is Nothing OrElse elapsed <= 0.0R Then Return
+            If Not Contact Then
+                Dim kickDelta As Single = (Driver.RotationAngle - Driver.PhysicsPreviousAngle) Mod 360.0F
+                If kickDelta > 180.0F Then kickDelta -= 360.0F
+                If kickDelta < -180.0F Then kickDelta += 360.0F
+                Dim spin As Single = PivotKickAngularDelta(kick.Advance(kickDelta, elapsed, UpSign), Direction, Strength)
+                If spin <> 0.0F Then strikeTarget.ApplyPivotPhysicsAngularImpulse(spin)
+                Return
+            End If
+            If driverShape Is Nothing Then driverShape = ShapeOf(Driver)
+            If targetShape Is Nothing OrElse shapeTarget IsNot strikeTarget Then
+                targetShape = ShapeOf(strikeTarget)
+                shapeTarget = strikeTarget
+            End If
+            If driverShape Is Nothing OrElse targetShape Is Nothing Then Return
+            Dim driverDelta As Single = (Driver.RotationAngle - Driver.PhysicsPreviousAngle) Mod 360.0F
+            If driverDelta > 180.0F Then driverDelta -= 360.0F
+            If driverDelta < -180.0F Then driverDelta += 360.0F
+            Dim delta As Single = PivotStrikeAngularDelta(driverShape, Driver.RectangleF, Driver.RotationAngle, CSng(driverDelta / elapsed),
+                                                          targetShape, strikeTarget.RectangleF, strikeTarget.RotationAngle,
+                                                          strikeTarget.PhysicsAngularVelocity, Strength)
+            If delta <> 0.0F Then strikeTarget.ApplyPivotPhysicsAngularImpulse(delta)
+        End Sub
+
+        Private Shared Function ShapeOf(ByVal pivot As B2SPictureBox) As PivotStrikeShape
+            If pivot.PhysicsCollisionContour Is Nothing OrElse pivot.PhysicsCollisionMaskSize.IsEmpty Then Return Nothing
+            Dim shape As New PivotStrikeShape(pivot.PhysicsCollisionContour, pivot.PhysicsCollisionMaskSize.Width,
+                                              pivot.PhysicsCollisionMaskSize.Height, pivot.RotationPivotX, pivot.RotationPivotY)
+            Return If(shape.IsUsable, shape, Nothing)
+        End Function
+    End Class
+    Private Shared ReadOnly PivotStrikeLinks As New Generic.List(Of PivotStrikeLink)()
+
+    Public Shared Sub RegisterPivotStrike(ByVal driver As B2SPictureBox, ByVal targetName As String, ByVal strength As Single,
+                                          ByVal contact As Boolean, ByVal direction As Integer, ByVal upSign As Integer)
+        If driver Is Nothing OrElse String.IsNullOrWhiteSpace(targetName) Then Return
+        PivotStrikeLinks.Add(New PivotStrikeLink With {.Driver = driver, .TargetName = targetName.Trim(),
+                                                       .Strength = Math.Max(1.0F, Math.Min(300.0F, strength)),
+                                                       .Contact = contact, .Direction = If(direction < 0, -1, 1),
+                                                       .UpSign = If(upSign < 0, -1, 1)})
+        StartPhysicsClock()
+    End Sub
     Private Shared ReadOnly PhysicsLauncherLampIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherSolenoidIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
     Private Shared ReadOnly PhysicsLauncherB2SIDs As New Generic.SortedList(Of Integer, Generic.List(Of PhysicsBallState))()
@@ -1723,6 +1801,7 @@ Public Partial Class B2SData
         physicsClock.Reset()
         physicsPendingSeconds = 0.0R
         PivotPicturesByName.Clear()
+        PivotStrikeLinks.Clear()
         For Each state As PhysicsBallState In PhysicsBalls
             state.Dispose()
         Next

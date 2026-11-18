@@ -365,6 +365,10 @@ Public Class Backglass
             End Set
         End Property
 
+        ' B2S Pro: the <Displays> element of an imported backglass file (DMD positions saved
+        ' by the VPX B2S plugin), kept unchanged so the .B2SPro export carries it over.
+        Public Property DisplaysXml As String = String.Empty
+
         Private _NumberOfPlayers As Integer = 0
         Public Property NumberOfPlayers() As Integer
             Get

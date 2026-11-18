@@ -131,6 +131,10 @@ Public Partial Class formPhysicsEditor
                     .PivotPhysicsKnockdownAngle = targetState.KnockdownAngle,
                     .PivotPhysicsKnockdownDuration = targetState.KnockdownDuration,
                     .PivotPhysicsResetDelay = targetState.ResetDelay,
+                    .PivotWeightEnabled = targetSource.SnippitInfo.PivotWeightEnabled,
+                    .PivotWeightArm = New PointF((targetSource.SnippitInfo.PivotWeightX - targetSource.SnippitInfo.PivotX) * targetSource.Size.Width,
+                                                 (targetSource.SnippitInfo.PivotWeightY - targetSource.SnippitInfo.PivotY) * targetSource.Size.Height),
+                    .PivotWeightStrength = targetSource.SnippitInfo.PivotWeightStrength,
                     .RotationAngle = If(targetSource.SnippitInfo.PivotAutomaticOscillation, 0.0F, targetSource.SnippitInfo.PivotDownAngle)}
                 Dim targetScene As SceneItem = canvas.Scene.FirstOrDefault(
                     Function(item) String.Equals(item.Name, targetName, StringComparison.OrdinalIgnoreCase))

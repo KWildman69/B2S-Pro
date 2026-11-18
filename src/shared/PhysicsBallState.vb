@@ -66,6 +66,299 @@ Public Partial Class B2SData
         Return contour
     End Function
 
+    ''' <summary>
+    ''' Rotating silhouette used by the pivot-to-pivot strike. The contour is the
+    ''' same 720-bin outline BuildPhysicsContour produces for the ball.
+    ''' </summary>
+    Public NotInheritable Class PivotStrikeShape
+        Public ReadOnly Contour As PointF()
+        Public ReadOnly MaskWidth As Integer
+        Public ReadOnly MaskHeight As Integer
+        ' Rotation hinge in mask pixels. A pivot may sit outside its image.
+        Public ReadOnly HingeX As Single
+        Public ReadOnly HingeY As Single
+        ' Polar origin of the outline: BuildPhysicsContour clamps the pivot into the image.
+        Public ReadOnly OriginX As Single
+        Public ReadOnly OriginY As Single
+        Public ReadOnly Radii As Single()
+        ' Outline length each sample stands for. Samples are spaced by angle,
+        ' so this keeps samples bunched near the hinge from being over-weighted.
+        Public ReadOnly SampleLengths As Single()
+        ' Farthest outline point from the rotation hinge, in mask pixels.
+        Public ReadOnly MaxHingeRadius As Single
+
+        Public Sub New(ByVal outline As PointF(), ByVal maskWidthValue As Integer, ByVal maskHeightValue As Integer,
+                       ByVal normalizedPivotX As Single, ByVal normalizedPivotY As Single)
+            Contour = outline
+            MaskWidth = maskWidthValue
+            MaskHeight = maskHeightValue
+            HingeX = normalizedPivotX * (MaskWidth - 1)
+            HingeY = normalizedPivotY * (MaskHeight - 1)
+            OriginX = CSng(Math.Max(0.0R, Math.Min(1.0R, normalizedPivotX))) * (MaskWidth - 1)
+            OriginY = CSng(Math.Max(0.0R, Math.Min(1.0R, normalizedPivotY))) * (MaskHeight - 1)
+            Dim count As Integer = If(outline Is Nothing, 0, outline.Length)
+            ReDim Radii(count - 1)
+            ReDim SampleLengths(count - 1)
+            If count = 0 Then Return
+            For index As Integer = 0 To count - 1
+                Dim dx As Single = outline(index).X - OriginX, dy As Single = outline(index).Y - OriginY
+                Radii(index) = CSng(Math.Sqrt(dx * dx + dy * dy))
+                Dim hx As Single = outline(index).X - HingeX, hy As Single = outline(index).Y - HingeY
+                MaxHingeRadius = Math.Max(MaxHingeRadius, CSng(Math.Sqrt(hx * hx + hy * hy)))
+                Dim previousPoint As PointF = outline((index - 1 + count) Mod count)
+                Dim nextPoint As PointF = outline((index + 1) Mod count)
+                Dim px As Single = outline(index).X - previousPoint.X, py As Single = outline(index).Y - previousPoint.Y
+                Dim nx As Single = nextPoint.X - outline(index).X, ny As Single = nextPoint.Y - outline(index).Y
+                SampleLengths(index) = (CSng(Math.Sqrt(px * px + py * py)) + CSng(Math.Sqrt(nx * nx + ny * ny))) / 2.0F
+            Next
+        End Sub
+
+        Public ReadOnly Property IsUsable As Boolean
+            Get
+                Return Contour IsNot Nothing AndAlso Contour.Length >= 8 AndAlso MaskWidth > 1 AndAlso MaskHeight > 1
+            End Get
+        End Property
+    End Class
+
+    Private Const PivotStrikeRestitution As Single = 0.55F
+    ' No-contact kick: target spin (deg/s) per degree/second of the driver's
+    ' fastest kick speed, at 100% strength.
+    Public Const PivotKickSpinPerKickSpeed As Single = 4.0F
+
+    ''' <summary>
+    ''' No-contact (linked) strike. Watches the driver's swing toward its up
+    ''' angle and reports the kick's top speed once per up-swing, at the moment
+    ''' the swing passes its fastest point (or stops before slowing down).
+    ''' </summary>
+    Public NotInheritable Class PivotKickState
+        Private lastSpeed As Single
+        Private fired As Boolean
+
+        ' Returns the kick's top speed (deg/s) on the step it fires, otherwise 0.
+        Public Function Advance(ByVal driverDeltaDegrees As Single, ByVal elapsedSeconds As Double, ByVal upSign As Integer) As Single
+            If elapsedSeconds <= 0.0R OrElse upSign = 0 Then Return 0.0F
+            Dim speed As Single = CSng(driverDeltaDegrees * upSign / elapsedSeconds)
+            Dim result As Single = 0.0F
+            If speed > 0.001F Then
+                If Not fired AndAlso lastSpeed > 0.0F AndAlso speed < lastSpeed Then
+                    result = lastSpeed
+                    fired = True
+                End If
+                lastSpeed = speed
+            Else
+                If Not fired AndAlso lastSpeed > 0.0F Then result = lastSpeed
+                fired = False
+                lastSpeed = 0.0F
+            End If
+            Return result
+        End Function
+
+        Public Sub Reset()
+            lastSpeed = 0.0F
+            fired = False
+        End Sub
+    End Class
+
+    ' Counterweight: angular acceleration (deg/s^2) per strength point when the
+    ' weight is level with the hinge. 50 = 1800 deg/s^2, about a 1 s rock.
+    Public Const PivotWeightAccelerationPerStrength As Single = 36.0F
+
+    ''' <summary>
+    ''' Gravity on a free-spin pivot's counterweight. armX/armY is the weight's
+    ''' offset from the hinge in the unrotated image (any consistent units; only
+    ''' its direction matters). Returns the angular acceleration in deg/s^2 that
+    ''' turns the weight toward straight down; positive angles are clockwise.
+    ''' </summary>
+    Public Shared Function PivotWeightAngularAcceleration(ByVal angle As Single, ByVal armX As Single, ByVal armY As Single,
+                                                          ByVal strength As Single) As Single
+        Dim length As Single = CSng(Math.Sqrt(armX * armX + armY * armY))
+        If length < 0.0001F Then Return 0.0F
+        Dim radians As Double = angle * Math.PI / 180.0R
+        Dim worldX As Single = CSng(armX * Math.Cos(radians) - armY * Math.Sin(radians))
+        Return worldX / length * Math.Max(0.0F, Math.Min(100.0F, strength)) * PivotWeightAccelerationPerStrength
+    End Function
+
+    ''' <summary>
+    ''' One free-spin step with a counterweight: gravity, friction, rotation.
+    ''' Returns False when the pivot is at rest with the weight hanging down.
+    ''' </summary>
+    Public Shared Function AdvanceWeightedPivot(ByRef angle As Single, ByRef angularVelocity As Single, ByVal elapsed As Double,
+                                                ByVal armX As Single, ByVal armY As Single, ByVal strength As Single,
+                                                ByVal friction As Single) As Boolean
+        If elapsed <= 0.0R Then Return False
+        Dim acceleration As Single = PivotWeightAngularAcceleration(angle, armX, armY, strength)
+        If Math.Abs(angularVelocity) < 0.0001F AndAlso Math.Abs(acceleration) < 0.5F Then
+            angularVelocity = 0.0F
+            Return False
+        End If
+        angularVelocity = CSng(angularVelocity + acceleration * elapsed)
+        angularVelocity = CSng(angularVelocity * Math.Exp(-Math.Max(0.0F, friction) * elapsed))
+        angularVelocity = Math.Max(-2160.0F, Math.Min(2160.0F, angularVelocity))
+        angle = CSng((angle + angularVelocity * elapsed) Mod 360.0R)
+        If Math.Abs(angularVelocity) < 0.01F AndAlso Math.Abs(acceleration) < 0.5F Then angularVelocity = 0.0F
+        Return True
+    End Function
+
+    ''' <summary>Target spin change (deg/s) for a no-contact kick of the given top speed.</summary>
+    Public Shared Function PivotKickAngularDelta(ByVal kickSpeed As Single, ByVal direction As Integer,
+                                                 ByVal strengthPercent As Single) As Single
+        If kickSpeed <= 0.0F OrElse Single.IsNaN(kickSpeed) OrElse Single.IsInfinity(kickSpeed) Then Return 0.0F
+        Dim strength As Single = Math.Max(0.0F, Math.Min(300.0F, strengthPercent)) / 100.0F
+        Return If(direction < 0, -1.0F, 1.0F) * kickSpeed * PivotKickSpinPerKickSpeed * strength
+    End Function
+
+    ' Where a silhouette sits this instant: hinge position, rotation and the
+    ' mask-pixel to coordinate-space scale.
+    Private Structure PivotStrikePose
+        Public HingeX As Single
+        Public HingeY As Single
+        Public Cosine As Single
+        Public Sine As Single
+        Public ScaleX As Single
+        Public ScaleY As Single
+    End Structure
+
+    Private Shared Function PivotStrikePoseOf(ByVal shape As PivotStrikeShape, ByVal bounds As RectangleF,
+                                              ByVal angle As Single) As PivotStrikePose
+        Dim pose As New PivotStrikePose()
+        pose.ScaleX = bounds.Width / (shape.MaskWidth - 1)
+        pose.ScaleY = bounds.Height / (shape.MaskHeight - 1)
+        pose.HingeX = bounds.Left + shape.HingeX * pose.ScaleX
+        pose.HingeY = bounds.Top + shape.HingeY * pose.ScaleY
+        Dim radians As Double = angle * Math.PI / 180.0R
+        pose.Cosine = CSng(Math.Cos(radians))
+        pose.Sine = CSng(Math.Sin(radians))
+        Return pose
+    End Function
+
+    ''' <summary>
+    ''' Returns the angular velocity change (degrees per second) the moving driver
+    ''' pivot gives the target physics pivot at this instant, or 0 when the two
+    ''' silhouettes do not touch or are already separating. The driver is solid
+    ''' and moves only by its own animation. Both bounds must be in the same
+    ''' coordinate space; the result does not depend on that space's scale.
+    ''' </summary>
+    Public Shared Function PivotStrikeAngularDelta(ByVal driver As PivotStrikeShape, ByVal driverBounds As RectangleF,
+                                                   ByVal driverAngle As Single, ByVal driverAngularVelocity As Single,
+                                                   ByVal target As PivotStrikeShape, ByVal targetBounds As RectangleF,
+                                                   ByVal targetAngle As Single, ByVal targetAngularVelocity As Single,
+                                                   ByVal strengthPercent As Single) As Single
+        If driver Is Nothing OrElse target Is Nothing OrElse Not driver.IsUsable OrElse Not target.IsUsable Then Return 0.0F
+        If driverBounds.Width <= 0.0F OrElse driverBounds.Height <= 0.0F OrElse
+           targetBounds.Width <= 0.0F OrElse targetBounds.Height <= 0.0F Then Return 0.0F
+        ' With neither pivot moving there is no closing speed and so no push.
+        If Math.Abs(driverAngularVelocity) < 0.001F AndAlso Math.Abs(targetAngularVelocity) < 0.001F Then Return 0.0F
+        Dim driverPose As PivotStrikePose = PivotStrikePoseOf(driver, driverBounds, driverAngle)
+        Dim targetPose As PivotStrikePose = PivotStrikePoseOf(target, targetBounds, targetAngle)
+
+        ' Two rotating shapes can only touch when their hinge circles overlap.
+        Dim driverReach As Single = driver.MaxHingeRadius * Math.Max(driverPose.ScaleX, driverPose.ScaleY)
+        Dim targetReach As Single = target.MaxHingeRadius * Math.Max(targetPose.ScaleX, targetPose.ScaleY)
+        Dim hingeDx As Single = driverPose.HingeX - targetPose.HingeX
+        Dim hingeDy As Single = driverPose.HingeY - targetPose.HingeY
+        If hingeDx * hingeDx + hingeDy * hingeDy > (driverReach + targetReach) * (driverReach + targetReach) Then Return 0.0F
+
+        ' Average every overlapping outline sample, weighted by its depth and the
+        ' outline length it stands for, so the push acts at the middle of the
+        ' touching area.
+        Dim totalWeight As Single = 0.0F
+        Dim contactX As Single = 0.0F, contactY As Single = 0.0F
+        Dim normalX As Single = 0.0F, normalY As Single = 0.0F
+        Dim point As PointF, depth As Single, surfaceNormal As PointF, weight As Single
+        Dim driverLengthScale As Single = (driverPose.ScaleX + driverPose.ScaleY) / 2.0F
+        Dim targetLengthScale As Single = (targetPose.ScaleX + targetPose.ScaleY) / 2.0F
+        ' Driver outline points inside the target: the target's outward normal.
+        For index As Integer = 0 To driver.Contour.Length - 1
+            point = PivotStrikeWorldPoint(driver, driverPose, driver.Contour(index))
+            If PivotStrikeInside(target, targetPose, point, depth, surfaceNormal) Then
+                weight = depth * driver.SampleLengths(index) * driverLengthScale
+                totalWeight += weight
+                contactX += point.X * weight : contactY += point.Y * weight
+                normalX += surfaceNormal.X * weight : normalY += surfaceNormal.Y * weight
+            End If
+        Next
+        ' Target outline points inside the driver: opposite of the driver's normal.
+        For index As Integer = 0 To target.Contour.Length - 1
+            point = PivotStrikeWorldPoint(target, targetPose, target.Contour(index))
+            If PivotStrikeInside(driver, driverPose, point, depth, surfaceNormal) Then
+                weight = depth * target.SampleLengths(index) * targetLengthScale
+                totalWeight += weight
+                contactX += point.X * weight : contactY += point.Y * weight
+                normalX -= surfaceNormal.X * weight : normalY -= surfaceNormal.Y * weight
+            End If
+        Next
+        If totalWeight <= 0.0F Then Return 0.0F
+        Dim normalLength As Single = CSng(Math.Sqrt(normalX * normalX + normalY * normalY))
+        If normalLength < 0.000001F Then Return 0.0F
+        Dim contact As New PointF(contactX / totalWeight, contactY / totalWeight)
+        Dim normal As New PointF(normalX / normalLength, normalY / normalLength)
+
+        Dim driverOmega As Single = driverAngularVelocity * CSng(Math.PI / 180.0R)
+        Dim targetOmega As Single = targetAngularVelocity * CSng(Math.PI / 180.0R)
+        Dim driverArmX As Single = contact.X - driverPose.HingeX, driverArmY As Single = contact.Y - driverPose.HingeY
+        Dim targetArmX As Single = contact.X - targetPose.HingeX, targetArmY As Single = contact.Y - targetPose.HingeY
+        ' Surface velocity of a point on a pivot: omega x arm.
+        Dim relativeX As Single = (-targetOmega * targetArmY) - (-driverOmega * driverArmY)
+        Dim relativeY As Single = (targetOmega * targetArmX) - (driverOmega * driverArmX)
+        ' Positive when the target surface is closing on the driver along the normal.
+        Dim closing As Single = relativeX * normal.X + relativeY * normal.Y
+        If closing <= 0.0F Then Return 0.0F
+
+        Dim lever As Single = targetArmX * normal.Y - targetArmY * normal.X
+        Dim armLengthSquared As Single = targetArmX * targetArmX + targetArmY * targetArmY
+        Dim softening As Single = 0.01F * armLengthSquared + 0.000001F
+        Dim deltaOmega As Single = -(1.0F + PivotStrikeRestitution) * closing * lever / (lever * lever + softening)
+        Dim strength As Single = Math.Max(0.0F, Math.Min(300.0F, strengthPercent)) / 100.0F
+        Dim result As Single = deltaOmega * CSng(180.0R / Math.PI) * strength
+        If Single.IsNaN(result) OrElse Single.IsInfinity(result) Then Return 0.0F
+        Return result
+    End Function
+
+    Private Shared Function PivotStrikeWorldPoint(ByVal shape As PivotStrikeShape, ByRef pose As PivotStrikePose,
+                                                  ByVal maskPoint As PointF) As PointF
+        Dim dx As Single = (maskPoint.X - shape.HingeX) * pose.ScaleX
+        Dim dy As Single = (maskPoint.Y - shape.HingeY) * pose.ScaleY
+        Return New PointF(pose.HingeX + dx * pose.Cosine - dy * pose.Sine, pose.HingeY + dx * pose.Sine + dy * pose.Cosine)
+    End Function
+
+    ' Tests a world point against a rotated silhouette. On a hit, returns the
+    ' depth inside the outline and the outline's outward normal, both in world space.
+    Private Shared Function PivotStrikeInside(ByVal shape As PivotStrikeShape, ByRef pose As PivotStrikePose,
+                                              ByVal point As PointF, ByRef depth As Single, ByRef outward As PointF) As Boolean
+        Dim dx As Single = point.X - pose.HingeX, dy As Single = point.Y - pose.HingeY
+        Dim localX As Single = dx * pose.Cosine + dy * pose.Sine
+        Dim localY As Single = -dx * pose.Sine + dy * pose.Cosine
+        Dim maskX As Single = shape.HingeX + localX / pose.ScaleX - shape.OriginX
+        Dim maskY As Single = shape.HingeY + localY / pose.ScaleY - shape.OriginY
+        Dim binCount As Integer = shape.Contour.Length
+        Dim polar As Double = Math.Atan2(maskY, maskX)
+        If polar < 0.0R Then polar += Math.PI * 2.0R
+        Dim bin As Integer = CInt(Math.Floor(polar * binCount / (Math.PI * 2.0R))) Mod binCount
+        Dim limit As Single = shape.Radii(bin)
+        If limit <= 0.0F Then Return False
+        Dim radius As Single = CSng(Math.Sqrt(maskX * maskX + maskY * maskY))
+        If radius >= limit Then Return False
+
+        depth = (limit - radius) * (pose.ScaleX + pose.ScaleY) / 2.0F
+        Dim previousPoint As PointF = shape.Contour((bin - 1 + binCount) Mod binCount)
+        Dim nextPoint As PointF = shape.Contour((bin + 1) Mod binCount)
+        Dim tangentX As Single = (nextPoint.X - previousPoint.X) * pose.ScaleX
+        Dim tangentY As Single = (nextPoint.Y - previousPoint.Y) * pose.ScaleY
+        Dim normalX As Single = tangentY, normalY As Single = -tangentX
+        Dim radialX As Single = (shape.Contour(bin).X - shape.OriginX) * pose.ScaleX
+        Dim radialY As Single = (shape.Contour(bin).Y - shape.OriginY) * pose.ScaleY
+        If normalX * radialX + normalY * radialY < 0.0F Then normalX = -normalX : normalY = -normalY
+        Dim length As Single = CSng(Math.Sqrt(normalX * normalX + normalY * normalY))
+        If length < 0.000001F Then
+            length = CSng(Math.Sqrt(radialX * radialX + radialY * radialY))
+            If length < 0.000001F Then Return False
+            normalX = radialX : normalY = radialY
+        End If
+        normalX /= length : normalY /= length
+        outward = New PointF(normalX * pose.Cosine - normalY * pose.Sine, normalX * pose.Sine + normalY * pose.Cosine)
+        Return depth > 0.0F
+    End Function
+
     Public Class PhysicsSwitchZone
         Public Bounds As RectangleF
         Public SwitchID As Integer

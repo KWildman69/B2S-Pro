@@ -21,15 +21,15 @@ using System.Windows.Forms;
 #if SERVER_ONLY
 [assembly: AssemblyTitle("B2S Pro Server Setup")]
 [assembly: AssemblyProduct("B2S Pro Server")]
-[assembly: AssemblyVersion("3.0.13.0")]
-[assembly: AssemblyFileVersion("3.0.13.0")]
-[assembly: AssemblyInformationalVersion("3.0.13")]
+[assembly: AssemblyVersion("3.0.14.0")]
+[assembly: AssemblyFileVersion("3.0.14.0")]
+[assembly: AssemblyInformationalVersion("3.0.14")]
 #else
 [assembly: AssemblyTitle("B2S Pro Setup")]
 [assembly: AssemblyProduct("B2S Pro Backglass Designer")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
-[assembly: AssemblyInformationalVersion("2.1.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
+[assembly: AssemblyInformationalVersion("2.2.0")]
 #endif
 [assembly: AssemblyCompany("B2S Pro")]
 [assembly: AssemblyCopyright("Copyright © 2026 Ken Wildman")]
@@ -1020,7 +1020,7 @@ namespace B2SPro.Setup
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             using (var client = new HttpClient())
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd(serverOnly ? "B2S-Server-Updater/3.0.13" : "B2S-Pro-Installer/2.1.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(serverOnly ? "B2S-Server-Updater/3.0.14" : "B2S-Pro-Installer/2.2.0");
                 string json;
                 try
                 {

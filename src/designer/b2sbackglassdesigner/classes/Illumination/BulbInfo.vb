@@ -225,11 +225,27 @@
         Public PivotPhysicsKnockdownAngle As Single = 90.0F
         Public PivotPhysicsKnockdownDuration As Integer = 180
         Public PivotPhysicsResetDelay As Integer = 1000
+        ' Optional counterweight for a free-spin physics pivot. Gravity pulls the
+        ' weight point (normalized to the image, like PivotX/Y) straight down.
+        Public PivotWeightEnabled As Boolean = False
+        Public PivotWeightX As Single = 0.5F
+        Public PivotWeightY As Single = 1.0F
+        Public PivotWeightStrength As Single = 50.0F
         ' 0=named commands, 1=solenoid, 2=lamp, 3=B2S ID.
         Public PivotTriggerType As Integer = 1
         Public PivotTriggerID As Integer = 0
         Public PivotDownTrigger As String = String.Empty
         Public PivotUpTrigger As String = String.Empty
+        ' Reverse trigger: rest while the solenoid/lamp/B2S ID/switch is on, move up while it is off.
+        Public PivotTriggerReverse As Boolean = False
+        ' Optional pivot-to-pivot strike: this pivot's moving silhouette hits the
+        ' named physics pivot and spins it. Empty keeps every file unchanged.
+        Public PivotStrikeTarget As String = String.Empty
+        Public PivotStrikeStrength As Single = 100.0F
+        ' True: the shapes must touch. False: a no-contact (linked) kick.
+        Public PivotStrikeContact As Boolean = True
+        ' No-contact kick spin direction: 1 = clockwise, -1 = counter-clockwise.
+        Public PivotStrikeDirection As Integer = 1
 
         ' B2S Pro visual physics metadata. An empty boundary list preserves
         ' every legacy backglass and disables the physics runtime path.
