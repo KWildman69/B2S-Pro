@@ -674,6 +674,19 @@ Public Partial Class B2SData
         End If
     End Sub
 
+    ' Path Animation magnet: a picked-up physics ball stops simulating while it
+    ' is carried (same hold the gravity-trough path uses). Non-physics snippets
+    ' are unaffected.
+    Public Shared Sub HoldPhysicsBall(ByVal pictureBox As B2SPictureBox)
+        DeactivateGravityDrop(pictureBox)
+    End Sub
+
+    ' Path Animation magnet: a dropped physics ball resumes simulating from
+    ' where it was let go, at rest; gravity takes it from there.
+    Public Shared Sub ReleasePhysicsBall(ByVal pictureBox As B2SPictureBox)
+        ActivateGravityDrop(pictureBox)
+    End Sub
+
     Public Shared Function FirePhysicsLaunchers(ByVal triggerType As Integer, ByVal triggerID As Integer, ByVal value As Integer) As Boolean
         If value = 0 Then Return False
         Dim routes = If(triggerType = 2, PhysicsLauncherLampIDs, If(triggerType = 5, PhysicsLauncherSwitchIDs, If(triggerType = 3, PhysicsLauncherB2SIDs, PhysicsLauncherSolenoidIDs)))
@@ -1731,10 +1744,48 @@ Public Partial Class B2SData
     Public Shared Property led16Seg() As Generic.List(Of PointF()) = New Generic.List(Of PointF())
     Public Shared Property ledCoordMax() As Integer
 
+    ' ---- B2S Pro Path Animation (shared\PathAnimation.vb) ----
+    ' Snippets with PathAnim="1". Empty for every other backglass, so the
+    ' routing below does nothing for legacy and existing B2S Pro files.
+    Public Shared ReadOnly PathAnimPictures As New Generic.List(Of B2SPictureBox)()
+    Private Shared ReadOnly pathAnimTriggerStates As New Generic.Dictionary(Of Integer, Integer)()
+
+    ' IDs of one trigger type (1 solenoid, 2 lamp, 3 B2S ID, 4 switch) used by
+    ' any Path Animation, so the EXE polling reads them.
+    Public Shared Function PathAnimTriggerIDs(ByVal triggerType As Integer) As Generic.HashSet(Of Integer)
+        Dim ids As New Generic.HashSet(Of Integer)()
+        For Each picture As B2SPictureBox In PathAnimPictures
+            picture.CollectPathAnimTriggerIDs(triggerType, ids)
+        Next
+        Return ids
+    End Function
+
+    ' Every caller reports the current value of a trigger; edges are found here.
+    Public Shared Sub PathAnimTriggerChanged(ByVal triggerType As Integer, ByVal id As Integer, ByVal value As Integer)
+        If PathAnimPictures.Count = 0 OrElse id <= 0 Then Return
+        Dim key As Integer = triggerType * 100000 + id
+        Dim previous As Integer = 0
+        SyncLock pathAnimTriggerStates
+            pathAnimTriggerStates.TryGetValue(key, previous)
+            If previous = value Then Return
+            pathAnimTriggerStates(key) = value
+        End SyncLock
+        For Each picture As B2SPictureBox In PathAnimPictures.ToArray()
+            picture.HandlePathAnimTrigger(triggerType, id, value, previous)
+        Next
+    End Sub
+
     Public Shared Sub ClearAll(Optional ByVal donotclearnames As Boolean = False)
 #If B2S = "DLL" Then
         IsInfoDirty = True
 #End If
+        For Each picture As B2SPictureBox In PathAnimPictures
+            picture.StopPathAnimation()
+        Next
+        PathAnimPictures.Clear()
+        SyncLock pathAnimTriggerStates
+            pathAnimTriggerStates.Clear()
+        End SyncLock
         If Not donotclearnames Then
             TableName = String.Empty
             TableFileName = String.Empty

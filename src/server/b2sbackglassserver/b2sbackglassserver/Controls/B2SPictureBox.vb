@@ -1292,6 +1292,294 @@ Public Class B2SPictureBox
         Return CSng(Math.Max(0.0, Math.Min(1.0, firstDistinctEnd / total)))
     End Function
 
+    ' ---- B2S Pro Path Animation runtime (shared\PathAnimation.vb) ----
+    ' Only snippets loaded with PathAnim="1" ever get settings here; every
+    ' other picture box keeps PathAnim = Nothing and none of this runs.
+    Public Property PathAnim As PathAnimSettings = Nothing
+    Private pathMover As PathAnimMover
+    Private pathTimer As Timer
+    Private ReadOnly pathClock As New Stopwatch()
+    Private pathLastMs As Double
+    Private pathPrepared As Boolean
+    Private pathOriginalCenter As PointF
+    Private pathRuntimeCenter As PointF
+    Private pathScaleX As Single = 1.0F
+    Private pathScaleY As Single = 1.0F
+    Private pathSize As SizeF
+    ' Magnet: the snippet this one picks up and carries (PathAnim.CarryID).
+    Private ReadOnly pathMagnet As New PathAnimMagnet()
+    Private pathMagnetRider As B2SPictureBox
+    ' True on a snippet some path snippet can carry: it moves at runtime, so
+    ' it is kept out of the still-image cache like path snippets themselves.
+    Public Property IsPathMagnetRider As Boolean = False
+
+    Public ReadOnly Property HasPathAnim As Boolean
+        Get
+            Return PathAnim IsNot Nothing
+        End Get
+    End Property
+
+    ' Heading measured on the artwork (image pixels), the same as the Designer.
+    ' The screen stretch is applied after the turn when the snippet is drawn,
+    ' so the snippet keeps its authored shape relative to the artwork beneath
+    ' it whatever the backglass window size.
+    Public ReadOnly Property PathAnimAngle As Single
+        Get
+            If pathMover Is Nothing OrElse Not pathPrepared Then Return 0.0F
+            Return pathMover.Angle()
+        End Get
+    End Property
+
+    ' Image-to-screen stretch of the backglass (screen px per image px).
+    Public ReadOnly Property PathAnimScale As SizeF
+        Get
+            Return New SizeF(pathScaleX, pathScaleY)
+        End Get
+    End Property
+
+    ' True when the artwork has to be drawn turned.
+    Public ReadOnly Property PathAnimTransformed As Boolean
+        Get
+            Return pathMover IsNot Nothing AndAlso pathPrepared AndAlso
+                   PathAnim.Rotate AndAlso Math.Abs(PathAnimAngle) > 0.01F
+        End Get
+    End Property
+
+    Public Sub StartPathAnimation()
+        If PathAnim Is Nothing Then Return
+        If pathTimer Is Nothing Then
+            pathTimer = New Timer() With {.Interval = 16}
+            AddHandler pathTimer.Tick, AddressOf PathTimer_Tick
+        End If
+        pathMover = New PathAnimMover(PathAnim, New PathAnimGeometry(PathAnim.Points, PathAnim.Closed, PathAnim.Smooth))
+        ' Width/Height are the authored image-pixel size; its front trips track switches.
+        pathMover.SnippetSize = New SizeF(Me.Width, Me.Height)
+        pathMagnet.Reset()
+        pathMagnetRider = Nothing
+        If PathAnim.CarryID > 0 Then
+            Dim rider As B2SPictureBox = Nothing
+            If B2SData.Illuminations.TryGetValue("PictureBox" & PathAnim.CarryID.ToString(), rider) AndAlso rider IsNot Me Then
+                pathMagnetRider = rider
+                rider.IsPathMagnetRider = True
+            End If
+        End If
+        pathPrepared = False
+        pathClock.Restart()
+        pathLastMs = 0
+        pathTimer.Start()
+    End Sub
+
+    ' Backglass-image pixels to screen, the same mapping the path uses.
+    Private Function PathImageToScreen(ByVal p As PointF) As PointF
+        Return New PointF(pathRuntimeCenter.X + (p.X - pathOriginalCenter.X) * pathScaleX,
+                          pathRuntimeCenter.Y + (p.Y - pathOriginalCenter.Y) * pathScaleY)
+    End Function
+
+    Private Function PathScreenToImage(ByVal p As PointF) As PointF
+        Return New PointF(pathOriginalCenter.X + (p.X - pathRuntimeCenter.X) / pathScaleX,
+                          pathOriginalCenter.Y + (p.Y - pathRuntimeCenter.Y) / pathScaleY)
+    End Function
+
+    ' Magnet: picks the rider up by touch, keeps a carried rider at its spot
+    ' relative to this snippet. A picked-up physics ball stops simulating.
+    Private Sub UpdatePathMagnet()
+        If pathMagnetRider Is Nothing OrElse Not pathPrepared OrElse pathMover Is Nothing Then Return
+        If pathScaleX <= 0 OrElse pathScaleY <= 0 Then Return
+        Dim center As PointF = pathMover.Position
+        Dim angle As Single = pathMover.Angle()
+        If Not pathMagnet.Carrying Then
+            Dim r As RectangleF = pathMagnetRider.RectangleF
+            If r.Width <= 0 OrElse r.Height <= 0 Then Return
+            Dim topLeft As PointF = PathScreenToImage(r.Location)
+            Dim riderBounds As New RectangleF(topLeft.X, topLeft.Y, r.Width / pathScaleX, r.Height / pathScaleY)
+            If Not pathMagnet.Update(center, pathMover.SnippetSize, angle, riderBounds) Then Return
+            B2SData.HoldPhysicsBall(pathMagnetRider)
+        End If
+        pathMagnetRider.SetMotionPathPosition(PathImageToScreen(pathMagnet.RiderCenter(center, angle)))
+    End Sub
+
+    ' Magnet: lets the rider go where it is; a physics ball falls from rest.
+    Private Sub DropPathMagnetRider()
+        If pathMagnetRider Is Nothing OrElse Not pathMagnet.Carrying Then Return
+        pathMagnet.Drop()
+        B2SData.ReleasePhysicsBall(pathMagnetRider)
+        If PathAnim.ReturnAfterDrop Then
+            ' Magnet off on the way back to start.
+            pathMagnet.StartReturn()
+            pathMover.Home()
+        End If
+    End Sub
+
+    Public Sub StopPathAnimation()
+        If pathTimer IsNot Nothing Then pathTimer.Stop()
+    End Sub
+
+    Friend Sub CollectPathAnimTriggerIDs(ByVal triggerType As Integer, ByVal ids As Generic.HashSet(Of Integer))
+        If PathAnim Is Nothing Then Return
+        Dim triggers As New Generic.List(Of PathAnimTrigger)()
+        Select Case PathAnim.Mode
+            Case PathAnimDriveMode.GoToStop : triggers.AddRange(PathAnim.StopTriggers)
+            Case PathAnimDriveMode.StepStops : triggers.Add(PathAnim.ForwardTrigger)
+            Case PathAnimDriveMode.RunStop : triggers.Add(PathAnim.RunTrigger)
+            Case PathAnimDriveMode.PositionValue : triggers.Add(PathAnim.ValueTrigger)
+            Case PathAnimDriveMode.PopDrop : triggers.Add(PathAnim.RunTrigger)
+        End Select
+        triggers.Add(PathAnim.HomeTrigger)
+        If PathAnim.CarryID > 0 Then triggers.Add(PathAnim.DropTrigger)
+        For Each t As PathAnimTrigger In triggers
+            If t.IsSet AndAlso CInt(t.Type) = triggerType Then ids.Add(t.ID)
+        Next
+    End Sub
+
+    Private Shared Function PathTriggerMatches(ByVal t As PathAnimTrigger, ByVal triggerType As Integer, ByVal id As Integer) As Boolean
+        Return t.IsSet AndAlso CInt(t.Type) = triggerType AndAlso t.ID = id
+    End Function
+
+    Public Sub HandlePathAnimTrigger(ByVal triggerType As Integer, ByVal id As Integer, ByVal value As Integer, ByVal previous As Integer)
+        If PathAnim Is Nothing Then Return
+        If Me.Parent IsNot Nothing AndAlso Me.Parent.IsHandleCreated AndAlso Me.Parent.InvokeRequired Then
+            Me.Parent.BeginInvoke(New Action(Of Integer, Integer, Integer, Integer)(AddressOf HandlePathAnimTrigger), triggerType, id, value, previous)
+            Return
+        End If
+        If pathMover Is Nothing Then Return
+        Dim rising As Boolean = (previous = 0 AndAlso value <> 0)
+        Dim acted As Boolean = False
+        Select Case PathAnim.Mode
+            Case PathAnimDriveMode.GoToStop
+                If rising Then
+                    For index As Integer = 0 To PathAnim.StopTriggers.Count - 1
+                        If PathTriggerMatches(PathAnim.StopTriggers(index), triggerType, id) Then
+                            pathMover.GoToStop(index + 1)
+                            acted = True
+                            Exit For
+                        End If
+                    Next
+                End If
+            Case PathAnimDriveMode.StepStops
+                If rising AndAlso PathTriggerMatches(PathAnim.ForwardTrigger, triggerType, id) Then pathMover.StepBy(1) : acted = True
+            Case PathAnimDriveMode.RunStop
+                ' Motor: runs while the trigger is on, stops when it goes off.
+                If PathTriggerMatches(PathAnim.RunTrigger, triggerType, id) Then
+                    If rising Then
+                        pathMover.Run() : acted = True
+                    ElseIf value = 0 Then
+                        pathMover.Halt() : acted = True
+                    End If
+                End If
+            Case PathAnimDriveMode.PositionValue
+                If value > 0 AndAlso PathTriggerMatches(PathAnim.ValueTrigger, triggerType, id) Then pathMover.GoToStop(value) : acted = True
+            Case PathAnimDriveMode.PopDrop
+                ' Pop up / drop: to the end while the trigger is on, back to the start when it turns off.
+                If PathTriggerMatches(PathAnim.RunTrigger, triggerType, id) Then
+                    If rising Then
+                        pathMover.GoToStop(pathMover.StopCount) : acted = True
+                    ElseIf value = 0 AndAlso previous <> 0 Then
+                        pathMover.GoToStop(1) : acted = True
+                    End If
+                End If
+        End Select
+        If rising AndAlso PathTriggerMatches(PathAnim.HomeTrigger, triggerType, id) Then pathMover.Home() : acted = True
+        If rising AndAlso PathAnim.CarryID > 0 AndAlso PathTriggerMatches(PathAnim.DropTrigger, triggerType, id) AndAlso pathMagnet.Carrying Then
+            DropPathMagnetRider() : acted = True
+        End If
+        If acted AndAlso pathTimer IsNot Nothing Then
+            If Not pathTimer.Enabled Then pathLastMs = pathClock.Elapsed.TotalMilliseconds
+            pathTimer.Start()
+            ' A jump moves at once (Pop up / drop can jump back at its own speed).
+            If PathAnim.Speed <= 0 OrElse PathAnim.Mode = PathAnimDriveMode.PopDrop Then ApplyPathPosition()
+        End If
+    End Sub
+
+    Private Sub PathTimer_Tick(ByVal sender As Object, ByVal e As EventArgs)
+        If pathMover Is Nothing Then
+            pathTimer.Stop()
+            Return
+        End If
+        Dim now As Double = pathClock.Elapsed.TotalMilliseconds
+        Dim elapsed As Double = Math.Min(100.0, now - pathLastMs)
+        pathLastMs = now
+        If Not pathPrepared Then
+            If Me.Parent Is Nothing OrElse Me.RectangleF.Width <= 0 OrElse Me.RectangleF.Height <= 0 OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return
+            ' Same image-to-screen mapping as the Motion Path runtime: the
+            ' control keeps unscaled Left/Top/Width/Height, RectangleF is the
+            ' screen rectangle.
+            pathSize = Me.RectangleF.Size
+            pathScaleX = Me.RectangleF.Width / Me.Width
+            pathScaleY = Me.RectangleF.Height / Me.Height
+            pathOriginalCenter = New PointF(Me.Left + Me.Width / 2.0F, Me.Top + Me.Height / 2.0F)
+            pathRuntimeCenter = New PointF(Me.RectangleF.X + Me.RectangleF.Width / 2.0F, Me.RectangleF.Y + Me.RectangleF.Height / 2.0F)
+            pathPrepared = True
+            ApplyPathPosition()
+        End If
+        If pathMover.Advance(elapsed) Then
+            ApplyPathPosition()
+        ElseIf Not pathMagnet.Carrying Then
+            ' Parked and empty: a rider can still roll into the magnet. A parked
+            ' carrier already holding its rider has nothing to repaint.
+            UpdatePathMagnet()
+        End If
+        ' Back at the start after a drop: the magnet is on again.
+        If pathMagnet.Returning AndAlso Not pathMover.IsMoving Then pathMagnet.ReturnFinished()
+        ' Keep checking for a touch while the magnet is empty.
+        Dim magnetWaiting As Boolean = pathMagnetRider IsNot Nothing AndAlso Not pathMagnet.Carrying
+        If Not pathMover.IsMoving AndAlso Not magnetWaiting Then pathTimer.Stop()
+    End Sub
+
+    Private Sub ApplyPathPosition()
+        If Not pathPrepared OrElse pathMover Is Nothing Then Return
+        Dim p As PointF = pathMover.Position
+        Dim centerX As Single = pathRuntimeCenter.X + (p.X - pathOriginalCenter.X) * pathScaleX
+        Dim centerY As Single = pathRuntimeCenter.Y + (p.Y - pathOriginalCenter.Y) * pathScaleY
+        Dim oldBounds As Rectangle = PathAnimPaintBounds()
+        Dim x As Single = centerX - pathSize.Width / 2.0F
+        Dim y As Single = centerY - pathSize.Height / 2.0F
+        ' Whole pixels keep the prepared full-resolution image reusable while
+        ' an unturned snippet moves.
+        If Not PathAnim.Rotate Then
+            x = CSng(Math.Round(x))
+            y = CSng(Math.Round(y))
+        End If
+        Me.RectangleF = New RectangleF(x, y, pathSize.Width, pathSize.Height)
+        If Me.Parent IsNot Nothing Then
+            Dim newBounds As Rectangle = PathAnimPaintBounds()
+            Dim dirty As Rectangle = If(oldBounds.IsEmpty, newBounds, Rectangle.Union(oldBounds, newBounds))
+            dirty.Inflate(2, 2)
+            Me.Parent.Invalidate(dirty)
+        End If
+        UpdatePathMagnet()
+        ' Magnet auto-drop: let go on arriving at the end of the path.
+        If pathMover.TakeEndReached() AndAlso PathAnim.DropAtEnd AndAlso pathMagnet.Carrying Then DropPathMagnetRider()
+        ' Track switches the snippet just crossed go to the table, through the
+        ' same route as a physics ball's switch zones.
+        For Each switchID As Integer In pathMover.TakeSwitchHits()
+            B2SData.PulsePhysicsSwitch(switchID)
+        Next
+    End Sub
+
+    ' Area the snippet can cover, including any turn.
+    Friend Function PathAnimPaintBounds() As Rectangle
+        Dim r As RectangleF = Me.RectangleF
+        If r.Width <= 0 OrElse r.Height <= 0 Then Return Rectangle.Empty
+        If PathAnim IsNot Nothing AndAlso PathAnim.Rotate Then
+            ' The turned rectangle's sides are stretched by at most the larger
+            ' backglass scale, so it stays inside its image diagonal times that.
+            Dim imageW As Single = If(pathScaleX > 0, r.Width / pathScaleX, r.Width)
+            Dim imageH As Single = If(pathScaleY > 0, r.Height / pathScaleY, r.Height)
+            Dim diagonal As Single = CSng(Math.Sqrt(imageW * imageW + imageH * imageH))
+            Dim largest As Single = Math.Max(If(pathScaleX > 0, pathScaleX, 1.0F), If(pathScaleY > 0, pathScaleY, 1.0F))
+            Dim reachX As Single = diagonal * largest
+            Dim reachY As Single = diagonal * largest
+            Dim cx As Single = r.X + r.Width / 2.0F
+            Dim cy As Single = r.Y + r.Height / 2.0F
+            Dim turned As Rectangle = Rectangle.Ceiling(New RectangleF(cx - reachX / 2.0F, cy - reachY / 2.0F, reachX, reachY))
+            turned.Inflate(2, 2)
+            Return turned
+        End If
+        Dim plain As Rectangle = Rectangle.Ceiling(r)
+        plain.Inflate(1, 1)
+        Return plain
+    End Function
+
     Private Sub SetMotionPathCenter(ByVal center As PointF, Optional ByVal advanceRoll As Boolean = False)
         Dim previousCenter As PointF = MotionPathCenter
         Dim oldBounds As Rectangle = MotionPathPaintBounds(Me.VisualArtworkBounds, VisualRotationAngle)

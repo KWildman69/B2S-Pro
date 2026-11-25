@@ -673,6 +673,22 @@ Public Class formLightDiffusionEditor
             livePreviewStatus.Left = Math.Max(490, flasherPreviewGroup.ClientSize.Width - livePreviewStatus.Width - 8)
         End If
         LayoutFlasherSettingsMaskControls()
+        LayoutDynamicLightingTargets()
+    End Sub
+
+    ' The snippet target list shows up to 14 rows (at least the original 82 px)
+    ' and grows into any extra height at the bottom of the window; the left
+    ' panel scrolls when the list is taller than the window.
+    Private Sub LayoutDynamicLightingTargets()
+        If dynamicLightingGroup Is Nothing OrElse dynamicFrontTargets Is Nothing OrElse flasherLeftPanel Is Nothing Then Return
+        Const listMargin As Integer = 16
+        Dim rows As Integer = Math.Min(14, Math.Max(4, dynamicFrontTargets.Items.Count))
+        Dim listHeight As Integer = Math.Max(82, rows * dynamicFrontTargets.ItemHeight + 6)
+        Dim groupTop As Integer = dynamicLightingGroup.Top - flasherLeftPanel.AutoScrollPosition.Y
+        Dim fillHeight As Integer = flasherLeftPanel.ClientSize.Height - 10 - groupTop - dynamicFrontTargets.Top - listMargin
+        listHeight = Math.Max(listHeight, fillHeight)
+        dynamicFrontTargets.Height = listHeight
+        dynamicLightingGroup.Height = dynamicFrontTargets.Top + listHeight + listMargin
     End Sub
 
     Private Sub LayoutFlasherSettingsMaskControls()

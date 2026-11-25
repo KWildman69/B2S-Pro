@@ -514,6 +514,10 @@ Public Class B2SPictureBox
         hash = MixVisualHash(hash, CInt(bulb.FontSize * 100.0F))
         hash = MixVisualHash(hash, CInt(bulb.FontStyle))
         hash = MixVisualHash(hash, CInt(bulb.TextAlignment))
+        hash = MixVisualHash(hash, CInt(Math.Round(bulb.TextBend * 1000.0F)))
+        hash = MixVisualHash(hash, CInt(Math.Round(bulb.TextPerspectiveDepth * 1000.0F)))
+        hash = MixVisualHash(hash, CInt(Math.Round(bulb.TextPerspectiveLeftScale * 1000.0F)))
+        hash = MixVisualHash(hash, CInt(Math.Round(bulb.TextPerspectiveRightScale * 1000.0F)))
         hash = MixVisualHash(hash, LayerManager.GetOpacity(bulb))
         hash = MixVisualHash(hash, If(LayerManager.IsVisible(bulb), 1, 0))
         hash = MixVisualHash(hash, If(bulb.ArtworkPixelLighting, 1, 0))
@@ -583,6 +587,9 @@ Public Class B2SPictureBox
                 hash = MixVisualHash(hash, score.Reel3DGlassStyle)
                 hash = MixVisualHash(hash, score.Reel3DShadow)
                 hash = MixVisualHash(hash, If(score.Reel3DDividers, score.Reel3DDividerWidth, 0))
+                If score.BehindGlass IsNot Nothing Then
+                    hash = MixVisualHash(hash, (score.BehindGlass.ReelKey() & "|" & score.BehindGlass.OverlayKey()).GetHashCode())
+                End If
                 hash = MixVisualHash(hash, CInt(score.DisplayState))
                 hash = MixVisualHash(hash, If(LayerManager.IsVisible(score), 1, 0))
             Next
@@ -930,8 +937,24 @@ Public Class B2SPictureBox
                                 ' maybe render text
                                 If Not ShowIllumination AndAlso Not String.IsNullOrEmpty(.Text) Then
                                     font = New Font(.FontName, CSng(.FontSize * factor), .FontStyle)
-                                    Dim horizontal As TextFormatFlags = If(.TextAlignment = Illumination.eTextAlignment.Left, TextFormatFlags.Left, If(.TextAlignment = Illumination.eTextAlignment.Right, TextFormatFlags.Right, TextFormatFlags.HorizontalCenter))
-                                    TextRenderer.DrawText(pe.Graphics, .Text, font, rect, framecolor, TextFormatFlags.VerticalCenter Or horizontal Or TextFormatFlags.NoPrefix)
+                                    Dim shape As Illumination.TextShapeInfo = .TextShape()
+                                    ' TextRenderer ignores the rotation set for a turned frame, so
+                                    ' turned (or shaped) text is drawn as a GDI+ outline instead.
+                                    If shape.IsFlat AndAlso lightFrameState Is Nothing Then
+                                        Dim horizontal As TextFormatFlags = If(.TextAlignment = Illumination.eTextAlignment.Left, TextFormatFlags.Left, If(.TextAlignment = Illumination.eTextAlignment.Right, TextFormatFlags.Right, TextFormatFlags.HorizontalCenter))
+                                        TextRenderer.DrawText(pe.Graphics, .Text, font, rect, framecolor, TextFormatFlags.VerticalCenter Or horizontal Or TextFormatFlags.NoPrefix)
+                                    Else
+                                        ' Same bent/perspective outline the exported light image uses.
+                                        Dim textState As Drawing2D.GraphicsState = pe.Graphics.Save()
+                                        pe.Graphics.TranslateTransform(rect.X, rect.Y)
+                                        pe.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+                                        Using shaped As Drawing2D.GraphicsPath = Illumination.Create.CreateShapedTextPath(pe.Graphics, .Text, font, .TextAlignment, New Rectangle(0, 0, rect.Width, rect.Height), shape)
+                                            Using textBrush As New SolidBrush(framecolor)
+                                                pe.Graphics.FillPath(textBrush, shaped)
+                                            End Using
+                                        End Using
+                                        pe.Graphics.Restore(textState)
+                                    End If
                                     font.Dispose()
                                 End If
                                 If lightFrameState IsNot Nothing Then pe.Graphics.Restore(lightFrameState)
@@ -970,6 +993,25 @@ Public Class B2SPictureBox
                     pe.Graphics.DrawLine(rotationPen, stemX, stemY, handleX, handleY)
                     pe.Graphics.DrawEllipse(rotationPen, handleX - 7, handleY - 7, 14, 14)
                 End Using
+            End If
+            ' Text shape handles, the same as a score window: corner dots for
+            ' the height at each end, the center dot for depth, plus a bend dot.
+            If selectedLight IsNot Nothing AndAlso Mouse.SelectedItems.Count = 1 AndAlso IsShapeableText(selectedLight) AndAlso
+               Not Mouse.IsLightRotationActive Then
+                Dim shapeHandles As PointF() = TextShapeHandlePoints(selectedLight, CSng(factor))
+                pe.Graphics.DrawPolygon(Pens.DeepSkyBlue, New PointF() {shapeHandles(0), shapeHandles(1), shapeHandles(2), shapeHandles(3)})
+                pe.Graphics.FillEllipse(Brushes.White, shapeHandles(0).X - 6, shapeHandles(0).Y - 6, 12, 12)
+                pe.Graphics.DrawEllipse(Pens.LimeGreen, shapeHandles(0).X - 6, shapeHandles(0).Y - 6, 12, 12)
+                pe.Graphics.DrawLine(Pens.LimeGreen, shapeHandles(0).X, shapeHandles(0).Y - 3, shapeHandles(0).X, shapeHandles(0).Y + 3)
+                pe.Graphics.FillEllipse(Brushes.White, shapeHandles(1).X - 6, shapeHandles(1).Y - 6, 12, 12)
+                pe.Graphics.DrawEllipse(Pens.DeepSkyBlue, shapeHandles(1).X - 6, shapeHandles(1).Y - 6, 12, 12)
+                pe.Graphics.DrawLine(Pens.DeepSkyBlue, shapeHandles(1).X, shapeHandles(1).Y - 3, shapeHandles(1).X, shapeHandles(1).Y + 3)
+                pe.Graphics.FillEllipse(Brushes.White, shapeHandles(4).X - 7, shapeHandles(4).Y - 7, 14, 14)
+                pe.Graphics.DrawEllipse(Pens.DeepSkyBlue, shapeHandles(4).X - 7, shapeHandles(4).Y - 7, 14, 14)
+                pe.Graphics.DrawLine(Pens.DeepSkyBlue, shapeHandles(4).X - 4, shapeHandles(4).Y, shapeHandles(4).X + 4, shapeHandles(4).Y)
+                pe.Graphics.FillEllipse(Brushes.White, shapeHandles(5).X - 6, shapeHandles(5).Y - 6, 12, 12)
+                pe.Graphics.DrawEllipse(Pens.Orange, shapeHandles(5).X - 6, shapeHandles(5).Y - 6, 12, 12)
+                pe.Graphics.DrawArc(Pens.Orange, shapeHandles(5).X - 4, shapeHandles(5).Y - 2, 8, 6, 200, 140)
             End If
             pendashed.Dispose()
             pen.Dispose()
@@ -1417,6 +1459,36 @@ Public Class B2SPictureBox
         Return points
     End Function
 
+    ' True for a single plain text box: the only object with text-shape handles.
+    Friend Shared Function IsShapeableText(ByVal bulb As Illumination.BulbInfo) As Boolean
+        Return bulb IsNot Nothing AndAlso Not bulb.IsImageSnippit AndAlso Not String.IsNullOrEmpty(bulb.Text)
+    End Function
+
+    ' Screen positions of a text box's shape handles: 0-3 the perspective
+    ' outline (top-left, top-right, bottom-right, bottom-left), 4 the depth
+    ' handle in the center, 5 the bend handle (bottom middle, moves with bend).
+    ' Turned with the text box's rotation, like its light image.
+    Friend Function TextShapeHandlePoints(ByVal bulb As Illumination.BulbInfo, ByVal scale As Single) As PointF()
+        Dim box As New RectangleF(bulb.Location.X * scale, bulb.Location.Y * scale, bulb.Size.Width * scale, bulb.Size.Height * scale)
+        Dim shape As Illumination.TextShapeInfo = bulb.TextShape()
+        Dim corners As PointF() = shape.Corners(box)
+        Dim centerX As Single = box.X + box.Width / 2.0F
+        Dim centerY As Single = box.Y + box.Height / 2.0F
+        Dim points As PointF() = {corners(0), corners(1), corners(2), corners(3),
+                                  New PointF(centerX, centerY),
+                                  New PointF(centerX, box.Bottom - shape.Bend * box.Height)}
+        If Math.Abs(bulb.LightRotationAngle) > 0.001F Then
+            Dim radians As Double = bulb.LightRotationAngle * Math.PI / 180.0
+            For i As Integer = 0 To points.Length - 1
+                Dim dx As Double = points(i).X - centerX
+                Dim dy As Double = points(i).Y - centerY
+                points(i) = New PointF(CSng(centerX + dx * Math.Cos(radians) - dy * Math.Sin(radians)),
+                                       CSng(centerY + dx * Math.Sin(radians) + dy * Math.Cos(radians)))
+            Next
+        End If
+        Return points
+    End Function
+
     ' Complete editor-only footprint for a selected score. Drag invalidation
     ' must include more than the unrotated score rectangle: the perspective
     ' corners, rotation stem and handle all paint outside that rectangle.
@@ -1547,7 +1619,8 @@ Public Class B2SPictureBox
     ' Realistic 3D reel style: the preview number (0) on its drum with 1 above
     ' and 9 below, lit like the exported reel images. Nothing = draw Classic.
     Private Function CreateRealisticReelDigit(ByVal score As ReelAndLED.ScoreInfo, ByVal size As Size) As Bitmap
-        If score Is Nothing OrElse Not score.Reel3DEnabled OrElse score.Reel3DStyle <> ReelRealistic.StyleRealistic Then Return Nothing
+        If score Is Nothing OrElse Not score.Reel3DEnabled OrElse
+           (score.Reel3DStyle <> ReelRealistic.StyleRealistic AndAlso score.Reel3DStyle <> ReelBehindGlass.Style) Then Return Nothing
         Dim images As Image() = CreateReelNumberSet(score, Function(image, intensity, location) Lights.DrawIlluminatedReelImage(image, intensity, location), {8, 9, 0, 1, 2})
         If images Is Nothing Then Return Nothing
         Try
@@ -1601,11 +1674,53 @@ Public Class B2SPictureBox
         For offset As Integer = -2 To 2
             numbers(offset + 2) = numberSet((digit + offset + 10) Mod 10)
         Next
-        Return ReelAndLED.Reel3DEffect.RenderRealisticReel(numbers, size,
-                                                           KeepDigitAspect(score), If(KeepDigitAspect(score), score.ReelDigitWidth, 0),
-                                                           score.Reel3DBrightness, score.Reel3DTemperature, score.Reel3DDepth,
-                                                           score.Reel3DCurve, score.Reel3DShadow, roll)
+        Dim glass As ReelBehindGlass.Settings = If(score.BehindGlass, ReelBehindGlass.Settings.Neutral())
+        If score.Reel3DStyle = ReelBehindGlass.Style Then
+            ' Behind glass: the Reel Glass Lab drawing, as the Server draws it,
+            ' with the reel's Backlight brightness and Colour temperature too.
+            Dim behind As Bitmap = ReelBehindGlass.RenderReel(numbers, size, BehindGlassNumberWidth(score, size), glass, roll, True,
+                                                               Math.Max(0, Math.Min(400, score.Reel3DBrightness)) / 100.0)
+            ReelAndLED.Reel3DEffect.GradeTemperature(behind, score.Reel3DTemperature)
+            Return behind
+        End If
+        Dim realistic As Bitmap = ReelAndLED.Reel3DEffect.RenderRealisticReel(numbers, size,
+                                                                            KeepDigitAspect(score), If(KeepDigitAspect(score), score.ReelDigitWidth, 0),
+                                                                            score.Reel3DBrightness, score.Reel3DTemperature, score.Reel3DDepth,
+                                                                            score.Reel3DCurve, score.Reel3DShadow, roll, NumberScale(glass))
+        ReelBehindGlass.FinishReel(realistic, glass)
+        Return realistic
     End Function
+
+    ' Classic 3D reel: the original look, then the reel glass settings
+    ' (brightness, warmth, softness), exactly as the Server draws it.
+    Friend Shared Function RenderClassicReel(ByVal score As ReelAndLED.ScoreInfo, ByVal reelImage As Image) As Bitmap
+        Dim enhanced As Bitmap = ReelAndLED.Reel3DEffect.RenderReel(reelImage, score.Reel3DBrightness, score.Reel3DTemperature, score.Reel3DDepth)
+        ReelBehindGlass.FinishReel(enhanced, score.BehindGlass)
+        Return enhanced
+    End Function
+
+    ' Number size for the Realistic drum (100 % = unchanged).
+    Friend Shared Function NumberScale(ByVal glass As ReelBehindGlass.Settings) As Double
+        If glass Is Nothing Then Return 1.0
+        Return Math.Max(50, Math.Min(150, glass.NumberSize)) / 100.0
+    End Function
+
+    ' Behind glass: the number's width before Number size, as in the lab and
+    ' the Server: the score's digit width, or 0.56 of the reel height.
+    Friend Shared Function BehindGlassNumberWidth(ByVal score As ReelAndLED.ScoreInfo, ByVal size As Size) As Double
+        If KeepDigitAspect(score) AndAlso score.ReelDigitWidth > 0 Then Return score.ReelDigitWidth
+        Return CInt(size.Height * 0.56)
+    End Function
+
+    ' The window drawn over the reels, the same for every reel style: the
+    ' original inset shadow and glass, then the reel glass window (shadow,
+    ' set back and room reflection) when it is in use.
+    Friend Shared Sub DrawScoreWindowOverlay(ByVal graphics As Graphics, ByVal window As Rectangle, ByVal score As ReelAndLED.ScoreInfo)
+        ReelAndLED.Reel3DEffect.DrawWindowOverlay(graphics, window, score.Reel3DDepth, score.Reel3DGlass, score.Reel3DGlassStyle)
+        If score.BehindGlass IsNot Nothing AndAlso Not score.BehindGlass.OverlayIsNeutral() Then
+            ReelBehindGlass.DrawOverlay(graphics, window, score.BehindGlass)
+        End If
+    End Sub
 
     Private Function CreateScoreContentBitmap(ByVal score As ReelAndLED.ScoreInfo,
                                               ByRef glassOverlay As Bitmap) As Bitmap
@@ -1634,12 +1749,7 @@ Public Class B2SPictureBox
             End If
             If score.Reel3DEnabled Then
                 Dim enhanced As Bitmap = CreateRealisticReelDigit(score, newSize)
-                If enhanced Is Nothing Then
-                    enhanced = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
-                                                                 score.Reel3DBrightness,
-                                                                 score.Reel3DTemperature,
-                                                                 score.Reel3DDepth)
-                End If
+                If enhanced Is Nothing Then enhanced = RenderClassicReel(score, reelImage)
                 If enhanced IsNot Nothing Then
                     reelImage.Dispose()
                     reelImage = enhanced
@@ -1660,11 +1770,7 @@ Public Class B2SPictureBox
                 Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
                     overlayGraphics.Clear(Color.Transparent)
                     DrawScoreDividers(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score, width)
-                    ReelAndLED.Reel3DEffect.DrawWindowOverlay(overlayGraphics,
-                                                             New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height),
-                                                             score.Reel3DDepth,
-                                                             score.Reel3DGlass,
-                                                             score.Reel3DGlassStyle)
+                    DrawScoreWindowOverlay(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score)
                 End Using
             End If
             Return scoreBitmap
@@ -1768,12 +1874,7 @@ Public Class B2SPictureBox
             End If
             If score.Reel3DEnabled Then
                 Dim enhanced As Bitmap = CreateRealisticReelDigit(score, newSize)
-                If enhanced Is Nothing Then
-                    enhanced = ReelAndLED.Reel3DEffect.RenderReel(reelImage,
-                                                                 score.Reel3DBrightness,
-                                                                 score.Reel3DTemperature,
-                                                                 score.Reel3DDepth)
-                End If
+                If enhanced Is Nothing Then enhanced = RenderClassicReel(score, reelImage)
                 If enhanced IsNot Nothing Then
                     reelImage.Dispose()
                     reelImage = enhanced
@@ -1795,11 +1896,7 @@ Public Class B2SPictureBox
                         Using overlayGraphics As Graphics = Graphics.FromImage(glassOverlay)
                             overlayGraphics.Clear(Color.Transparent)
                             DrawScoreDividers(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score, width)
-                            ReelAndLED.Reel3DEffect.DrawWindowOverlay(overlayGraphics,
-                                                                     New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height),
-                                                                     score.Reel3DDepth,
-                                                                     score.Reel3DGlass,
-                                                                     score.Reel3DGlassStyle)
+                            DrawScoreWindowOverlay(overlayGraphics, New Rectangle(0, 0, glassOverlay.Width, glassOverlay.Height), score)
                         End Using
                         DrawPerspectiveBitmap(graphics, glassOverlay, ScorePerspectivePoints(score, 1.0F))
                     End Using
@@ -1885,7 +1982,17 @@ Public Class B2SPictureBox
             light.LightRotationAngle)
             If lightField Is Nothing Then Return
 
-            For Each snippet As Illumination.BulbInfo In visualBulbs
+            ' Light the snippets from the bottom layer up (the canvas draws a higher
+            ' LayerOrder first), and hide each lit copy wherever a snippet above it
+            ' covers it, so a lit lower snippet never shows through the ones in front.
+            Dim covers As New Generic.Dictionary(Of Illumination.BulbInfo, Byte())()
+            Dim ordered As New Generic.List(Of Illumination.BulbInfo)()
+            For Each bulb As Illumination.BulbInfo In visualBulbs
+                If bulb IsNot Nothing Then ordered.Add(bulb)
+            Next
+            ordered = ordered.OrderByDescending(Function(bulb) bulb.LayerOrder).ToList()
+
+            For Each snippet As Illumination.BulbInfo In ordered
                 If snippet Is Nothing OrElse Not snippet.IsImageSnippit OrElse snippet.Image Is Nothing OrElse
                    snippet.ZOrder >= light.ZOrder OrElse
                    Not PreviewBulbIsDrawable(snippet, False, ignoreCurrentFilter) OrElse
@@ -1929,6 +2036,7 @@ Public Class B2SPictureBox
                                 light.ArtworkContrast)
                                 If illuminated IsNot Nothing Then
                                     Illumination.Create.ApplyTemperatureToRenderedLight(illuminated, light.LightTemperature)
+                                    HideCoveredDynamicLight(illuminated, overlap, snippet, light, ordered, covers, ignoreCurrentFilter)
                                     graphics.DrawImageUnscaled(illuminated, overlap.Location)
                                 End If
                             End Using
@@ -1938,6 +2046,88 @@ Public Class B2SPictureBox
             Next
         End Using
     End Sub
+
+    ' Multiplies the lit copy's alpha by what is left uncovered by the image
+    ' snippets drawn after this snippet and before the light (lower LayerOrder
+    ' than the snippet, higher than the light). covers keeps each snippet's
+    ' alpha for the rest of this light's pass.
+    Private Sub HideCoveredDynamicLight(ByVal illuminated As Bitmap, ByVal overlap As Rectangle,
+                                        ByVal snippet As Illumination.BulbInfo, ByVal light As Illumination.BulbInfo,
+                                        ByVal ordered As Generic.List(Of Illumination.BulbInfo),
+                                        ByVal covers As Generic.Dictionary(Of Illumination.BulbInfo, Byte()),
+                                        ByVal ignoreCurrentFilter As Boolean)
+        Dim pixels As Byte() = Nothing
+        Dim stride As Integer = 0
+        Dim data As Imaging.BitmapData = Nothing
+        Try
+            For Each above As Illumination.BulbInfo In ordered
+                If above Is snippet OrElse Not above.IsImageSnippit OrElse above.Image Is Nothing OrElse
+                   above.LayerOrder >= snippet.LayerOrder OrElse above.LayerOrder <= light.LayerOrder OrElse
+                   Not PreviewBulbIsDrawable(above, False, ignoreCurrentFilter) Then Continue For
+                Dim aboveBounds As New Rectangle(above.Location, above.Size)
+                If aboveBounds.Width <= 0 OrElse aboveBounds.Height <= 0 Then Continue For
+                Dim common As Rectangle = Rectangle.Intersect(overlap, aboveBounds)
+                If common.Width <= 0 OrElse common.Height <= 0 Then Continue For
+
+                Dim alpha As Byte() = Nothing
+                If Not covers.TryGetValue(above, alpha) Then
+                    alpha = ReadSnippetAlpha(above, aboveBounds)
+                    covers(above) = alpha
+                End If
+                If alpha Is Nothing Then Continue For
+
+                If pixels Is Nothing Then
+                    data = illuminated.LockBits(New Rectangle(0, 0, illuminated.Width, illuminated.Height),
+                                                Imaging.ImageLockMode.ReadWrite, Imaging.PixelFormat.Format32bppArgb)
+                    stride = Math.Abs(data.Stride)
+                    pixels = New Byte(stride * illuminated.Height - 1) {}
+                    Runtime.InteropServices.Marshal.Copy(data.Scan0, pixels, 0, pixels.Length)
+                End If
+                For y As Integer = common.Top To common.Bottom - 1
+                    Dim coverRow As Integer = (y - aboveBounds.Y) * aboveBounds.Width - aboveBounds.X
+                    Dim pixelRow As Integer = (y - overlap.Y) * stride
+                    For x As Integer = common.Left To common.Right - 1
+                        Dim covered As Integer = alpha(coverRow + x)
+                        If covered = 0 Then Continue For
+                        Dim p As Integer = pixelRow + (x - overlap.X) * 4 + 3
+                        pixels(p) = CByte((pixels(p) * (255 - covered) + 127) \ 255)
+                    Next
+                Next
+            Next
+            If pixels IsNot Nothing Then Runtime.InteropServices.Marshal.Copy(pixels, 0, data.Scan0, pixels.Length)
+        Finally
+            If data IsNot Nothing Then illuminated.UnlockBits(data)
+        End Try
+    End Sub
+
+    ' The snippet's alpha over its own box, drawn exactly as the canvas draws it.
+    Private Function ReadSnippetAlpha(ByVal bulb As Illumination.BulbInfo, ByVal bounds As Rectangle) As Byte()
+        Using frame As New Bitmap(bounds.Width, bounds.Height, Imaging.PixelFormat.Format32bppArgb)
+            Using frameGraphics As Graphics = Graphics.FromImage(frame)
+                frameGraphics.Clear(Color.Transparent)
+                frameGraphics.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
+                frameGraphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                frameGraphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                frameGraphics.TranslateTransform(-bounds.X, -bounds.Y)
+                DrawSnippetLayerNative(frameGraphics, bulb)
+            End Using
+            Dim alpha(bounds.Width * bounds.Height - 1) As Byte
+            Dim data As Imaging.BitmapData = frame.LockBits(New Rectangle(0, 0, bounds.Width, bounds.Height),
+                                                            Imaging.ImageLockMode.ReadOnly, Imaging.PixelFormat.Format32bppArgb)
+            Try
+                Dim row(bounds.Width * 4 - 1) As Byte
+                For y As Integer = 0 To bounds.Height - 1
+                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                    For x As Integer = 0 To bounds.Width - 1
+                        alpha(y * bounds.Width + x) = row(x * 4 + 3)
+                    Next
+                Next
+            Finally
+                frame.UnlockBits(data)
+            End Try
+            Return alpha
+        End Using
+    End Function
 
     Private Sub DrawSnippetLayerNative(ByVal graphics As Graphics,
                                        ByVal bulb As Illumination.BulbInfo)
@@ -2043,7 +2233,7 @@ Public Class B2SPictureBox
                                                   bulb.GlowIntensity,
                                                   bulb.SelectionMaskData,
                                                   bulb.SelectionFeather,
-                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, bulb.SeparateLightLayer)
+                                                  bulb.GlobalMaskLayerExplicit AndAlso Not bulb.InFrontOfGlobalMask, bulb.FlasherStyle, bulb.FlasherSaturation, bulb.FlasherHighlightProtection, bulb.FlasherDarkAreaLift, bulb.FlasherHotspotX, bulb.FlasherHotspotY, bulb.LightDiffusion, bulb.LightTemperature, bulb.UsesArtworkPixelRenderer, bulb.ArtworkContrast, bulb.MaskRadius, bulb.MaskSmartRadius, bulb.MaskSmooth, bulb.MaskFeather, bulb.MaskContrast, bulb.MaskShiftEdge, bulb.FlasherRadialSpikes, bulb.LightRotationAngle, bulb.SeparateLightLayer, bulb.TextShape())
             If overlay IsNot Nothing Then graphics.DrawImageUnscaled(overlay, rectX.Location)
             If TypeOf overlay Is Bitmap Then
                 Dim size As Long = CLng(overlay.Width) * overlay.Height * 4L

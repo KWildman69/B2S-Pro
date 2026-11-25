@@ -803,6 +803,7 @@ Public Class Server
                 Dim lampstate As Integer = CInt(lamps(i, 1))
                 B2SData.SetPivotTriggerState(B2SData.PivotLampIDs, lampid, If(lampstate > lampThreshold, 1, 0))
                 B2SData.FirePhysicsLaunchers(2, lampid, If(lampstate > lampThreshold, 1, 0))
+                B2SData.PathAnimTriggerChanged(2, lampid, If(lampstate > lampThreshold, 1, 0))
                 If lampstate > lampThreshold Then
                     If B2SData.UsedMotionPathStopLampIDs.ContainsKey(lampid) Then
                         For Each picture As B2SPictureBox In B2SData.UsedMotionPathStopLampIDs(lampid)
@@ -1042,6 +1043,7 @@ Public Class Server
                 Dim solenoidstate As Integer = CInt(solenoids(i, 1))
                 B2SData.SetPivotTriggerState(B2SData.PivotSolenoidIDs, solenoidid, solenoidstate)
                 B2SData.FirePhysicsLaunchers(1, solenoidid, solenoidstate)
+                B2SData.PathAnimTriggerChanged(1, solenoidid, If(solenoidstate <> 0, 1, 0))
                 If solenoidstate <> 0 Then
                     If B2SData.UsedMotionPathStopSolenoidIDs.ContainsKey(solenoidid) Then
                         For Each picture As B2SPictureBox In B2SData.UsedMotionPathStopSolenoidIDs(solenoidid)
@@ -2108,6 +2110,7 @@ Public Class Server
 
             B2SData.SetPivotTriggerState(B2SData.PivotB2SIDs, id, value)
             B2SData.FirePhysicsLaunchers(3, id, value)
+            B2SData.PathAnimTriggerChanged(3, id, value)
 
             If id >= 0 AndAlso id < motionPathB2SStates.Length AndAlso
                (B2SData.UsedMotionPathB2SIDs.ContainsKey(id) OrElse B2SData.UsedMotionPathStopB2SIDs.ContainsKey(id) OrElse B2SData.UsedMotionPathResumeB2SIDs.ContainsKey(id) OrElse B2SData.UsedMotionPathRemoveB2SIDs.ContainsKey(id)) Then

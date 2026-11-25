@@ -2195,6 +2195,10 @@ Public Class formDesigner
         target.LightDiffusion = source.LightDiffusion
         target.LightTemperature = source.LightTemperature
         target.LightRotationAngle = source.LightRotationAngle
+        target.TextBend = source.TextBend
+        target.TextPerspectiveDepth = source.TextPerspectiveDepth
+        target.TextPerspectiveLeftScale = source.TextPerspectiveLeftScale
+        target.TextPerspectiveRightScale = source.TextPerspectiveRightScale
         target.GlowBlendMode = source.GlowBlendMode
         target.GlowPreviewQuality = source.GlowPreviewQuality
         target.FlasherStyle = source.FlasherStyle
@@ -3216,6 +3220,9 @@ Public Class formDesigner
         Backglass.currentTabPage.Invalidate()
         Backglass.currentTabPage.Update()
         LoadToolIlluminationForm()
+        ' The Layers row was added when the new object was selected, before it
+        ' became a text box; rebuild it so it shows as "Text Box", type Text.
+        If formToolLayers IsNot Nothing AndAlso Not formToolLayers.IsDisposed Then formToolLayers.RefreshLayers()
     End Sub
     Private Sub AddANewIlluminationSnippit_Click(sender As System.Object, e As System.EventArgs) Handles tsmiAddANewIlluminationSnippit.Click
         If Backglass.currentTabPage IsNot Nothing Then

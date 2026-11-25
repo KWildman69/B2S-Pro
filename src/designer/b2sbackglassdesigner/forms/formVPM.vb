@@ -14,6 +14,38 @@ Public Class formVPM
     Private closingPreview As Boolean
     Private closeAfterShutdown As Boolean
 
+    ' B2S Pro: the original (non-ROM) preview runs the server in the project folder, so the
+    ' <table name>.res next to the table in the VP tables folder (used by the server in VPX)
+    ' is not seen there. For the preview run, a copy is placed next to the preview file, where
+    ' the server looks first, with a marker file proving it is the designer's copy. It is
+    ' removed when the preview stops. Without a .res in the tables folder nothing changes.
+    Private Const PreviewResFileEnding As String = ".res"
+    Private Const PreviewResMarkerSuffix As String = ".b2spro-preview-copy"
+    Private previewResCopyPath As String = String.Empty
+
+    Private Shared Sub RemovePreviewResCopy(ByVal copyPath As String)
+        If String.IsNullOrEmpty(copyPath) Then Return
+        Dim marker As String = copyPath & PreviewResMarkerSuffix
+        If Not IO.File.Exists(marker) Then Return ' never remove a .res the designer did not place
+        Try
+            If IO.File.Exists(copyPath) Then IO.File.Delete(copyPath)
+            IO.File.Delete(marker)
+        Catch ex As Exception
+            Debug.WriteLine("Preview .res copy could not be removed: " & ex.Message)
+        End Try
+    End Sub
+
+    Private Shared Function PlacePreviewResCopy(ByVal previewFile As String, ByVal tablesFolder As String, ByVal tableName As String) As String
+        Dim copyPath As String = IO.Path.ChangeExtension(previewFile, PreviewResFileEnding)
+        RemovePreviewResCopy(copyPath) ' a copy left behind by an earlier run
+        If String.IsNullOrWhiteSpace(tablesFolder) OrElse String.IsNullOrWhiteSpace(tableName) Then Return String.Empty
+        Dim source As String = IO.Path.Combine(tablesFolder, tableName & PreviewResFileEnding)
+        If Not IO.File.Exists(source) OrElse IO.File.Exists(copyPath) Then Return String.Empty
+        IO.File.Copy(source, copyPath, False)
+        IO.File.WriteAllText(copyPath & PreviewResMarkerSuffix, source)
+        Return copyPath
+    End Function
+
     Private Shared Async Function WaitForPreviewExitAsync(ByVal process As Process, ByVal timeoutMs As Integer) As Task(Of Boolean)
         Dim clock As Diagnostics.Stopwatch = Diagnostics.Stopwatch.StartNew()
         While Not process.HasExited
@@ -66,6 +98,8 @@ Public Class formVPM
             b2sPreviewStartedAt = DateTime.MaxValue
             b2sPreviewExistingProcessIds.Clear()
         End If
+        RemovePreviewResCopy(previewResCopyPath)
+        previewResCopyPath = String.Empty
         If b2sserver Is Nothing Then Return
         Try
             b2sserver.Stop()
@@ -444,6 +478,12 @@ Public Class formVPM
                             existingProcess.Dispose()
                         End Try
                     Next
+                    Try
+                        previewResCopyPath = PlacePreviewResCopy(previewFile, txtVPTablesFolder.Text, Backglass.currentData.VSName)
+                    Catch ex As Exception
+                        previewResCopyPath = String.Empty
+                        Debug.WriteLine("Preview .res copy could not be placed: " & ex.Message)
+                    End Try
                     b2sPreviewStartedAt = DateTime.Now
                     b2sPreviewProcess = New Process()
                     b2sPreviewProcess.StartInfo.FileName = serverExe

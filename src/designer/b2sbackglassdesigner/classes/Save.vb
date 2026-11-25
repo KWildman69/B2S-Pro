@@ -251,7 +251,8 @@ Public Class Save
                         score.Reel3DTemperature = ReadIntAttribute(innerNode, "Reel3DTemperature", 4000, 2000, 6500)
                         score.Reel3DDepth = ReadIntAttribute(innerNode, "Reel3DDepth", 100, 0, 200)
                         score.Reel3DGlass = ReadIntAttribute(innerNode, "Reel3DGlass", 55, 0, 200)
-                        score.Reel3DStyle = ReadIntAttribute(innerNode, "Reel3DStyle", 0, 0, 1)
+                        score.Reel3DStyle = ReadIntAttribute(innerNode, "Reel3DStyle", 0, 0, ReelBehindGlass.Style)
+                        score.BehindGlass = ReelBehindGlass.Settings.ReadFrom(innerNode, If(score.Reel3DStyle = ReelBehindGlass.Style, New ReelBehindGlass.Settings(), ReelBehindGlass.Settings.Neutral()))
                         score.Reel3DCurve = ReadIntAttribute(innerNode, "Reel3DCurve", 100, 0, ReelRealistic.MaximumCurve)
                         score.Reel3DShadow = ReadIntAttribute(innerNode, "Reel3DShadow", 100, 0, 200)
                         score.Reel3DGlassStyle = ReadIntAttribute(innerNode, "Reel3DGlassStyle", 0, 0, ReelGlass.MaximumStyle)
@@ -368,6 +369,7 @@ Public Class Save
                         bulb.LightDiffusion = ReadIntAttribute(innerNode, "LightDiffusion", bulb.LightDiffusion, 0, 300)
                         bulb.LightTemperature = ReadIntAttribute(innerNode, "LightTemperature", 4000, 2000, 6500)
                         bulb.LightRotationAngle = ReadSingleAttribute(innerNode, "LightRotationAngle", 0.0F, -360.0F, 360.0F)
+                        Illumination.TextShapeXml.Read(innerNode, bulb)
                         bulb.IlluMode = CType(ReadIntAttribute(innerNode, "IlluMode", CInt(bulb.IlluMode), 0, 1), Illumination.eIlluMode)
                         Dim maximumGlowIntensity As Integer = If(bulb.UsesArtworkPixelRenderer OrElse Not String.IsNullOrEmpty(bulb.Text), 1600, 800)
                         bulb.GlowIntensity = ReadIntAttribute(innerNode, "GlowIntensity", bulb.GlowIntensity, 0, maximumGlowIntensity)
@@ -568,6 +570,8 @@ Public Class Save
                         If innerNode.Attributes("MotionPathExitPoints") IsNot Nothing Then
                             bulb.SnippitInfo.MotionPathExitPoints.AddRange(ParseMotionPathPoints(innerNode.Attributes("MotionPathExitPoints").InnerText))
                         End If
+                        Dim loadedPathAnim As PathAnimSettings = PathAnimSettings.ReadFrom(innerNode)
+                        If loadedPathAnim IsNot Nothing Then bulb.SnippitInfo.PathAnim = loadedPathAnim
                         If innerNode.Attributes("AutomaticRotationEnabled") IsNot Nothing Then
                             bulb.SnippitInfo.AutomaticRotationEnabled = (innerNode.Attributes("AutomaticRotationEnabled").InnerText = "1")
                         End If
@@ -860,7 +864,7 @@ Public Class Save
                                 ' Classic files stay as before; the realistic settings are kept in
                                 ' the project once they differ from the defaults or are in use.
                                 If .Reel3DStyle <> 0 OrElse .Reel3DCurve <> 100 OrElse .Reel3DShadow <> 100 Then
-                                    nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(1, .Reel3DStyle)).ToString())
+                                    nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(ReelBehindGlass.Style, .Reel3DStyle)).ToString())
                                     nodeScore.SetAttribute("Reel3DCurve", Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, .Reel3DCurve)).ToString())
                                     nodeScore.SetAttribute("Reel3DShadow", Math.Max(0, Math.Min(200, .Reel3DShadow)).ToString())
                                 End If
@@ -869,6 +873,8 @@ Public Class Save
                                     nodeScore.SetAttribute("Reel3DDividers", "1")
                                     nodeScore.SetAttribute("Reel3DDividerWidth", Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, .Reel3DDividerWidth)).ToString())
                                 End If
+                                ' Reel glass sliders: written for Behind glass and whenever they are in use.
+                                If .BehindGlass IsNot Nothing AndAlso (.Reel3DStyle = ReelBehindGlass.Style OrElse Not .BehindGlass.IsNeutral()) Then .BehindGlass.WriteTo(nodeScore)
                             End If
                             nodeScore.SetAttribute("LocX", .Location.X)
                             nodeScore.SetAttribute("LocY", .Location.Y)
@@ -945,6 +951,7 @@ Public Class Save
                             nodeBulb.SetAttribute("LightDiffusion", .LightDiffusion.ToString())
                             nodeBulb.SetAttribute("LightTemperature", Math.Max(2000, Math.Min(6500, .LightTemperature)).ToString())
                             nodeBulb.SetAttribute("LightRotationAngle", .LightRotationAngle.ToString("R", Globalization.CultureInfo.InvariantCulture))
+                            Illumination.TextShapeXml.Write(nodeBulb, .TextShape())
                             nodeBulb.SetAttribute("GlowIntensity", .GlowIntensity.ToString())
                             nodeBulb.SetAttribute("GlowBlendMode", .GlowBlendMode.ToString())
                             nodeBulb.SetAttribute("GlowPreviewQuality", .GlowPreviewQuality.ToString())
@@ -1111,6 +1118,8 @@ Public Class Save
                                     nodeBulb.SetAttribute("MotionPathRemoveB2SID", Math.Max(0, Math.Min(250, .SnippitInfo.MotionPathRemoveB2SID)).ToString())
                                 End If
                             End If
+                            ' Path Animation: written only when enabled on an image snippet.
+                            If .IsImageSnippit Then .SnippitInfo.PathAnim.WriteTo(nodeBulb)
                             If .SnippitInfo.SnippitType <> eSnippitType.StandardImage Then
                                 If .SnippitInfo.SnippitType = eSnippitType.MechRotatingImage Then
                                     nodeBulb.SetAttribute("SnippitMechID", .SnippitInfo.SnippitMechID.ToString())

@@ -104,9 +104,11 @@ Namespace Illumination
                                                       ByVal glowSoftness As Integer,
                                                       ByVal glowFalloff As Integer,
                                                       ByVal glowIntensity As Integer,
-                                                      Optional ByVal lightDiffusion As Integer = 0) As Bitmap
+                                                      Optional ByVal lightDiffusion As Integer = 0,
+                                                      Optional ByVal textShape As TextShapeInfo = Nothing) As Bitmap
             Dim fontKey As String = If(font Is Nothing, "", font.Name & "|" & font.Size.ToString(Globalization.CultureInfo.InvariantCulture) & "|" & CInt(font.Style).ToString())
             Dim key As String = width.ToString() & "x" & height.ToString() & "|" & text & "|" & fontKey & "|" & CInt(textalignment).ToString() & "|" & CInt(illumode).ToString() & "|" & glowSoftness.ToString() & "|" & glowFalloff.ToString() & "|" & glowIntensity.ToString() & "|" & lightDiffusion.ToString()
+            If textShape IsNot Nothing AndAlso Not textShape.IsFlat AndAlso Not String.IsNullOrEmpty(text) Then key &= "|shape " & textShape.Key
 
             SyncLock renderCacheSync
                 Dim cached As Bitmap = Nothing
@@ -120,7 +122,7 @@ Namespace Illumination
                 gr.TextRenderingHint = Drawing.Text.TextRenderingHint.AntiAliasGridFit
                 Dim renderer As New Create()
                 If Not String.IsNullOrEmpty(text) AndAlso font IsNot Nothing Then
-                    renderer.DrawLight(gr, New Rectangle(0, 0, width, height), text, font, textalignment, illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion)
+                    renderer.DrawLight(gr, New Rectangle(0, 0, width, height), text, font, textalignment, illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion, textShape)
                 Else
                     renderer.DrawLight(gr, New Rectangle(0, 0, width, height), , , , illumode, glowSoftness, glowFalloff, glowIntensity, lightDiffusion)
                 End If
@@ -332,7 +334,8 @@ Namespace Illumination
                              Optional ByVal glowSoftness As Integer = 60,
                              Optional ByVal glowFalloff As Integer = 60,
                              Optional ByVal glowIntensity As Integer = 100,
-                             Optional ByVal lightDiffusion As Integer = 0)
+                             Optional ByVal lightDiffusion As Integer = 0,
+                             Optional ByVal textShape As TextShapeInfo = Nothing)
 
             Dim pathlight As GraphicsPath = New GraphicsPath()
             Dim pathlight2 As GraphicsPath = Nothing
@@ -394,6 +397,23 @@ Namespace Illumination
             pathlight.Dispose()
             If pathlight2 IsNot Nothing Then pathlight2.Dispose()
 
+            ' Bent or perspective text: same glyph positions and brush, drawn as a
+            ' warped outline. Flat text keeps the original DrawString path below.
+            If Not String.IsNullOrEmpty(text) AndAlso font IsNot Nothing AndAlso textShape IsNot Nothing AndAlso Not textShape.IsFlat Then
+                Using shaped As GraphicsPath = CreateShapedTextPath(gr, text, font, textalignment, rectlight, textShape)
+                    Dim left As Point = New Point(0, 0)
+                    Dim right As Point = New Point(rectlight.Width - 1, rectlight.Height - 1)
+                    Dim blend As ColorBlend = New ColorBlend
+                    blend.Colors = New Color() {Color.Transparent, Color.White, Color.Transparent}
+                    blend.Positions = New Single() {0.0F, 0.5F, 1.0F}
+                    Using brush As LinearGradientBrush = New LinearGradientBrush(left, right, Color.White, Color.White)
+                        brush.InterpolationColors = blend
+                        gr.FillPath(brush, shaped)
+                    End Using
+                End Using
+                Return
+            End If
+
             ' maybe render text
             If Not String.IsNullOrEmpty(text) AndAlso font IsNot Nothing Then
                 Dim size As Size = TextRenderer.MeasureText(gr, text, font, New Size(0, 0), TextFormatFlags.NoPrefix)
@@ -440,6 +460,85 @@ Namespace Illumination
             End If
 
         End Sub
+
+        ' The text outline as DrawLight places it (same measuring, alignment and
+        ' line steps), bent and put in perspective, then shrunk only if needed
+        ' so it stays inside the text box.
+        Public Shared Function CreateShapedTextPath(ByVal gr As Graphics,
+                                                    ByVal text As String,
+                                                    ByVal font As Font,
+                                                    ByVal textalignment As Illumination.eTextAlignment,
+                                                    ByVal rectlight As Rectangle,
+                                                    ByVal textShape As TextShapeInfo) As GraphicsPath
+            Dim flat As New GraphicsPath()
+            Dim emSize As Single = font.SizeInPoints * gr.DpiY / 72.0F
+            Dim size As Size = TextRenderer.MeasureText(gr, text, font, New Size(0, 0), TextFormatFlags.NoPrefix)
+            If text.Contains(vbCrLf) Then
+                Dim lines As String() = text.Split(vbCrLf)
+                Dim y As Integer = rectlight.Y + CInt((rectlight.Height - size.Height) / 2)
+                For Each line As String In lines
+                    line = line.Trim.Replace(Chr(13), "").Replace(Chr(10), "")
+                    Dim linesize As Size = TextRenderer.MeasureText(gr, line, font)
+                    Dim x As Integer = rectlight.X + CInt((rectlight.Width - linesize.Width) / 2) + 2
+                    If textalignment = eTextAlignment.Left Then
+                        x = 2
+                    ElseIf textalignment = eTextAlignment.Right Then
+                        x = rectlight.X + rectlight.Width - linesize.Width + 2
+                    End If
+                    If line.Length > 0 Then flat.AddString(line, font.FontFamily, CInt(font.Style), emSize, New PointF(x, y), StringFormat.GenericDefault)
+                    y += CInt(size.Height / lines.Count)
+                Next
+            Else
+                Dim x As Integer = rectlight.X + CInt((rectlight.Width - size.Width) / 2) + 2
+                Dim y As Integer = rectlight.Y + CInt((rectlight.Height - size.Height) / 2)
+                If textalignment = eTextAlignment.Left Then
+                    x = 2
+                ElseIf textalignment = eTextAlignment.Right Then
+                    x = rectlight.X + rectlight.Width - size.Width + 2
+                End If
+                flat.AddString(text, font.FontFamily, CInt(font.Style), emSize, New PointF(x, y), StringFormat.GenericDefault)
+            End If
+            If flat.PointCount = 0 Then Return flat
+
+            flat.Flatten(Nothing, 0.2F)
+            Dim box As New RectangleF(rectlight.X, rectlight.Y, rectlight.Width, rectlight.Height)
+            Dim points As PointF() = flat.PathPoints
+            Dim types As Byte() = flat.PathTypes
+            Dim fillMode As FillMode = flat.FillMode
+            flat.Dispose()
+            For i As Integer = 0 To points.Length - 1
+                points(i) = textShape.Warp(points(i), box)
+            Next
+
+            ' Keep the shaped text inside the box (it is clipped there at runtime).
+            Dim minX As Single = Single.MaxValue, minY As Single = Single.MaxValue
+            Dim maxX As Single = Single.MinValue, maxY As Single = Single.MinValue
+            For Each p As PointF In points
+                If p.X < minX Then minX = p.X
+                If p.Y < minY Then minY = p.Y
+                If p.X > maxX Then maxX = p.X
+                If p.Y > maxY Then maxY = p.Y
+            Next
+            Const margin As Single = 1.0F
+            Dim roomW As Single = Math.Max(1.0F, box.Width - 2.0F * margin)
+            Dim roomH As Single = Math.Max(1.0F, box.Height - 2.0F * margin)
+            Dim usedW As Single = Math.Max(0.001F, maxX - minX)
+            Dim usedH As Single = Math.Max(0.001F, maxY - minY)
+            Dim fit As Single = Math.Min(1.0F, Math.Min(roomW / usedW, roomH / usedH))
+            Dim midX As Single = (minX + maxX) / 2.0F
+            Dim midY As Single = (minY + maxY) / 2.0F
+            Dim shiftX As Single = 0.0F, shiftY As Single = 0.0F
+            Dim halfW As Single = usedW * fit / 2.0F
+            Dim halfH As Single = usedH * fit / 2.0F
+            If midX - halfW < box.Left + margin Then shiftX = box.Left + margin - (midX - halfW)
+            If midX + halfW > box.Right - margin Then shiftX = box.Right - margin - (midX + halfW)
+            If midY - halfH < box.Top + margin Then shiftY = box.Top + margin - (midY - halfH)
+            If midY + halfH > box.Bottom - margin Then shiftY = box.Bottom - margin - (midY + halfH)
+            For i As Integer = 0 To points.Length - 1
+                points(i) = New PointF(midX + (points(i).X - midX) * fit + shiftX, midY + (points(i).Y - midY) * fit + shiftY)
+            Next
+            Return New GraphicsPath(points, types, fillMode)
+        End Function
 
         Private Shared Function ClampByte(ByVal value As Integer) As Integer
             Return Math.Max(0, Math.Min(255, value))
@@ -584,7 +683,8 @@ Namespace Illumination
                                            Optional ByVal maskShiftEdge As Integer = 0,
                                            Optional ByVal flasherRadialSpikes As Integer = 0,
                                            Optional ByVal lightRotationAngle As Single = 0.0F,
-                                           Optional ByVal separateLightLayer As Boolean = False) As Image
+                                           Optional ByVal separateLightLayer As Boolean = False,
+                                           Optional ByVal textShape As TextShapeInfo = Nothing) As Image
 
             If separateLightLayer AndAlso String.IsNullOrEmpty(text) Then
                 Dim lightLayer As Bitmap = CreateDynamicFrontLightField(
@@ -620,7 +720,7 @@ Namespace Illumination
                 Dim image As Bitmap =
                     GetGlowTemplate(rect.Width, rect.Height, text, font, textalignment,
                                     templateMode, glowSoftness, glowFalloff,
-                                    glowIntensity, lightDiffusion)
+                                    glowIntensity, lightDiffusion, textShape)
 
                 ' A rotated artwork light must be refined (Shift Edge, Radius, Smooth,
                 ' Feather, Contrast, Radial Spikes) in its own unrotated box before it

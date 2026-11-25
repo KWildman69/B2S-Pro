@@ -149,7 +149,7 @@ Public Class B2SReelBox
 
     Private Sub DrawReelImage(ByVal graphics As Graphics, ByVal reelImage As Image, ByVal cacheName As String)
         ' The Realistic style sizes the number itself, from the original artwork.
-        realisticSource = If(Reel3DEnabled AndAlso Reel3DStyle = ReelRealistic.StyleRealistic, reelImage, Nothing)
+        realisticSource = If(Reel3DEnabled AndAlso (Reel3DStyle = ReelRealistic.StyleRealistic OrElse IsBehindGlass), reelImage, Nothing)
         If KeepDigitAspect Then
             Dim renderSize As Size = AuthoredReelSize()
             Using fitted As Bitmap = If(ReelDigitWidth > 0,
@@ -175,8 +175,10 @@ Public Class B2SReelBox
             Dim backlightOn As Boolean = (RomID <= 0 OrElse _Illuminated)
             Dim effectiveBrightness As Integer = If(backlightOn, Reel3DBrightness, 0)
             Dim effectiveTemperature As Integer = If(backlightOn, Reel3DTemperature, 4000)
+            Dim glass As ReelBehindGlass.Settings = If(BehindGlass, ReelBehindGlass.Settings.Neutral())
             Dim cacheKey As String = cacheName & "|" & renderSize.Width.ToString() & "x" & renderSize.Height.ToString() &
-                                     "|" & effectiveBrightness.ToString() & "|" & effectiveTemperature.ToString() & "|" & Reel3DDepth.ToString()
+                                     "|" & effectiveBrightness.ToString() & "|" & effectiveTemperature.ToString() & "|" & Reel3DDepth.ToString() &
+                                     "|" & glass.ReelKey()
             If realisticSource IsNot Nothing Then
                 ' The strip around the shown number: offsets -2 to +2 (+1 = next, above).
                 Dim numbers(4) As Image
@@ -185,12 +187,28 @@ Public Class B2SReelBox
                 Next
                 Dim above As Image = numbers(3)
                 Dim below As Image = numbers(1)
-                If smoothRolling AndAlso smoothRoll <> 0.0 Then
+                If IsBehindGlass Then
+                    ' Behind glass: the Reel Glass Lab drawing (no colour temperature;
+                    ' its own brightness and warmth). A triggered reel whose light is
+                    ' off is dimmed, as the other 3D styles are.
+                    Dim glyphWidth As Double = If(KeepDigitAspect AndAlso ReelDigitWidth > 0, ReelDigitWidth, CInt(renderSize.Height * 0.56))
+                    If smoothRolling AndAlso smoothRoll <> 0.0 Then
+                        rollingFrame = RenderBehindGlassReel(numbers, renderSize, glyphWidth, smoothRoll, backlightOn, effectiveTemperature)
+                    Else
+                        cacheKey &= "|behindglass|" & BehindGlass.ReelKey() & "|" & glyphWidth.ToString(Globalization.CultureInfo.InvariantCulture) & "|" & backlightOn.ToString() & "|" &
+                                    If(above Is Nothing, "-", above.GetHashCode().ToString()) & "|" & If(below Is Nothing, "-", below.GetHashCode().ToString())
+                        If Not reel3DImageCache.ContainsKey(cacheKey) Then
+                            Dim behind As Bitmap = RenderBehindGlassReel(numbers, renderSize, glyphWidth, 0.0, backlightOn, effectiveTemperature)
+                            If behind IsNot Nothing Then reel3DImageCache.Add(cacheKey, behind)
+                        End If
+                    End If
+                ElseIf smoothRolling AndAlso smoothRoll <> 0.0 Then
                     ' A turning drum changes every frame, so it is drawn, not cached.
                     rollingFrame = Reel3DEffect.RenderRealisticReel(numbers, renderSize,
                                                                     KeepDigitAspect, If(KeepDigitAspect, ReelDigitWidth, 0),
                                                                     effectiveBrightness, effectiveTemperature, Reel3DDepth,
-                                                                    Reel3DCurve, Reel3DShadow, smoothRoll)
+                                                                    Reel3DCurve, Reel3DShadow, smoothRoll, NumberScale(glass))
+                    ReelBehindGlass.FinishReel(rollingFrame, glass)
                 Else
                     cacheKey &= "|realistic|" & Reel3DCurve.ToString() & "|" & Reel3DShadow.ToString() & "|" &
                                 If(above Is Nothing, "-", above.GetHashCode().ToString()) & "|" & If(below Is Nothing, "-", below.GetHashCode().ToString())
@@ -198,7 +216,8 @@ Public Class B2SReelBox
                         Dim realistic As Bitmap = Reel3DEffect.RenderRealisticReel(numbers, renderSize,
                                                                                    KeepDigitAspect, If(KeepDigitAspect, ReelDigitWidth, 0),
                                                                                    effectiveBrightness, effectiveTemperature, Reel3DDepth,
-                                                                                   Reel3DCurve, Reel3DShadow, 0.0)
+                                                                                   Reel3DCurve, Reel3DShadow, 0.0, NumberScale(glass))
+                        ReelBehindGlass.FinishReel(realistic, glass)
                         If realistic IsNot Nothing Then reel3DImageCache.Add(cacheKey, realistic)
                     End If
                 End If
@@ -208,6 +227,7 @@ Public Class B2SReelBox
                                                                  effectiveBrightness,
                                                                  effectiveTemperature,
                                                                  Reel3DDepth)
+                ReelBehindGlass.FinishReel(enhanced, glass)
                 If enhanced IsNot Nothing Then reel3DImageCache.Add(cacheKey, enhanced)
             End If
             If rollingFrame IsNot Nothing Then
@@ -245,7 +265,7 @@ Public Class B2SReelBox
             Dim overlayHeight As Integer = renderSize.Height
             Dim overlayKey As String = Reel3DDisplayWidth.ToString() & "x" & overlayHeight.ToString() &
                                        "|" & Reel3DDepth.ToString() & "|" & Reel3DGlass.ToString() & "|" & Reel3DGlassStyle.ToString() &
-                                       "|" & Reel3DDividerWidth.ToString()
+                                       "|" & Reel3DDividerWidth.ToString() & "|" & If(HasGlassOverlay, BehindGlass.OverlayKey(), "-")
             If reel3DOverlayCache Is Nothing OrElse reel3DOverlayCacheKey <> overlayKey Then
                 If reel3DOverlayCache IsNot Nothing Then reel3DOverlayCache.Dispose()
                 reel3DOverlayCache = Reel3DEffect.CreateWindowOverlay(New Size(Reel3DDisplayWidth, overlayHeight),
@@ -253,7 +273,8 @@ Public Class B2SReelBox
                                                                       Reel3DGlass,
                                                                       Reel3DGlassStyle,
                                                                       Reel3DDividerCenters,
-                                                                      Reel3DDividerWidth)
+                                                                      Reel3DDividerWidth,
+                                                                      If(HasGlassOverlay, BehindGlass, Nothing))
                 reel3DOverlayCacheKey = overlayKey
             End If
             If reel3DOverlayCache IsNot Nothing Then
@@ -328,6 +349,36 @@ Public Class B2SReelBox
     Public Property Reel3DCurve As Integer = 100
     Public Property Reel3DShadow As Integer = 100
     Public Property Reel3DGlassStyle As Integer = 0
+    ' Behind glass style (Reel3DStyle 2): the Reel Glass Lab sliders.
+    Public Property BehindGlass As ReelBehindGlass.Settings = Nothing
+    Friend ReadOnly Property IsBehindGlass As Boolean
+        Get
+            Return Reel3DEnabled AndAlso Reel3DStyle = ReelBehindGlass.Style AndAlso BehindGlass IsNot Nothing
+        End Get
+    End Property
+    ' The reel glass window (shadow, set back, room reflection) is drawn over
+    ' every reel style once it is in use.
+    Friend ReadOnly Property HasGlassOverlay As Boolean
+        Get
+            Return Reel3DEnabled AndAlso BehindGlass IsNot Nothing AndAlso Not BehindGlass.OverlayIsNeutral()
+        End Get
+    End Property
+
+    ' Behind glass drum (Reel Glass Lab) with the reel's Backlight brightness
+    ' and Colour temperature, exactly as the Designer draws it.
+    Private Function RenderBehindGlassReel(ByVal numbers As Image(), ByVal renderSize As Size, ByVal glyphWidth As Double,
+                                           ByVal roll As Double, ByVal backlightOn As Boolean, ByVal temperature As Integer) As Bitmap
+        Dim behind As Bitmap = ReelBehindGlass.RenderReel(numbers, renderSize, glyphWidth, BehindGlass, roll, backlightOn,
+                                                           Math.Max(0, Math.Min(400, Reel3DBrightness)) / 100.0)
+        Reel3DEffect.GradeTemperature(behind, temperature)
+        Return behind
+    End Function
+
+    ' Number size for the Realistic drum (100 % = unchanged).
+    Private Shared Function NumberScale(ByVal glass As ReelBehindGlass.Settings) As Double
+        If glass Is Nothing Then Return 1.0
+        Return Math.Max(50, Math.Min(150, glass.NumberSize)) / 100.0
+    End Function
     Private realisticSource As Image = Nothing
 
     ' Realistic style: the drum turns smoothly from one number to the next,
@@ -340,7 +391,7 @@ Public Class B2SReelBox
 
     Private ReadOnly Property UsesSmoothRoll As Boolean
         Get
-            Return Reel3DEnabled AndAlso Reel3DStyle = ReelRealistic.StyleRealistic AndAlso Not isLED
+            Return Reel3DEnabled AndAlso (Reel3DStyle = ReelRealistic.StyleRealistic OrElse IsBehindGlass) AndAlso Not isLED
         End Get
     End Property
 
@@ -882,11 +933,13 @@ Friend NotInheritable Class ReelGapOverlay
         Dim size As New Size(reel.Reel3DDisplayWidth, reel.ReelDesignSize.Height)
         Dim key As String = size.Width.ToString() & "x" & size.Height.ToString() & "|" & reel.Reel3DDepth.ToString() &
                             "|" & reel.Reel3DGlass.ToString() & "|" & reel.Reel3DGlassStyle.ToString() &
-                            "|" & reel.Reel3DDividerWidth.ToString() & "|" & DividerKey(reel.Reel3DDividerCenters)
+                            "|" & reel.Reel3DDividerWidth.ToString() & "|" & DividerKey(reel.Reel3DDividerCenters) &
+                            "|" & If(reel.HasGlassOverlay, reel.BehindGlass.OverlayKey(), "-")
         Dim overlay As Bitmap = Nothing
         If Not overlays.TryGetValue(key, overlay) Then
             overlay = Reel3DEffect.CreateWindowOverlay(size, reel.Reel3DDepth, reel.Reel3DGlass, reel.Reel3DGlassStyle,
-                                                       reel.Reel3DDividerCenters, reel.Reel3DDividerWidth)
+                                                       reel.Reel3DDividerCenters, reel.Reel3DDividerWidth,
+                                                       If(reel.HasGlassOverlay, reel.BehindGlass, Nothing))
             overlays(key) = overlay
         End If
         Return overlay

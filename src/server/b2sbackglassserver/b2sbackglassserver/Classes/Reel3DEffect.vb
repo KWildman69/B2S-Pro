@@ -113,8 +113,9 @@ Public NotInheritable Class Reel3DEffect
                                                ByVal depth As Integer,
                                                ByVal curve As Integer,
                                                ByVal shadow As Integer,
-                                               ByVal roll As Double) As Bitmap
-        Dim result As Bitmap = ReelRealistic.Render(numbers, targetSize, keepAspect, digitWidth, brightness, depth, curve, shadow, roll)
+                                               ByVal roll As Double,
+                                               Optional ByVal numberScale As Double = 1.0) As Bitmap
+        Dim result As Bitmap = ReelRealistic.Render(numbers, targetSize, keepAspect, digitWidth, brightness, depth, curve, shadow, roll, numberScale)
         If result IsNot Nothing Then ApplyTemperatureGrade(result, Math.Max(2000, Math.Min(6500, temperature)))
         Return result
     End Function
@@ -124,7 +125,8 @@ Public NotInheritable Class Reel3DEffect
                                                ByVal glassReflection As Integer,
                                                Optional ByVal glassStyle As Integer = 0,
                                                Optional ByVal dividerCenters As Double() = Nothing,
-                                               Optional ByVal dividerWidth As Integer = 0) As Bitmap
+                                               Optional ByVal dividerWidth As Integer = 0,
+                                               Optional ByVal behindGlass As ReelBehindGlass.Settings = Nothing) As Bitmap
         If displaySize.Width <= 2 OrElse displaySize.Height <= 2 Then Return Nothing
         Dim overlay As New Bitmap(displaySize.Width, displaySize.Height, PixelFormat.Format32bppArgb)
         Using graphics As Graphics = Graphics.FromImage(overlay)
@@ -133,7 +135,12 @@ Public NotInheritable Class Reel3DEffect
             If dividerWidth > 0 AndAlso dividerCenters IsNot Nothing Then
                 ReelDivider.Draw(graphics, New Rectangle(Point.Empty, displaySize), dividerCenters, dividerWidth)
             End If
+            ' Every reel style: the original inset shadow and glass, then the
+            ' reel glass window (Reel Glass Lab) when it is in use.
             DrawWindowOverlay(graphics, New Rectangle(Point.Empty, displaySize), depth, glassReflection, glassStyle)
+            If behindGlass IsNot Nothing AndAlso Not behindGlass.OverlayIsNeutral() Then
+                ReelBehindGlass.DrawOverlay(graphics, New Rectangle(Point.Empty, displaySize), behindGlass)
+            End If
         End Using
         Return overlay
     End Function
@@ -188,6 +195,12 @@ Public NotInheritable Class Reel3DEffect
                               window.Left + window.Width \ 2,
                               window.Top + window.Height \ 3)
         End Using
+    End Sub
+
+    ' The Classic and Realistic colour temperature, for a reel drawn by
+    ' the Behind glass style (all reel settings apply to every style).
+    Public Shared Sub GradeTemperature(ByVal rendered As Bitmap, ByVal kelvin As Integer)
+        If rendered IsNot Nothing Then ApplyTemperatureGrade(rendered, kelvin)
     End Sub
 
     Private Shared Sub ApplyTemperatureGrade(ByVal rendered As Bitmap, ByVal kelvin As Integer)

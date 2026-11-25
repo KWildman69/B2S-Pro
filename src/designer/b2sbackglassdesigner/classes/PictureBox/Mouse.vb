@@ -534,6 +534,22 @@ Public Class Mouse
     Private IsMatchingPerspectiveDepth As Boolean = False
     Private IsMatchingPerspectiveLeft As Boolean = False
     Private IsMatchingPerspectiveRight As Boolean = False
+    ' Text box shape handles (bend, depth, left/right height).
+    Private IsMatchingTextBend As Boolean = False
+    Private IsMatchingTextDepth As Boolean = False
+    Private IsMatchingTextLeft As Boolean = False
+    Private IsMatchingTextRight As Boolean = False
+    Private ReadOnly Property IsMatchingTextShape As Boolean
+        Get
+            Return IsMatchingTextBend OrElse IsMatchingTextDepth OrElse IsMatchingTextLeft OrElse IsMatchingTextRight
+        End Get
+    End Property
+    Private Sub ClearTextShapeMatches()
+        IsMatchingTextBend = False
+        IsMatchingTextDepth = False
+        IsMatchingTextLeft = False
+        IsMatchingTextRight = False
+    End Sub
     Private rotationStartAngle As Single = 0.0F
     Private IsMatchingX As Boolean = False
     Private IsMatchingGrillHeightX As Boolean = False
@@ -852,7 +868,8 @@ Public Class Mouse
                 End If
                 dragStarted = True
                 If currentScore IsNot Nothing OrElse (Not IsMatchingRotation AndAlso Not IsMatchingPerspectiveDepth AndAlso
-                   Not IsMatchingPerspectiveLeft AndAlso Not IsMatchingPerspectiveRight) Then parent.BeginDragPreview(_selectedItems)
+                   Not IsMatchingPerspectiveLeft AndAlso Not IsMatchingPerspectiveRight AndAlso
+                   Not (IsMatchingTextShape AndAlso currentBulb IsNot Nothing)) Then parent.BeginDragPreview(_selectedItems)
             End If
 
             Backglass.currentData.IsDirty = True
@@ -894,6 +911,46 @@ Public Class Mouse
                 If My.Computer.Keyboard.ShiftKeyDown Then depth = Math.Round(depth * 10.0) / 10.0
                 currentScore.PerspectiveDepth = CSng(depth)
                 RaiseEvent SelectedItemMoving(sender, New MouseMoveEventArgs(MouseMoveEventArgs.eItemType.Score, currentScore.Location, currentScore.Size))
+            ElseIf IsMatchingTextShape AndAlso currentBulb IsNot Nothing Then
+                ' Pointer in the text box's own (unrotated) screen coordinates.
+                Dim centerX As Double = (currentBulb.Location.X + currentBulb.Size.Width / 2.0) * factor
+                Dim centerY As Double = (currentBulb.Location.Y + currentBulb.Size.Height / 2.0) * factor
+                Dim radians As Double = -currentBulb.LightRotationAngle * Math.PI / 180.0
+                Dim dx As Double = e.X - centerX
+                Dim dy As Double = e.Y - centerY
+                Dim localHorizontal As Double = dx * Math.Cos(radians) - dy * Math.Sin(radians)
+                Dim localVertical As Double = dx * Math.Sin(radians) + dy * Math.Cos(radians)
+                Dim halfHeight As Double = Math.Max(1.0, currentBulb.Size.Height * factor / 2.0)
+                If IsMatchingTextBend Then
+                    ' The bend dot rests on the bottom middle; up arches, down curves.
+                    Dim bend As Double = Math.Max(-1.0, Math.Min(1.0, (halfHeight - localVertical) / (halfHeight * 2.0)))
+                    If My.Computer.Keyboard.ShiftKeyDown Then bend = Math.Round(bend * 10.0) / 10.0
+                    currentBulb.TextBend = CSng(bend)
+                ElseIf IsMatchingTextDepth Then
+                    Dim travel As Double = Math.Max(30.0, currentBulb.Size.Width * factor * 0.45)
+                    Dim depth As Double = Math.Max(-1.0, Math.Min(1.0, localHorizontal / travel))
+                    If My.Computer.Keyboard.ShiftKeyDown Then depth = Math.Round(depth * 10.0) / 10.0
+                    currentBulb.TextPerspectiveDepth = CSng(depth)
+                Else
+                    ' Same as the score window's corner handles.
+                    Dim depth As Single = Math.Max(-1.0F, Math.Min(1.0F, currentBulb.TextPerspectiveDepth))
+                    Dim amount As Single = Math.Abs(depth)
+                    Dim nearScale As Single = 1.0F + 0.06F * amount
+                    Dim farScale As Single = 1.0F - 0.58F * amount
+                    Dim baseScale As Single = If(IsMatchingTextLeft,
+                                                 If(depth >= 0.0F, nearScale, farScale),
+                                                 If(depth >= 0.0F, farScale, nearScale))
+                    Dim endScale As Double = Math.Max(0.2, Math.Min(2.5, -localVertical / (halfHeight * Math.Max(0.1F, baseScale))))
+                    If My.Computer.Keyboard.ShiftKeyDown Then endScale = Math.Round(endScale * 10.0) / 10.0
+                    If IsMatchingTextLeft Then
+                        currentBulb.TextPerspectiveLeftScale = CSng(endScale)
+                    Else
+                        currentBulb.TextPerspectiveRightScale = CSng(endScale)
+                    End If
+                End If
+                currentBulb.IsIlluminatedImageDirty = True
+                parent.Refresh()
+                RaiseEvent SelectedItemMoving(sender, New MouseMoveEventArgs(MouseMoveEventArgs.eItemType.Bulb, currentBulb.Location, currentBulb.Size))
             ElseIf IsMatchingLightRotation AndAlso currentBulb IsNot Nothing Then
                 Dim centerX As Double = (currentBulb.Location.X + currentBulb.Size.Width / 2.0) * factor
                 Dim centerY As Double = (currentBulb.Location.Y + currentBulb.Size.Height / 2.0) * factor
@@ -1207,6 +1264,7 @@ Public Class Mouse
         IsMatchingPerspectiveRight = False
         IsMatchingPictureAnimationRotation = False
         IsMatchingLightRotation = False
+        ClearTextShapeMatches()
         pictureAnimationPendingAngle = 0.0F
         lightRotationPendingAngle = 0.0F
         dragStarted = False
@@ -1267,6 +1325,22 @@ Public Class Mouse
            Not LayerManager.IsLocked(clickedScore) Then
             SelectSingle(clickedScore)
             ResetScoreTransform(clickedScore)
+            Return
+        End If
+
+        ' Double-click on a shaped text box's center dot: back to flat text (like
+        ' scores). Flat text keeps opening its settings on a double-click.
+        If clickedBulb IsNot Nothing AndAlso IsMatchingTextDepth AndAlso
+           B2SPictureBox.IsShapeableText(clickedBulb) AndAlso Not clickedBulb.TextShape().IsFlat AndAlso
+           Not LayerManager.IsLocked(clickedBulb) Then
+            clickedBulb.TextBend = 0.0F
+            clickedBulb.TextPerspectiveDepth = 0.0F
+            clickedBulb.TextPerspectiveLeftScale = 1.0F
+            clickedBulb.TextPerspectiveRightScale = 1.0F
+            clickedBulb.IsIlluminatedImageDirty = True
+            If Backglass.currentData IsNot Nothing Then Backglass.currentData.IsDirty = True
+            parent.Refresh()
+            RaiseEvent SelectedItemMoving(Me, New MouseMoveEventArgs(MouseMoveEventArgs.eItemType.Bulb, clickedBulb.Location, clickedBulb.Size))
             Return
         End If
 
@@ -1380,6 +1454,7 @@ Public Class Mouse
         IsMatchingPerspectiveDepth = False
         IsMatchingPerspectiveLeft = False
         IsMatchingPerspectiveRight = False
+        ClearTextShapeMatches()
         If lookforMatchingX Then
             IsMatchingX = False
             IsMatchingGrillHeightX = False
@@ -1428,6 +1503,27 @@ Public Class Mouse
                 IsMatchingRotation = True
                 currentScoreWithMouseOver = SelectedScore
                 Return Cursors.Hand
+            End If
+        End If
+        ' Text box shape handles, checked first like the score window handles.
+        If SelectedBulb IsNot Nothing AndAlso ShowIlluFrames AndAlso _selectedItems.Count = 1 AndAlso
+           LayerManager.IsVisible(SelectedBulb) AndAlso Not LayerManager.IsLocked(SelectedBulb) AndAlso
+           B2SPictureBox.IsShapeableText(SelectedBulb) Then
+            Dim shapeHandles As PointF() = parent.TextShapeHandlePoints(SelectedBulb, CSng(factor))
+            Dim hit As Func(Of PointF, Double, Boolean) =
+                Function(p As PointF, r As Double) (x - p.X) * (x - p.X) + (y - p.Y) * (y - p.Y) <= r * r
+            If hit(shapeHandles(5), 9.0) Then
+                IsMatchingTextBend = True
+            ElseIf hit(shapeHandles(0), 9.0) Then
+                IsMatchingTextLeft = True
+            ElseIf hit(shapeHandles(1), 9.0) Then
+                IsMatchingTextRight = True
+            ElseIf hit(shapeHandles(4), 10.0) Then
+                IsMatchingTextDepth = True
+            End If
+            If IsMatchingTextShape Then
+                currentBulbWithMouseOver = SelectedBulb
+                Return If(IsMatchingTextDepth, Cursors.SizeWE, Cursors.SizeNS)
             End If
         End If
         If SelectedBulb IsNot Nothing AndAlso ShowIlluFrames AndAlso LayerManager.IsVisible(SelectedBulb) AndAlso

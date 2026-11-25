@@ -17,6 +17,7 @@ Namespace My
                 IDTesterRestore.MonitorFromChild(e.CommandLine(1))
                 Return
             End If
+            Global.B2SBackglassDesigner.WheelValueGuard.Install()
             Try
                 IDTesterRestore.RecoverPendingTests()
             Catch ex As Exception

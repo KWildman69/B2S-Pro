@@ -106,6 +106,7 @@ Public Class formBackglass
         switchIDs.UnionWith(B2SData.UsedAnimationSwitchIDs.Keys)
         switchIDs.UnionWith(B2SData.UsedRandomAnimationSwitchIDs.Keys)
         switchIDs.UnionWith(B2SData.GetPhysicsLauncherIDs(5))
+        switchIDs.UnionWith(B2SData.PathAnimTriggerIDs(4))
         For Each id As Integer In switchIDs
             If id > 0 AndAlso id <= 255 AndAlso Not B2SData.UsedRomSwitchIDs.ContainsKey(id) Then B2SData.UsedRomSwitchIDs.Add(id, New B2SBaseBox() {})
         Next
@@ -129,6 +130,7 @@ Public Class formBackglass
             If picture IsNot Nothing AndAlso picture.NativeRotation Then picture.SetNativeRotationState(state Xor picture.RomInverted)
         Next
         B2SData.SetPivotTriggerState(B2SData.PivotSwitchIDs, id, If(state, 1, 0))
+        B2SData.PathAnimTriggerChanged(4, id, If(state, 1, 0))
         If rising Then
             B2SData.FirePhysicsLaunchers(5, id, 1)
             If B2SData.UsedMotionPathSwitchIDs.ContainsKey(id) Then B2SData.StartMotionPaths(B2SData.UsedMotionPathSwitchIDs(id))
@@ -861,7 +863,8 @@ Public Class formBackglass
         Return picbox IsNot Nothing AndAlso picbox.IsImageSnippit AndAlso Not picbox.NativeRotation AndAlso
                Not picbox.MotionPathRollEnabled AndAlso Not picbox.IsMotionPathSourceSeparate AndAlso
                Not picbox.HasSparseAnimationFrame AndAlso picbox.PhysicsSelectionMaskAlpha Is Nothing AndAlso
-               Not picbox.DynamicFrontLighting AndAlso Not B2SData.HasPhysicsBalls
+               Not picbox.DynamicFrontLighting AndAlso Not B2SData.HasPhysicsBalls AndAlso Not picbox.HasPathAnim AndAlso
+               Not picbox.IsPathMagnetRider
     End Function
 
     ' The same visibility rules DrawImage applies, without the repaint-area test.
@@ -1151,12 +1154,11 @@ Public Class formBackglass
                                          New RectangleF(0, 0, drawImage.Width, drawImage.Height),
                                          GraphicsUnit.Pixel)
                     e.Graphics.Restore(state)
+                ElseIf drawImage IsNot Nothing AndAlso picbox.PathAnimTransformed Then
+                    ' Path Animation snippet turned to follow its path.
+                    DrawTurnedPathSnippet(e.Graphics, picbox, drawImage, PointF.Empty)
                 ElseIf drawImage IsNot Nothing AndAlso picbox.HasFullResolutionSnippet Then
-                    Dim state As Drawing2D.GraphicsState = e.Graphics.Save()
-                    e.Graphics.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
-                    e.Graphics.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
-                    e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
-                    e.Graphics.Restore(state)
+                    DrawFullResolutionSnippet(e.Graphics, picbox, drawImage)
                 ElseIf drawImage IsNot Nothing AndAlso picbox.PreservePhysicsArtworkAspect Then
                     e.Graphics.DrawImage(drawImage, picbox.VisualArtworkBounds)
                 ElseIf drawImage IsNot Nothing Then
@@ -1182,13 +1184,82 @@ Public Class formBackglass
 
     End Sub
 
+    ' B2S Pro full-resolution snippets keep their source pixels and are shown
+    ' with HighQualityBicubic. Resampling the full-size source on every
+    ' repaint cost ~72 ms per full-canvas overlay, so artwork moved by
+    ' B2SSetPos (Nags) ran at 4-5 frames per second. Resample once per source
+    ' image, size and sub-pixel phase with the same filter, then draw those
+    ' prepared pixels unscaled. Only full-resolution snippets use this path.
+    Private Class ScaledSnippetCacheEntry
+        Public Source As Image
+        Public Size As SizeF
+        Public PhaseX As Single
+        Public PhaseY As Single
+        Public Image As Bitmap
+    End Class
+    Private ReadOnly scaledSnippetCache As New Generic.Dictionary(Of B2SPictureBox, ScaledSnippetCacheEntry())()
+
+    Private Sub DrawFullResolutionSnippet(ByVal target As Graphics, ByVal picbox As B2SPictureBox, ByVal source As Image)
+        Dim bounds As RectangleF = picbox.VisualArtworkBounds
+        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return
+        Dim originX As Single = CSng(Math.Floor(bounds.X))
+        Dim originY As Single = CSng(Math.Floor(bounds.Y))
+        Dim phaseX As Single = bounds.X - originX
+        Dim phaseY As Single = bounds.Y - originY
+
+        Dim entries As ScaledSnippetCacheEntry() = Nothing
+        If Not scaledSnippetCache.TryGetValue(picbox, entries) Then
+            entries = New ScaledSnippetCacheEntry(1) {}
+            scaledSnippetCache(picbox) = entries
+        End If
+        Dim slot As Integer = -1
+        For index As Integer = 0 To entries.Length - 1
+            If entries(index) IsNot Nothing AndAlso entries(index).Source Is source Then slot = index : Exit For
+        Next
+        Dim entry As ScaledSnippetCacheEntry = If(slot >= 0, entries(slot), Nothing)
+        If entry Is Nothing OrElse entry.Size <> bounds.Size OrElse entry.PhaseX <> phaseX OrElse entry.PhaseY <> phaseY Then
+            If slot < 0 Then
+                slot = If(entries(0) Is Nothing, 0, 1)
+            End If
+            If entries(slot) IsNot Nothing AndAlso entries(slot).Image IsNot Nothing Then entries(slot).Image.Dispose()
+            Dim width As Integer = Math.Max(1, CInt(Math.Ceiling(phaseX + bounds.Width)))
+            Dim height As Integer = Math.Max(1, CInt(Math.Ceiling(phaseY + bounds.Height)))
+            Dim prepared As New Bitmap(width, height, PixelFormat.Format32bppPArgb)
+            Using g As Graphics = Graphics.FromImage(prepared)
+                g.Clear(Color.Transparent)
+                g.PageUnit = GraphicsUnit.Pixel
+                g.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                g.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                g.DrawImage(source, New RectangleF(phaseX, phaseY, bounds.Width, bounds.Height))
+            End Using
+            entry = New ScaledSnippetCacheEntry() With {.Source = source, .Size = bounds.Size, .PhaseX = phaseX, .PhaseY = phaseY, .Image = prepared}
+            entries(slot) = entry
+        End If
+
+        Dim state As Drawing2D.GraphicsState = target.Save()
+        target.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
+        target.PixelOffsetMode = Drawing2D.PixelOffsetMode.Half
+        target.DrawImage(entry.Image, New Rectangle(CInt(originX), CInt(originY), entry.Image.Width, entry.Image.Height),
+                         0, 0, entry.Image.Width, entry.Image.Height, GraphicsUnit.Pixel)
+        target.Restore(state)
+    End Sub
+
     Private Sub DrawDynamicFrontLight(ByVal targetGraphics As Graphics, ByVal light As B2SPictureBox)
         If targetGraphics Is Nothing OrElse light Is Nothing OrElse light.DynamicFrontLightField Is Nothing Then Return
         Dim lightBounds As Rectangle = Rectangle.Round(light.RectangleF)
         If lightBounds.Width <= 0 OrElse lightBounds.Height <= 0 Then Return
 
-        For Each pair As KeyValuePair(Of String, B2SPictureBox) In B2SData.Illuminations
-            Dim snippet As B2SPictureBox = pair.Value
+        ' B2S Pro: light the snippets from the bottom layer up, and hide each lit
+        ' copy wherever a snippet above it covers it (see DrawDynamicLitPicture).
+        ' Legacy files keep the original order and drawing.
+        Dim covers As Generic.List(Of DynamicLightCover) = Nothing
+        Dim candidates As Generic.IEnumerable(Of B2SPictureBox) = B2SData.Illuminations.Values
+        If B2SData.UnifiedLayerDeck Then
+            covers = DynamicLightCovers(light, lightBounds)
+            candidates = B2SData.Illuminations.Values.OrderBy(Function(item) If(item Is Nothing, 0, item.ZOrder)).ToList()
+        End If
+
+        For Each snippet As B2SPictureBox In candidates
             If snippet Is Nothing OrElse snippet.IsDisposed OrElse Not snippet.IsImageSnippit OrElse
                Not snippet.Visible OrElse snippet.BackgroundImage Is Nothing OrElse
                snippet.ZOrder >= light.ZOrder Then Continue For
@@ -1202,15 +1273,38 @@ Public Class formBackglass
             If B2SData.DualBackglass AndAlso snippet.DualMode <> B2SData.eDualMode.Both AndAlso
                snippet.DualMode <> B2SSettings.CurrentDualMode Then Continue For
 
-            Dim snippetBounds As Rectangle = Rectangle.Round(snippet.RectangleF)
+            ' A turned Path Animation snippet reaches past its unturned box; light
+            ' the whole area it covers.
+            Dim snippetBounds As Rectangle = If(snippet.PathAnimTransformed, snippet.PathAnimPaintBounds(), Rectangle.Round(snippet.RectangleF))
             Dim overlap As Rectangle = Rectangle.Intersect(lightBounds, snippetBounds)
             If overlap.Width <= 0 OrElse overlap.Height <= 0 Then Continue For
+            ' Skip snippets outside the area being repainted: anything drawn there
+            ' is clipped away, so relighting them only costs time.
+            If Not targetGraphics.IsVisible(overlap) Then Continue For
+
+            ' A still (or parked) snippet under an unchanged light gives the same
+            ' lit picture every time: reuse it instead of relighting each repaint.
+            Dim cacheable As Boolean = B2SData.UnifiedLayerDeck AndAlso Not snippet.NativeRotation AndAlso
+                                       Not snippet.PathAnimTransformed AndAlso Not snippet.MotionPathRollEnabled
+            Dim litKey As String = Nothing
+            If cacheable Then
+                litKey = DynamicLitKey(light, snippet, lightBounds, snippetBounds, overlap)
+                Dim cachedLit As DynamicLitCache = Nothing
+                If dynamicLitPictures.TryGetValue(light.Name & "|" & snippet.Name, cachedLit) AndAlso
+                   cachedLit.Image Is snippet.BackgroundImage AndAlso cachedLit.Field Is light.DynamicFrontLightField AndAlso
+                   String.Equals(cachedLit.Key, litKey, StringComparison.Ordinal) Then
+                    DrawDynamicLitPicture(targetGraphics, cachedLit.Lit, overlap, snippet, covers)
+                    Continue For
+                End If
+            End If
 
             Using sourceCrop As Bitmap = CreateCurrentSnippetCrop(snippet, snippetBounds, overlap)
                 If sourceCrop Is Nothing Then Continue For
                 Using fieldCrop As Bitmap = GetDynamicFieldCrop(light, snippet, lightBounds, overlap)
                     Dim illuminatedImage As Bitmap
-                    If snippet.NativeRotation Then
+                    ' Path Animation snippets move every frame like native rotation, so
+                    ' they use the same pixel-identical, multi-core workspace renderer.
+                    If snippet.NativeRotation OrElse snippet.HasPathAnim Then
                         illuminatedImage = DynamicArtworkLighting.RenderWithWorkspace(
                             sourceCrop, fieldCrop, light.DynamicLightExposure, light.DynamicLightColor,
                             light.DynamicFlasherStyle, light.DynamicSaturation,
@@ -1224,13 +1318,168 @@ Public Class formBackglass
                             light.DynamicHighlightProtection, light.DynamicDarkAreaLift,
                             light.DynamicTransmissionContrast, light.DynamicLightTemperature)
                     End If
-                    Using illuminated As Bitmap = illuminatedImage
-                        If illuminated IsNot Nothing Then targetGraphics.DrawImageUnscaled(illuminated, overlap.Location)
-                    End Using
+                    If cacheable Then
+                        ' Keep this lit picture for the next repaint (replaces the old one).
+                        Dim cacheName As String = light.Name & "|" & snippet.Name
+                        Dim previous As DynamicLitCache = Nothing
+                        If dynamicLitPictures.TryGetValue(cacheName, previous) AndAlso previous.Lit IsNot Nothing Then previous.Lit.Dispose()
+                        dynamicLitPictures(cacheName) = New DynamicLitCache() With {
+                            .Key = litKey, .Image = snippet.BackgroundImage, .Field = light.DynamicFrontLightField, .Lit = illuminatedImage}
+                        DrawDynamicLitPicture(targetGraphics, illuminatedImage, overlap, snippet, covers)
+                    Else
+                        Using illuminated As Bitmap = illuminatedImage
+                            DrawDynamicLitPicture(targetGraphics, illuminated, overlap, snippet, covers)
+                        End Using
+                    End If
                 End Using
             End Using
         Next
     End Sub
+
+    ' Last lit picture of a still snippet under one dynamic light (B2S Pro).
+    Private NotInheritable Class DynamicLitCache
+        Public Key As String
+        Public Image As Image
+        Public Field As Image
+        Public Lit As Bitmap
+    End Class
+    Private ReadOnly dynamicLitPictures As New Generic.Dictionary(Of String, DynamicLitCache)()
+
+    ' B2S Pro: the screen area an image snippet covers under one dynamic light,
+    ' and (filled only when needed) its alpha there.
+    Private NotInheritable Class DynamicLightCover
+        Public Snippet As B2SPictureBox
+        Public SnippetBounds As Rectangle
+        Public Bounds As Rectangle
+        Public Alpha As Byte()
+        Public AlphaRead As Boolean
+    End Class
+
+    ' Every visible image snippet below the light that reaches into its area.
+    ' These are drawn by the normal paint before the light, so they can hide
+    ' parts of the snippets beneath them.
+    Private Function DynamicLightCovers(ByVal light As B2SPictureBox, ByVal lightBounds As Rectangle) As Generic.List(Of DynamicLightCover)
+        Dim covers As New Generic.List(Of DynamicLightCover)()
+        For Each candidate As B2SPictureBox In B2SData.Illuminations.Values
+            If candidate Is Nothing OrElse candidate.IsDisposed OrElse Not candidate.IsImageSnippit OrElse
+               Not candidate.Visible OrElse candidate.BackgroundImage Is Nothing OrElse
+               candidate.ZOrder >= light.ZOrder Then Continue For
+            If B2SData.DualBackglass AndAlso candidate.DualMode <> B2SData.eDualMode.Both AndAlso
+               candidate.DualMode <> B2SSettings.CurrentDualMode Then Continue For
+            Dim candidateBounds As Rectangle = If(candidate.PathAnimTransformed, candidate.PathAnimPaintBounds(), Rectangle.Round(candidate.RectangleF))
+            Dim area As Rectangle = Rectangle.Intersect(lightBounds, candidateBounds)
+            If area.Width <= 0 OrElse area.Height <= 0 Then Continue For
+            covers.Add(New DynamicLightCover() With {.Snippet = candidate, .SnippetBounds = candidateBounds, .Bounds = area})
+        Next
+        Return covers
+    End Function
+
+    Private Sub ReadDynamicLightCoverAlpha(ByVal cover As DynamicLightCover)
+        If cover.AlphaRead Then Return
+        cover.AlphaRead = True
+        Using crop As Bitmap = CreateCurrentSnippetCrop(cover.Snippet, cover.SnippetBounds, cover.Bounds)
+            If crop Is Nothing Then Return
+            Dim width As Integer = cover.Bounds.Width
+            Dim height As Integer = cover.Bounds.Height
+            Dim alpha(width * height - 1) As Byte
+            Dim data As BitmapData = crop.LockBits(New Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
+            Try
+                Dim row(width * 4 - 1) As Byte
+                For y As Integer = 0 To height - 1
+                    Runtime.InteropServices.Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length)
+                    For x As Integer = 0 To width - 1
+                        alpha(y * width + x) = row(x * 4 + 3)
+                    Next
+                Next
+            Finally
+                crop.UnlockBits(data)
+            End Try
+            cover.Alpha = alpha
+        End Using
+    End Sub
+
+    ' Draws a snippet's lit copy. The lit copy goes on top of the finished
+    ' picture, so in B2S Pro files it is hidden wherever a snippet above it
+    ' (and below the light) covers it; otherwise a lit Grandstand or a lit
+    ' lower horse shows through the horses in front of it. covers is Nothing
+    ' for legacy files, which keep the original drawing.
+    Private Sub DrawDynamicLitPicture(ByVal target As Graphics, ByVal lit As Bitmap, ByVal overlap As Rectangle,
+                                      ByVal snippet As B2SPictureBox, ByVal covers As Generic.List(Of DynamicLightCover))
+        If lit Is Nothing Then Return
+        Dim above As New Generic.List(Of DynamicLightCover)()
+        If covers IsNot Nothing Then
+            For Each cover As DynamicLightCover In covers
+                If cover.Snippet IsNot snippet AndAlso cover.Snippet.ZOrder > snippet.ZOrder AndAlso
+                   cover.Bounds.IntersectsWith(overlap) Then above.Add(cover)
+            Next
+        End If
+        If above.Count = 0 Then
+            target.DrawImageUnscaled(lit, overlap.Location)
+            Return
+        End If
+
+        ' Only the part being repainted is needed.
+        Dim visible As RectangleF = target.VisibleClipBounds
+        Dim left As Integer = CInt(Math.Max(overlap.Left, Math.Floor(Math.Max(CDbl(overlap.Left), visible.Left)) - 1))
+        Dim top As Integer = CInt(Math.Max(overlap.Top, Math.Floor(Math.Max(CDbl(overlap.Top), visible.Top)) - 1))
+        Dim right As Integer = CInt(Math.Min(overlap.Right, Math.Ceiling(Math.Min(CDbl(overlap.Right), visible.Right)) + 1))
+        Dim bottom As Integer = CInt(Math.Min(overlap.Bottom, Math.Ceiling(Math.Min(CDbl(overlap.Bottom), visible.Bottom)) + 1))
+        If right <= left OrElse bottom <= top Then Return
+        Dim area As Rectangle = Rectangle.FromLTRB(left, top, right, bottom)
+        Dim width As Integer = area.Width
+        Dim height As Integer = area.Height
+        Dim rowBytes As Integer = width * 4
+        Dim pixels(rowBytes * height - 1) As Byte
+        Dim source As BitmapData = lit.LockBits(New Rectangle(area.X - overlap.X, area.Y - overlap.Y, width, height),
+                                                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb)
+        Try
+            For y As Integer = 0 To height - 1
+                Runtime.InteropServices.Marshal.Copy(IntPtr.Add(source.Scan0, y * source.Stride), pixels, y * rowBytes, rowBytes)
+            Next
+        Finally
+            lit.UnlockBits(source)
+        End Try
+
+        For Each cover As DynamicLightCover In above
+            Dim common As Rectangle = Rectangle.Intersect(area, cover.Bounds)
+            If common.Width <= 0 OrElse common.Height <= 0 Then Continue For
+            ReadDynamicLightCoverAlpha(cover)
+            If cover.Alpha Is Nothing Then Continue For
+            For y As Integer = common.Top To common.Bottom - 1
+                Dim coverRow As Integer = (y - cover.Bounds.Y) * cover.Bounds.Width - cover.Bounds.X
+                Dim pixelRow As Integer = (y - area.Y) * width - area.X
+                For x As Integer = common.Left To common.Right - 1
+                    Dim covered As Integer = cover.Alpha(coverRow + x)
+                    If covered = 0 Then Continue For
+                    Dim p As Integer = (pixelRow + x) * 4 + 3
+                    pixels(p) = CByte((pixels(p) * (255 - covered) + 127) \ 255)
+                Next
+            Next
+        Next
+
+        Using piece As New Bitmap(width, height, PixelFormat.Format32bppArgb)
+            Dim output As BitmapData = piece.LockBits(New Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb)
+            Try
+                For y As Integer = 0 To height - 1
+                    Runtime.InteropServices.Marshal.Copy(pixels, y * rowBytes, IntPtr.Add(output.Scan0, y * output.Stride), rowBytes)
+                Next
+            Finally
+                piece.UnlockBits(output)
+            End Try
+            target.DrawImageUnscaled(piece, area.Location)
+        End Using
+    End Sub
+
+    ' Everything else the lit picture depends on: the areas and the light's settings.
+    Private Shared Function DynamicLitKey(ByVal light As B2SPictureBox, ByVal snippet As B2SPictureBox,
+                                          ByVal lightBounds As Rectangle, ByVal snippetBounds As Rectangle,
+                                          ByVal overlap As Rectangle) As String
+        Return lightBounds.ToString() & snippetBounds.ToString() & overlap.ToString() & "|" &
+               light.DynamicLightExposure & "|" & light.DynamicLightColor.ToArgb() & "|" & light.DynamicFlasherStyle & "|" &
+               light.DynamicSaturation & "|" & light.DynamicHighlightProtection & "|" & light.DynamicDarkAreaLift & "|" &
+               light.DynamicTransmissionContrast & "|" & light.DynamicLightTemperature & "|" & snippet.NativeRotation & "|" &
+               (snippet.NativeRotation OrElse snippet.HasPathAnim)
+    End Function
 
     ' B2S Pro files: a light's glow shape over a native-rotation snippet depends
     ' only on the light's field image, its bounds and the overlap, none of which
@@ -1393,6 +1642,10 @@ Public Class formBackglass
             If entry.Crop IsNot Nothing Then entry.Crop.Dispose()
         Next
         dynamicFieldCrops.Clear()
+        For Each entry As DynamicLitCache In dynamicLitPictures.Values
+            If entry.Lit IsNot Nothing Then entry.Lit.Dispose()
+        Next
+        dynamicLitPictures.Clear()
         For Each entry As SharedRotationFrame In sharedRotationFrames.Values
             If entry.Frame IsNot Nothing Then entry.Frame.Dispose()
         Next
@@ -1405,11 +1658,56 @@ Public Class formBackglass
         End If
     End Sub
 
+    ' Path Animation: draws a turned snippet exactly as it appears on screen.
+    ' Used by the normal paint and by dynamic lights that redraw the snippet,
+    ' so both always match. The snippet stays a true rectangle at any heading:
+    ' its length gets the backglass stretch in the direction it points and its
+    ' width the stretch across that direction, then it is turned to that
+    ' direction on screen (stretching after turning would shear it). origin is
+    ' the screen point drawn at the target's (0,0).
+    Private Shared Sub DrawTurnedPathSnippet(ByVal target As Graphics, ByVal picbox As B2SPictureBox,
+                                             ByVal image As Image, ByVal origin As PointF)
+        Dim state As Drawing2D.GraphicsState = target.Save()
+        target.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
+        target.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBilinear
+        target.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+        Dim bounds As RectangleF = picbox.RectangleF
+        Dim stretch As SizeF = picbox.PathAnimScale
+        If stretch.Width <= 0 OrElse stretch.Height <= 0 Then stretch = New SizeF(1.0F, 1.0F)
+        Dim imageW As Single = bounds.Width / stretch.Width
+        Dim imageH As Single = bounds.Height / stretch.Height
+        Dim radians As Double = picbox.PathAnimAngle * Math.PI / 180.0
+        Dim alongX As Double = stretch.Width * Math.Cos(radians)
+        Dim alongY As Double = stretch.Height * Math.Sin(radians)
+        Dim lengthScale As Single = CSng(Math.Sqrt(alongX * alongX + alongY * alongY))
+        Dim acrossX As Double = stretch.Width * Math.Sin(radians)
+        Dim acrossY As Double = stretch.Height * Math.Cos(radians)
+        Dim widthScale As Single = CSng(Math.Sqrt(acrossX * acrossX + acrossY * acrossY))
+        Dim screenAngle As Single = CSng(Math.Atan2(alongY, alongX) * 180.0 / Math.PI)
+        Dim drawW As Single = imageW * lengthScale
+        Dim drawH As Single = imageH * widthScale
+        target.TranslateTransform(bounds.X + bounds.Width / 2.0F - origin.X, bounds.Y + bounds.Height / 2.0F - origin.Y)
+        target.RotateTransform(screenAngle)
+        target.DrawImage(image, New RectangleF(-drawW / 2.0F, -drawH / 2.0F, drawW, drawH))
+        target.Restore(state)
+    End Sub
+
     Private Function CreateCurrentSnippetCrop(ByVal snippet As B2SPictureBox,
                                               ByVal snippetBounds As Rectangle,
                                               ByVal overlap As Rectangle) As Bitmap
         If snippet Is Nothing OrElse snippet.BackgroundImage Is Nothing OrElse
            overlap.Width <= 0 OrElse overlap.Height <= 0 Then Return Nothing
+
+        If snippet.PathAnimTransformed Then
+            ' Path Animation: a light redraws the turned snippet the same way
+            ' the normal paint does, not straight in its unturned box.
+            Dim pathCrop As New Bitmap(overlap.Width, overlap.Height, PixelFormat.Format32bppArgb)
+            Using graphics As Graphics = Graphics.FromImage(pathCrop)
+                graphics.Clear(Color.Transparent)
+                DrawTurnedPathSnippet(graphics, snippet, snippet.BackgroundImage, New PointF(overlap.X, overlap.Y))
+            End Using
+            Return pathCrop
+        End If
 
         If Not snippet.NativeRotation Then
             ' Preserve the established moving/static snippet path. Only native
@@ -1577,6 +1875,7 @@ Public Class formBackglass
 
     Private Function PicturePaintBounds(ByVal picbox As B2SPictureBox) As Rectangle
         If picbox Is Nothing OrElse picbox.RectangleF.IsEmpty Then Return Rectangle.Empty
+        If picbox.HasPathAnim Then Return picbox.PathAnimPaintBounds()
         Dim visualBounds As RectangleF = picbox.VisualArtworkBounds
         If picbox.MotionPathRollEnabled AndAlso Not picbox.NativeRotation Then
             Dim radians As Double = picbox.VisualRotationAngle * Math.PI / 180.0R
@@ -2117,7 +2416,7 @@ Public Class formBackglass
 
         Dim lampsData As String = String.Empty
 
-        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathLampIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveLampIDs.Count > 0 OrElse B2SData.UsedMotionPathStopLampIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeLampIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(2).Length > 0 OrElse B2SData.PivotLampIDs.Count > 0 Then
+        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathLampIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveLampIDs.Count > 0 OrElse B2SData.UsedMotionPathStopLampIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeLampIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(2).Length > 0 OrElse B2SData.PivotLampIDs.Count > 0 OrElse B2SData.PathAnimTriggerIDs(2).Count > 0 Then
             lampsData = regkey.GetValue("B2SLamps", New String("0", 401))
             'If B2SSettings.IsROMControlled AndAlso lampsData.Contains("2") Then
             '    regkey.SetValue("B2SLamps", lampsData.Replace("2", "0"))
@@ -2131,7 +2430,7 @@ Public Class formBackglass
 
         Dim solenoidsData As String = String.Empty
 
-        If B2SData.UseRomSolenoids OrElse B2SData.UseAnimationSolenoids OrElse B2SData.UsedMotionPathSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathStopSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(1).Length > 0 OrElse B2SData.PivotSolenoidIDs.Count > 0 Then
+        If B2SData.UseRomSolenoids OrElse B2SData.UseAnimationSolenoids OrElse B2SData.UsedMotionPathSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathStopSolenoidIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeSolenoidIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(1).Length > 0 OrElse B2SData.PivotSolenoidIDs.Count > 0 OrElse B2SData.PathAnimTriggerIDs(1).Count > 0 Then
             solenoidsData = regkey.GetValue("B2SSolenoids", New String("0", 251))
             If B2SSettings.IsROMControlled AndAlso solenoidsData.Contains("2") Then
                 regkey.SetValue("B2SSolenoids", solenoidsData.Replace("2", "0"))
@@ -2156,7 +2455,7 @@ Public Class formBackglass
 
         Dim b2sSetsData As String = String.Empty
 
-        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathStopB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveB2SIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(3).Length > 0 OrElse B2SData.PivotB2SIDs.Count > 0 Then
+        If B2SData.UseRomLamps OrElse B2SData.UseAnimationLamps OrElse B2SData.UsedMotionPathB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathStopB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathResumeB2SIDs.Count > 0 OrElse B2SData.UsedMotionPathRemoveB2SIDs.Count > 0 OrElse B2SData.GetPhysicsLauncherIDs(3).Length > 0 OrElse B2SData.PivotB2SIDs.Count > 0 OrElse B2SData.PathAnimTriggerIDs(3).Count > 0 Then
             b2sSetsData = regkey.GetValue("B2SSetData", New String(Chr(0), 251))
             'If B2SSettings.IsROMControlled AndAlso b2sSetsData.Contains("2") Then
             '    regkey.SetValue("B2SSetData", b2sSetsData.Replace("2", "0"))
@@ -2354,6 +2653,7 @@ Public Class formBackglass
         pivotLampIDs.UnionWith(B2SData.UsedMotionPathResumeLampIDs.Keys)
         pivotLampIDs.UnionWith(B2SData.GetPhysicsLauncherIDs(2))
         pivotLampIDs.UnionWith(B2SData.PivotLampIDs.Keys)
+        pivotLampIDs.UnionWith(B2SData.PathAnimTriggerIDs(2))
         For Each lampid As Integer In pivotLampIDs
             If lampid < lampsData.Length AndAlso lampid < motionPathLamps.Length Then
                 Dim currentvalue As Integer = CInt(lampsData.Substring(lampid, 1))
@@ -2361,6 +2661,7 @@ Public Class formBackglass
                     motionPathLamps(lampid) = currentvalue
                     B2SData.SetPivotTriggerState(B2SData.PivotLampIDs, lampid, currentvalue)
                     B2SData.FirePhysicsLaunchers(2, lampid, currentvalue)
+                    B2SData.PathAnimTriggerChanged(2, lampid, currentvalue)
                     If currentvalue <> 0 Then
                         If B2SData.UsedMotionPathLampIDs.ContainsKey(lampid) Then B2SData.StartMotionPaths(B2SData.UsedMotionPathLampIDs(lampid))
                         If B2SData.UsedMotionPathRemoveLampIDs.ContainsKey(lampid) Then B2SData.RemoveMotionPaths(B2SData.UsedMotionPathRemoveLampIDs(lampid))
@@ -2501,6 +2802,7 @@ Public Class formBackglass
         pivotSolenoidIDs.UnionWith(B2SData.UsedMotionPathResumeSolenoidIDs.Keys)
         pivotSolenoidIDs.UnionWith(B2SData.PivotSolenoidIDs.Keys)
         pivotSolenoidIDs.UnionWith(B2SData.GetPhysicsLauncherIDs(1))
+        pivotSolenoidIDs.UnionWith(B2SData.PathAnimTriggerIDs(1))
         For Each solenoidid As Integer In pivotSolenoidIDs
             If solenoidid < solenoidsData.Length Then
                 Dim currentvalue As Integer = CInt(solenoidsData.Substring(solenoidid, 1))
@@ -2508,6 +2810,7 @@ Public Class formBackglass
                     motionPathSolenoids(solenoidid) = currentvalue
                     B2SData.FirePhysicsLaunchers(1, solenoidid, currentvalue)
                     B2SData.SetPivotTriggerState(B2SData.PivotSolenoidIDs, solenoidid, currentvalue)
+                    B2SData.PathAnimTriggerChanged(1, solenoidid, currentvalue)
                     If currentvalue <> 0 Then
                         If B2SData.UsedMotionPathSolenoidIDs.ContainsKey(solenoidid) Then B2SData.StartMotionPaths(B2SData.UsedMotionPathSolenoidIDs(solenoidid))
                         If B2SData.UsedMotionPathRemoveSolenoidIDs.ContainsKey(solenoidid) Then B2SData.RemoveMotionPaths(B2SData.UsedMotionPathRemoveSolenoidIDs(solenoidid))
@@ -2711,6 +3014,7 @@ Public Class formBackglass
         motionTriggerIDs.UnionWith(B2SData.UsedMotionPathRemoveB2SIDs.Keys)
         motionTriggerIDs.UnionWith(B2SData.PivotB2SIDs.Keys)
         motionTriggerIDs.UnionWith(B2SData.GetPhysicsLauncherIDs(3))
+        motionTriggerIDs.UnionWith(B2SData.PathAnimTriggerIDs(3))
         For Each b2ssetid As Integer In motionTriggerIDs
             If b2ssetid < b2sSetData.Length AndAlso b2ssetid < motionPathB2SStates.Length Then
                 Dim currentvalue As Integer = Asc(b2sSetData.Substring(b2ssetid, 1))
@@ -2719,6 +3023,7 @@ Public Class formBackglass
                     motionPathB2SStates(b2ssetid) = currentvalue
                     B2SData.FirePhysicsLaunchers(3, b2ssetid, currentvalue)
                     B2SData.SetPivotTriggerState(B2SData.PivotB2SIDs, b2ssetid, currentvalue)
+                    B2SData.PathAnimTriggerChanged(3, b2ssetid, currentvalue)
                     If previousValue = 0 AndAlso currentvalue <> 0 Then
                         If B2SData.UsedMotionPathB2SIDs.ContainsKey(b2ssetid) Then
                             B2SData.StartMotionPaths(B2SData.UsedMotionPathB2SIDs(b2ssetid))
@@ -3885,7 +4190,15 @@ Public Class formBackglass
                         If innerNode.Attributes("OffImage") IsNot Nothing Then
                             offimage = Base64ToImage(innerNode.Attributes("OffImage").InnerText)
                         End If
-                        Dim preserveRollingCanvas As Boolean = (isimagesnippit AndAlso motionPathRollEnabled)
+                        ' B2S Pro Path Animation: only for an image snippet that has no
+                        ' other movement. Like a rolling ball, its canvas is not cropped
+                        ' so the authored center stays the path's reference point.
+                        Dim snippetPathAnim As PathAnimSettings = Nothing
+                        If isimagesnippit AndAlso Not nativerotation AndAlso Not pivotAnimation AndAlso
+                           (motionPathPoints Is Nothing OrElse motionPathPoints.Count < 2) Then
+                            snippetPathAnim = PathAnimSettings.ReadFrom(innerNode)
+                        End If
+                        Dim preserveRollingCanvas As Boolean = (isimagesnippit AndAlso motionPathRollEnabled) OrElse snippetPathAnim IsNot Nothing
                         If image IsNot Nothing AndAlso picboxtype = B2SPictureBox.ePictureBoxType.StandardImage AndAlso Not nativerotation AndAlso Not preserveRollingCanvas AndAlso Not fullResolutionSnippet Then
                             ' Events of overlapping pictures get merged #76, crop image transparency
                             image = CropImageToTransparency(image, offimage, loc, size)
@@ -4006,6 +4319,10 @@ Public Class formBackglass
                         End If
                         If motionPathExitPoints IsNot Nothing AndAlso motionPathExitPoints.Count >= 2 Then picbox.MotionPathExitPoints.AddRange(motionPathExitPoints)
                         B2SData.RegisterMotionPathSequence(picbox)
+                        If snippetPathAnim IsNot Nothing AndAlso IsOnBackglass Then
+                            picbox.PathAnim = snippetPathAnim
+                            B2SData.PathAnimPictures.Add(picbox)
+                        End If
                         picbox.ZOrder = zorder
                         picbox.PictureBoxType = picboxtype
                         If IsOnBackglass Then
@@ -4186,7 +4503,10 @@ Public Class formBackglass
                         If innerNode.Attributes("Reel3DDepth") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DDepth").InnerText, parsedReel3DValue) Then reel3DDepth = parsedReel3DValue
                         If innerNode.Attributes("Reel3DGlass") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DGlass").InnerText, parsedReel3DValue) Then reel3DGlass = parsedReel3DValue
                         ' B2S Pro Realistic reel style (absent = Classic, the original 3D look)
-                        If innerNode.Attributes("Reel3DStyle") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DStyle").InnerText, parsedReel3DValue) Then reel3DStyle = Math.Max(0, Math.Min(1, parsedReel3DValue))
+                        If innerNode.Attributes("Reel3DStyle") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DStyle").InnerText, parsedReel3DValue) Then reel3DStyle = Math.Max(0, Math.Min(ReelBehindGlass.Style, parsedReel3DValue))
+                        ' B2S Pro reel glass sliders (the Reel Glass Lab), used by every reel style.
+                        ' Absent = the lab defaults for Behind glass, otherwise neutral (no change).
+                        Dim behindGlassSettings As ReelBehindGlass.Settings = ReelBehindGlass.Settings.ReadFrom(innerNode, If(reel3DStyle = ReelBehindGlass.Style, New ReelBehindGlass.Settings(), ReelBehindGlass.Settings.Neutral()))
                         If innerNode.Attributes("Reel3DCurve") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DCurve").InnerText, parsedReel3DValue) Then reel3DCurve = Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, parsedReel3DValue))
                         If innerNode.Attributes("Reel3DShadow") IsNot Nothing AndAlso Integer.TryParse(innerNode.Attributes("Reel3DShadow").InnerText, parsedReel3DValue) Then reel3DShadow = Math.Max(0, Math.Min(200, parsedReel3DValue))
                         ' B2S Pro soft glass (absent = the original reflection lines)
@@ -4498,6 +4818,7 @@ Public Class formBackglass
                                 reel.Reel3DCurve = reel3DCurve
                                 reel.Reel3DShadow = reel3DShadow
                                 reel.Reel3DGlassStyle = reel3DGlassStyle
+                                reel.BehindGlass = behindGlassSettings
                                 If reel3DDividerCenters IsNot Nothing Then
                                     reel.Reel3DDividerWidth = reel3DDividerWidth
                                     reel.Reel3DDividerCenters = reel3DDividerCenters
@@ -5162,6 +5483,10 @@ Public Class formBackglass
                 illumination.Value.Visible = True
             End If
             If illumination.Value.MotionPathPoints.Count >= 2 AndAlso illumination.Value.MotionPathSolenoidID = 0 AndAlso illumination.Value.MotionPathLampID = 0 AndAlso illumination.Value.MotionPathB2SID = 0 AndAlso illumination.Value.MotionPathSwitchID = 0 Then illumination.Value.StartMotionPath()
+        Next
+        ' Path Animation snippets go to their start stop and wait for triggers.
+        For Each picture As B2SPictureBox In B2SData.PathAnimPictures
+            picture.StartPathAnimation()
         Next
         For Each illumination As KeyValuePair(Of String, B2SPictureBox) In B2SData.DMDIlluminations
             If illumination.Value.NativeRotation AndAlso illumination.Value.AutoStartRotation Then

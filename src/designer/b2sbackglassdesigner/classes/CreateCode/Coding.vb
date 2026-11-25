@@ -375,7 +375,7 @@ Public Class Coding
                         ' Classic exports are unchanged; the realistic settings are written
                         ' once they differ from the defaults or are in use (editable round trip).
                         If .Reel3DStyle <> 0 OrElse .Reel3DCurve <> 100 OrElse .Reel3DShadow <> 100 Then
-                            nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(1, .Reel3DStyle)).ToString())
+                            nodeScore.SetAttribute("Reel3DStyle", Math.Max(0, Math.Min(ReelBehindGlass.Style, .Reel3DStyle)).ToString())
                             nodeScore.SetAttribute("Reel3DCurve", Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, .Reel3DCurve)).ToString())
                             nodeScore.SetAttribute("Reel3DShadow", Math.Max(0, Math.Min(200, .Reel3DShadow)).ToString())
                         End If
@@ -384,6 +384,8 @@ Public Class Coding
                             nodeScore.SetAttribute("Reel3DDividers", "1")
                             nodeScore.SetAttribute("Reel3DDividerWidth", Math.Max(ReelDivider.MinimumWidth, Math.Min(ReelDivider.MaximumWidth, .Reel3DDividerWidth)).ToString())
                         End If
+                        ' Reel glass sliders: written for Behind glass and whenever they are in use.
+                        If .BehindGlass IsNot Nothing AndAlso (.Reel3DStyle = ReelBehindGlass.Style OrElse Not .BehindGlass.IsNeutral()) Then .BehindGlass.WriteTo(nodeScore)
                     End If
                     nodeScore.SetAttribute("LocX", .Location.X)
                     nodeScore.SetAttribute("LocY", .Location.Y)
@@ -959,6 +961,8 @@ Public Class Coding
                                         nodeBulb.SetAttribute("MotionPathRemoveB2SID", Math.Max(0, Math.Min(250, .SnippitInfo.MotionPathRemoveB2SID)).ToString())
                                     End If
                                 End If
+                                ' Path Animation: written only when enabled on this snippet.
+                                .SnippitInfo.PathAnim.WriteTo(nodeBulb)
                             End If
                             If .IsImageSnippit AndAlso .SnippitInfo.SnippitType = eSnippitType.StandardImage AndAlso .SnippitInfo.AutomaticRotationEnabled Then
                                 nodeBulb.SetAttribute("AutomaticRotationEnabled", If(.SnippitInfo.AutomaticRotationEnabled, "1", "0"))
@@ -1002,6 +1006,7 @@ Public Class Coding
                             nodeBulb.SetAttribute("FontName", .FontName)
                             nodeBulb.SetAttribute("FontSize", CInt(.FontSize * 100).ToString())
                             nodeBulb.SetAttribute("FontStyle", CInt(.FontStyle).ToString())
+                            Illumination.TextShapeXml.Write(nodeBulb, .TextShape())
 
                             ' Export one runtime-rotated image. The matching B2S Server draws
                             ' this canvas at the current angle instead of expanding it into a
@@ -1412,7 +1417,8 @@ Public Class Coding
                             If innerNode.Attributes("Reel3DTemperature") IsNot Nothing Then score.Reel3DTemperature = Math.Max(2000, Math.Min(6500, CInt(innerNode.Attributes("Reel3DTemperature").InnerText)))
                             If innerNode.Attributes("Reel3DDepth") IsNot Nothing Then score.Reel3DDepth = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DDepth").InnerText)))
                             If innerNode.Attributes("Reel3DGlass") IsNot Nothing Then score.Reel3DGlass = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DGlass").InnerText)))
-                            If innerNode.Attributes("Reel3DStyle") IsNot Nothing Then score.Reel3DStyle = Math.Max(0, Math.Min(1, CInt(innerNode.Attributes("Reel3DStyle").InnerText)))
+                            If innerNode.Attributes("Reel3DStyle") IsNot Nothing Then score.Reel3DStyle = Math.Max(0, Math.Min(ReelBehindGlass.Style, CInt(innerNode.Attributes("Reel3DStyle").InnerText)))
+                            score.BehindGlass = ReelBehindGlass.Settings.ReadFrom(innerNode, If(score.Reel3DStyle = ReelBehindGlass.Style, New ReelBehindGlass.Settings(), ReelBehindGlass.Settings.Neutral()))
                             If innerNode.Attributes("Reel3DCurve") IsNot Nothing Then score.Reel3DCurve = Math.Max(0, Math.Min(ReelRealistic.MaximumCurve, CInt(innerNode.Attributes("Reel3DCurve").InnerText)))
                             If innerNode.Attributes("Reel3DShadow") IsNot Nothing Then score.Reel3DShadow = Math.Max(0, Math.Min(200, CInt(innerNode.Attributes("Reel3DShadow").InnerText)))
                             If innerNode.Attributes("Reel3DGlassStyle") IsNot Nothing Then score.Reel3DGlassStyle = Math.Max(0, Math.Min(ReelGlass.MaximumStyle, CInt(innerNode.Attributes("Reel3DGlassStyle").InnerText)))
@@ -1575,6 +1581,7 @@ Public Class Coding
                             bulb.FontSize = CSng(innerNode.Attributes("FontSize").InnerText)
                             If bulb.FontSize >= 100 Then bulb.FontSize = bulb.FontSize / 100
                             bulb.FontStyle = CInt(innerNode.Attributes("FontStyle").InnerText)
+                            Illumination.TextShapeXml.Read(innerNode, bulb)
                             bulb.Visible = (CInt(innerNode.Attributes("Visible").InnerText) = 1)
                             bulb.Location = New Point(CInt(innerNode.Attributes("LocX").InnerText), CInt(innerNode.Attributes("LocY").InnerText))
                             bulb.Size = New Size(CInt(innerNode.Attributes("Width").InnerText), CInt(innerNode.Attributes("Height").InnerText))
@@ -1872,6 +1879,8 @@ Public Class Coding
                             If innerNode.Attributes("MotionPathPoints") IsNot Nothing Then
                                 bulb.SnippitInfo.MotionPathPoints.AddRange(ParseMotionPathPoints(innerNode.Attributes("MotionPathPoints").InnerText))
                             End If
+                            Dim importedPathAnim As PathAnimSettings = PathAnimSettings.ReadFrom(innerNode)
+                            If importedPathAnim IsNot Nothing Then bulb.SnippitInfo.PathAnim = importedPathAnim
                             If innerNode.Attributes("SnippitType") IsNot Nothing Then
                                 bulb.SnippitInfo.SnippitType = CInt(innerNode.Attributes("SnippitType").InnerText)
                                 If bulb.SnippitInfo.SnippitType <> eSnippitType.StandardImage Then
@@ -2912,7 +2921,7 @@ Public Class Coding
                         ' the generated backglass ran. Also preserve all glow and mask options
                         ' so runtime output matches the designer preview.
                         Dim runtimeRect As New Rectangle(.LocationX, .SizeX)
-                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer)))
+                        sb.AppendLine("    " & ImageToBase64(illumination.CreateOverlayImage(bitmapBackground, runtimeRect, runtimeRect, .Intensity, .LightColor, .DodgeColor, .Text, font, .TextAlignment, .IlluMode, .GlowSoftness, .GlowFalloff, .GlowIntensity, .SelectionMaskData, .SelectionFeather, .GlobalMaskLayerExplicit AndAlso Not .InFrontOfGlobalMask, .FlasherStyle, .FlasherSaturation, .FlasherHighlightProtection, .FlasherDarkAreaLift, .FlasherHotspotX, .FlasherHotspotY, .LightDiffusion, .LightTemperature, .UsesArtworkPixelRenderer, .ArtworkContrast, .MaskRadius, .MaskSmartRadius, .MaskSmooth, .MaskFeather, .MaskContrast, .MaskShiftEdge, .FlasherRadialSpikes, .LightRotationAngle, .SeparateLightLayer, .TextShape())))
                         If font IsNot Nothing Then font.Dispose()
                     End If
                 End If

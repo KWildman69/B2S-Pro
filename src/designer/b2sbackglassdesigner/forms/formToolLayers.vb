@@ -223,6 +223,7 @@ Public Class formToolLayers
         editMenu.DropDownItems.Add(New ToolStripSeparator())
         editMenu.DropDownItems.Add("Edit Entry Motion Path...", Nothing, AddressOf EditMotionPath)
         editMenu.DropDownItems.Add("Edit Exit Motion Path...", Nothing, AddressOf EditExitMotionPath)
+        editMenu.DropDownItems.Add("Edit Path Animation...", Nothing, AddressOf EditPathAnimation)
         editMenu.DropDownItems.Add("Edit Pivot Animation...", Nothing, AddressOf EditPivotAnimation)
         editMenu.DropDownItems.Add("Edit Physics Boundaries...", Nothing, AddressOf EditPhysicsBoundaries)
         editMenu.DropDownItems.Add("Create Trough Animation...", Nothing, AddressOf CreateTroughAnimation)
@@ -1484,6 +1485,34 @@ Public Class formToolLayers
                 snippet.SnippitInfo.MotionPathRespawnEnabled = editor.ResultRespawnEnabled
                 snippet.SnippitInfo.MotionPathRespawnPoint = editor.ResultRespawnStart
                 snippet.SnippitInfo.MotionPathRespawnDuration = editor.ResultRespawnDuration
+                MarkDirty()
+            End If
+        End Using
+    End Sub
+
+    ' B2S Pro Path Animation (shared\PathAnimation.vb). A snippet runs either
+    ' a Motion Path or a Path Animation, never both.
+    Private Sub EditPathAnimation(sender As Object, e As EventArgs)
+        Dim snippet As Illumination.BulbInfo = TryCast(SelectedObject(), Illumination.BulbInfo)
+        If snippet Is Nothing OrElse Not snippet.IsImageSnippit OrElse snippet.Image Is Nothing Then
+            MessageBox.Show(Me, "Select one image snippet in the Layers panel first.", "Path Animation",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        If snippet.SnippitInfo.MotionPathPoints.Count >= 2 OrElse snippet.SnippitInfo.PivotAnimationEnabled Then
+            MessageBox.Show(Me, "This snippet already uses a Motion Path or a Pivot Animation. Remove it first; a snippet can only have one kind of movement.",
+                            "Path Animation", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        If Backglass.currentTabPage Is Nothing OrElse Backglass.currentTabPage.CurrentPictureBox Is Nothing OrElse
+           Backglass.currentTabPage.CurrentPictureBox.Image Is Nothing Then Return
+        Using editor As New formPathAnimation(snippet, Backglass.currentTabPage.CurrentPictureBox.Image)
+            Dim answer As DialogResult = editor.ShowDialog(Me)
+            If answer = DialogResult.OK Then
+                snippet.SnippitInfo.PathAnim = editor.Result
+                MarkDirty()
+            ElseIf answer = DialogResult.Abort Then
+                snippet.SnippitInfo.PathAnim = New PathAnimSettings()
                 MarkDirty()
             End If
         End Using

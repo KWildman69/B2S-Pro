@@ -28,6 +28,17 @@
         Public FontName As String = String.Empty
         Public FontSize As Single = 10
         Public FontStyle As FontStyle = FontStyle.Regular
+        ' Optional text shape, set with the text box handles. Bend arches the
+        ' text (-1..1); the perspective values match the score window handles.
+        ' The defaults draw the text exactly as before and are not saved.
+        Public TextBend As Single = 0.0F
+        Public TextPerspectiveDepth As Single = 0.0F
+        Public TextPerspectiveLeftScale As Single = 1.0F
+        Public TextPerspectiveRightScale As Single = 1.0F
+
+        Public Function TextShape() As TextShapeInfo
+            Return New TextShapeInfo(TextBend, TextPerspectiveDepth, TextPerspectiveLeftScale, TextPerspectiveRightScale)
+        End Function
 
         Public Visible As Boolean = True
 
@@ -141,6 +152,127 @@
 
     End Class
 
+    ' Bend and perspective for a text box. IsFlat means the text is drawn with
+    ' the original renderer, unchanged.
+    Public Class TextShapeInfo
+        Public ReadOnly Bend As Single
+        Public ReadOnly Depth As Single
+        Public ReadOnly LeftScale As Single
+        Public ReadOnly RightScale As Single
+
+        Public Sub New(ByVal bend As Single, ByVal depth As Single, ByVal leftScale As Single, ByVal rightScale As Single)
+            Me.Bend = Math.Max(-1.0F, Math.Min(1.0F, bend))
+            Me.Depth = Math.Max(-1.0F, Math.Min(1.0F, depth))
+            Me.LeftScale = Math.Max(0.2F, Math.Min(2.5F, leftScale))
+            Me.RightScale = Math.Max(0.2F, Math.Min(2.5F, rightScale))
+        End Sub
+
+        Public ReadOnly Property IsFlat As Boolean
+            Get
+                Return Math.Abs(Bend) < 0.001F AndAlso Math.Abs(Depth) < 0.001F AndAlso
+                       Math.Abs(LeftScale - 1.0F) < 0.001F AndAlso Math.Abs(RightScale - 1.0F) < 0.001F
+            End Get
+        End Property
+
+        Public ReadOnly Property Key As String
+            Get
+                If IsFlat Then Return ""
+                Dim inv As Globalization.CultureInfo = Globalization.CultureInfo.InvariantCulture
+                Return Bend.ToString("R", inv) & "/" & Depth.ToString("R", inv) & "/" & LeftScale.ToString("R", inv) & "/" & RightScale.ToString("R", inv)
+            End Get
+        End Property
+
+        ' The score-style perspective outline of a box: top-left, top-right,
+        ' bottom-right, bottom-left. Same formula as the score window handles.
+        Public Function Corners(ByVal box As RectangleF) As PointF()
+            Dim centerX As Single = box.X + box.Width / 2.0F
+            Dim centerY As Single = box.Y + box.Height / 2.0F
+            Dim halfWidth As Single = box.Width / 2.0F
+            Dim halfHeight As Single = box.Height / 2.0F
+            Dim amount As Single = Math.Abs(Depth)
+            Dim projectedHalfWidth As Single = halfWidth * (1.0F - 0.34F * amount)
+            Dim nearScale As Single = 1.0F + 0.06F * amount
+            Dim farScale As Single = 1.0F - 0.58F * amount
+            Dim leftEnd As Single = If(Depth >= 0.0F, nearScale, farScale) * LeftScale
+            Dim rightEnd As Single = If(Depth >= 0.0F, farScale, nearScale) * RightScale
+            Return New PointF() {
+                New PointF(centerX - projectedHalfWidth, centerY - halfHeight * leftEnd),
+                New PointF(centerX + projectedHalfWidth, centerY - halfHeight * rightEnd),
+                New PointF(centerX + projectedHalfWidth, centerY + halfHeight * rightEnd),
+                New PointF(centerX - projectedHalfWidth, centerY + halfHeight * leftEnd)}
+        End Function
+
+        ' Moves one point of flat text inside box to its bent/perspective place.
+        Public Function Warp(ByVal p As PointF, ByVal box As RectangleF) As PointF
+            Dim width As Single = Math.Max(1.0F, box.Width)
+            Dim height As Single = Math.Max(1.0F, box.Height)
+            Dim centerX As Single = box.X + width / 2.0F
+            Dim centerY As Single = box.Y + height / 2.0F
+            Dim x As Double = p.X
+            Dim y As Double = p.Y
+            ' Bend: the middle line of the box becomes an arc of the same length.
+            ' Bend 1 is a half circle arching up; -1 curves down like a smile.
+            If Math.Abs(Bend) >= 0.001F Then
+                Dim arc As Double = Math.Abs(Bend) * Math.PI
+                Dim radius As Double = width / arc
+                Dim angle As Double = (x - centerX) / radius
+                Dim offset As Double = y - centerY
+                If Bend > 0.0F Then
+                    Dim r As Double = radius - offset
+                    x = centerX + r * Math.Sin(angle)
+                    y = centerY + radius - r * Math.Cos(angle)
+                Else
+                    Dim r As Double = radius + offset
+                    x = centerX + r * Math.Sin(angle)
+                    y = centerY - radius + r * Math.Cos(angle)
+                End If
+            End If
+            ' Perspective: the box becomes the score-style outline.
+            If Math.Abs(Depth) >= 0.001F OrElse Math.Abs(LeftScale - 1.0F) >= 0.001F OrElse Math.Abs(RightScale - 1.0F) >= 0.001F Then
+                Dim amount As Double = Math.Abs(Depth)
+                Dim nearScale As Double = 1.0 + 0.06 * amount
+                Dim farScale As Double = 1.0 - 0.58 * amount
+                Dim leftEnd As Double = If(Depth >= 0.0F, nearScale, farScale) * LeftScale
+                Dim rightEnd As Double = If(Depth >= 0.0F, farScale, nearScale) * RightScale
+                Dim u As Double = (x - box.X) / width
+                Dim endScale As Double = leftEnd + (rightEnd - leftEnd) * u
+                x = centerX + (x - centerX) * (1.0 - 0.34 * amount)
+                y = centerY + (y - centerY) * endScale
+            End If
+            Return New PointF(CSng(x), CSng(y))
+        End Function
+    End Class
+
+    ' Saves the text shape only when it is used, so flat text boxes and every
+    ' existing file keep exactly the same attributes.
+    Public NotInheritable Class TextShapeXml
+        Public Shared Sub Write(ByVal node As Xml.XmlElement, ByVal shape As TextShapeInfo)
+            If node Is Nothing OrElse shape Is Nothing OrElse shape.IsFlat Then Return
+            Dim inv As Globalization.CultureInfo = Globalization.CultureInfo.InvariantCulture
+            If Math.Abs(shape.Bend) >= 0.001F Then node.SetAttribute("TextBend", shape.Bend.ToString("R", inv))
+            If Math.Abs(shape.Depth) >= 0.001F Then node.SetAttribute("TextPerspectiveDepth", shape.Depth.ToString("R", inv))
+            If Math.Abs(shape.LeftScale - 1.0F) >= 0.001F Then node.SetAttribute("TextPerspectiveLeftScale", shape.LeftScale.ToString("R", inv))
+            If Math.Abs(shape.RightScale - 1.0F) >= 0.001F Then node.SetAttribute("TextPerspectiveRightScale", shape.RightScale.ToString("R", inv))
+        End Sub
+
+        Public Shared Sub Read(ByVal node As Xml.XmlNode, ByVal bulb As BulbInfo)
+            If node Is Nothing OrElse bulb Is Nothing Then Return
+            bulb.TextBend = ReadValue(node, "TextBend", 0.0F, -1.0F, 1.0F)
+            bulb.TextPerspectiveDepth = ReadValue(node, "TextPerspectiveDepth", 0.0F, -1.0F, 1.0F)
+            bulb.TextPerspectiveLeftScale = ReadValue(node, "TextPerspectiveLeftScale", 1.0F, 0.2F, 2.5F)
+            bulb.TextPerspectiveRightScale = ReadValue(node, "TextPerspectiveRightScale", 1.0F, 0.2F, 2.5F)
+        End Sub
+
+        Private Shared Function ReadValue(ByVal node As Xml.XmlNode, ByVal name As String, ByVal fallback As Single, ByVal minimum As Single, ByVal maximum As Single) As Single
+            Dim attribute As Xml.XmlAttribute = If(node.Attributes Is Nothing, Nothing, node.Attributes(name))
+            If attribute Is Nothing Then Return fallback
+            Dim value As Single
+            If Not Single.TryParse(attribute.InnerText, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture, value) Then Return fallback
+            If Single.IsNaN(value) OrElse Single.IsInfinity(value) Then Return fallback
+            Return Math.Max(minimum, Math.Min(maximum, value))
+        End Function
+    End Class
+
     Public Class SnippitInfo
 
         ' Independent image brightness for snippets. 100 preserves the source.
@@ -202,6 +334,10 @@
         Public MotionPathRemoveSolenoidID As Integer = 0
         Public MotionPathRemoveLampID As Integer = 0
         Public MotionPathRemoveB2SID As Integer = 0
+
+        ' B2S Pro Path Animation (shared\PathAnimation.vb). Disabled by default;
+        ' nothing is saved or exported unless it is enabled on this snippet.
+        Public PathAnim As New PathAnimSettings()
 
         ' Single-image pivot animation. One snippet owns both named positions.
         Public PivotAnimationEnabled As Boolean = False

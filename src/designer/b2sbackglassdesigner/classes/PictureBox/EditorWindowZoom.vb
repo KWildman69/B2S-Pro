@@ -21,6 +21,10 @@ Public NotInheritable Class EditorWindowZoom
         End If
     End Sub
 
+    Public Shared Function Zooms(window As Form) As Boolean
+        Return window IsNot Nothing AndAlso instance.windows.ContainsKey(window)
+    End Function
+
     Public Function PreFilterMessage(ByRef message As Message) As Boolean Implements IMessageFilter.PreFilterMessage
         If (Control.ModifierKeys And Keys.Control) = 0 Then Return False
         Dim targetControl As Control = Control.FromChildHandle(message.HWnd)

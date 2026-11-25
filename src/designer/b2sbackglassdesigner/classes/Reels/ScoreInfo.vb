@@ -51,7 +51,8 @@
         Public Reel3DDepth As Integer = 100
         Public Reel3DGlass As Integer = 55
         ' Reel style: 0 Classic (the original 3D look), 1 Realistic (drum,
-        ' neighbouring numbers, window shadow). Files without it are Classic.
+        ' neighbouring numbers, window shadow), 2 Behind glass (ReelGlass
+        ' settings). Files without it are Classic.
         Public Reel3DStyle As Integer = 0
         Public Reel3DCurve As Integer = 100
         Public Reel3DShadow As Integer = 100
@@ -61,6 +62,9 @@
         ' Off is the previous look; files without it are unchanged.
         Public Reel3DDividers As Boolean = False
         Public Reel3DDividerWidth As Integer = ReelDivider.DefaultWidth
+        ' Reel glass sliders (the Reel Glass Lab), used by every reel style.
+        ' Neutral changes nothing; Behind glass files without them use the lab defaults.
+        Public BehindGlass As ReelBehindGlass.Settings = ReelBehindGlass.Settings.Neutral()
 
 
         Public PerfectScaleWidthFix As Boolean = False
@@ -112,6 +116,7 @@
             Reel3DGlassStyle = source.Reel3DGlassStyle
             Reel3DDividers = source.Reel3DDividers
             Reel3DDividerWidth = source.Reel3DDividerWidth
+            BehindGlass = If(source.BehindGlass Is Nothing, ReelBehindGlass.Settings.Neutral(), source.BehindGlass.Clone())
         End Sub
 
         ' property for internal use

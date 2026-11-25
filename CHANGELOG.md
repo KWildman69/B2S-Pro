@@ -2,6 +2,42 @@
 
 All notable B2S Pro changes are documented here. Release packages and checksums are published with each corresponding GitHub release.
 
+## Designer 2.3.0 / Server 3.0.15 — 2026-11-25
+
+**Feature Update — Path Animation, Pop-Up Targets, Reel Glass on Every Reel Style**
+
+### Important
+
+- Update the Designer and the Server together.
+- New Path Animation tool and pop-up / drop targets.
+- Reel glass settings now work on every reel style.
+
+### Designer
+
+- Path Animation (Edit Path Animation... in Layers): draw an open or closed, straight or smooth path and a snippet follows it. Drives: motor (moves while a trigger is on), one stop each time a trigger turns on, one B2S ID per stop, or the stop number from a B2S ID value, with an optional send-back-to-start trigger, speed, and turning with the path. Switches placed on the path pulse table switches when the front of the image passes them.
+- Snippet magnet: a path snippet can pick up another snippet or a physics ball by touch, carry it, and let it go on a trigger or at the end of the path, optionally returning to the start.
+- Pop up / drop: a Path Animation drive for drop targets and pop-up cards. Trigger on moves the snippet to the end of its path, off brings it back, with a speed back to the start (0 = jump) and an optional small bounce.
+- Reel Lighting & 3D: every slider works on every reel style; new Behind glass reel style with reel glass settings (reflection, angle, shadow, set back, softness, brightness, warmth, drum curve, number size); the window can be resized.
+- Text boxes: bend and perspective handles on the canvas; turned text now turns on the canvas; new text shows in Layers right away.
+- Dynamic lights: lit copies no longer show through image snippets in front of them; the light window's target list is longer.
+- The mouse wheel no longer changes number boxes, sliders or drop-down lists in any window; it scrolls the window instead.
+- Step 2 test uses `<table name>.res` from the VP tables folder, like VPX; without one, ScreenRes.txt is used as before.
+
+### Server
+
+- Runs Path Animation, track switches, the snippet magnet and Pop up / drop exactly as the Designer previews them.
+- Draws every reel glass setting on every reel style, including the new Behind glass style.
+- Dynamic lights follow the snippet layer order and are much faster on moving snippets.
+- Smoother full-resolution snippets.
+
+### Compatibility
+
+- Legacy .directb2s backglasses run unchanged.
+- The new settings are written only when used, so existing B2S Pro files are unchanged until you use them and export again with Step 1 – Create DirectB2S File.
+- In existing B2S Pro files, dynamic lights now hide behind image snippets that are in front of the lit snippet.
+- ScreenRes files, Server registration, table settings, projects and backglasses are preserved.
+- The B2S Pro VPX plugin is released separately.
+
 ## Designer 2.2.0 / Server 3.0.14 — 2026-11-18
 
 **Feature Update — Pivot Strikes, Counterweights, and DMD Positions from the VPX Plugin**

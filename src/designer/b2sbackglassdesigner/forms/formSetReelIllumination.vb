@@ -24,6 +24,10 @@ Public Class formSetReelIllumination
     Private ReadOnly chkReelDividers As New CheckBox()
     Private ReadOnly trackReelDividerWidth As New TrackBar()
     Private ReadOnly numReelDividerWidth As New NumericUpDown()
+    ' Behind glass style: the Reel Glass Lab sliders, in the lab's order.
+    Private ReadOnly glassBars As New Generic.List(Of TrackBar)()
+    Private ReadOnly glassNumbers As New Generic.List(Of NumericUpDown)()
+    Private glassGroup As GroupBox = Nothing
     ' Reel roll time edits the backglass-wide ReelRollingInterval (the same value as
     ' Reel Type > Rolling interval), which the Server, plugin and Test spin already use.
     Private ReadOnly trackReelRollTime As New TrackBar()
@@ -52,7 +56,8 @@ Public Class formSetReelIllumination
                                     ByVal reel3DShadow As Integer,
                                     ByVal reel3DGlassStyle As Integer,
                                     ByVal reel3DDividers As Boolean,
-                                    ByVal reel3DDividerWidth As Integer)
+                                    ByVal reel3DDividerWidth As Integer,
+                                    ByVal glassSettings As ReelBehindGlass.Settings)
 
     Public Sub New()
         InitializeComponent()
@@ -75,7 +80,8 @@ Public Class formSetReelIllumination
                                        ByRef reel3Dshadow As Integer,
                                        ByRef reel3DglassStyle As Integer,
                                        ByRef reel3Ddividers As Boolean,
-                                       ByRef reel3DdividerWidth As Integer) As DialogResult
+                                       ByRef reel3DdividerWidth As Integer,
+                                       ByRef glassSettings As ReelBehindGlass.Settings) As DialogResult
         ignoreChanges = True
         cmbIlluLocation.SelectedIndex = reelillulocation
         cmbB2SIDType.SelectedIndex = reelillub2sidtype
@@ -87,12 +93,13 @@ Public Class formSetReelIllumination
         trackReelTemperature.Value = Math.Max(trackReelTemperature.Minimum, Math.Min(trackReelTemperature.Maximum, reel3Dtemperature))
         trackReelDepth.Value = Math.Max(trackReelDepth.Minimum, Math.Min(trackReelDepth.Maximum, reel3Ddepth))
         trackReelGlass.Value = Math.Max(trackReelGlass.Minimum, Math.Min(trackReelGlass.Maximum, reel3Dglass))
-        cmbReelStyle.SelectedIndex = Math.Max(0, Math.Min(1, reel3Dstyle))
+        cmbReelStyle.SelectedIndex = Math.Max(0, Math.Min(ReelBehindGlass.Style, reel3Dstyle))
         trackReelCurve.Value = Math.Max(trackReelCurve.Minimum, Math.Min(trackReelCurve.Maximum, reel3Dcurve))
         trackReelShadow.Value = Math.Max(trackReelShadow.Minimum, Math.Min(trackReelShadow.Maximum, reel3Dshadow))
         cmbGlassStyle.SelectedIndex = Math.Max(0, Math.Min(ReelGlass.MaximumStyle, reel3DglassStyle))
         chkReelDividers.Checked = reel3Ddividers
         trackReelDividerWidth.Value = Math.Max(trackReelDividerWidth.Minimum, Math.Min(trackReelDividerWidth.Maximum, reel3DdividerWidth))
+        SetGlassSliders(If(glassSettings, ReelBehindGlass.Settings.Neutral()))
         LoadRollTime()
         UpdateIntensityLabel()
         UpdateReel3DEnabledState()
@@ -118,6 +125,7 @@ Public Class formSetReelIllumination
         reel3DglassStyle = Math.Max(0, cmbGlassStyle.SelectedIndex)
         reel3Ddividers = chkReelDividers.Checked
         reel3DdividerWidth = trackReelDividerWidth.Value
+        glassSettings = GlassSettingsFromSliders()
         Return nRet
     End Function
 
@@ -185,14 +193,20 @@ Public Class formSetReelIllumination
                                       trackReelShadow.Value,
                                       Math.Max(0, cmbGlassStyle.SelectedIndex),
                                       chkReelDividers.Checked,
-                                      trackReelDividerWidth.Value)
+                                      trackReelDividerWidth.Value,
+                                      GlassSettingsFromSliders())
         If testSpinWindow IsNot Nothing AndAlso Not testSpinWindow.IsDisposed Then testSpinWindow.SettingsChanged()
     End Sub
 
     Private Sub BuildReel3DControls()
         Text = "Reel Lighting & 3D"
-        ClientSize = New Size(704, 561)
-        MinimumSize = New Size(720, 599)
+        ' Resizable; the BEHIND GLASS box sits to the right.
+        FormBorderStyle = FormBorderStyle.Sizable
+        MaximizeBox = True
+        ClientSize = New Size(1134, 561)
+        ' Like the other resizable editors: the boxes follow the window size
+        ' (see BuildResizingLayout); below this size the text would not fit.
+        MinimumSize = New Size(1030, 599)
         grpGeneral.Location = New Point(10, 7)
         grpGeneral.Size = New Size(227, 286)
         TrackBarIntensity.SetBounds(93, 143, 67, 45)
@@ -201,8 +215,8 @@ Public Class formSetReelIllumination
         TrackBarNumericLink.Bind(TrackBarIntensity, numLegacyIntensity)
         grpGeneral.Controls.Add(numLegacyIntensity)
         numLegacyIntensity.BringToFront()
-        btnOk.Location = New Point(508, 524)
-        btnCancel.Location = New Point(603, 524)
+        btnOk.Location = New Point(938, 524)
+        btnCancel.Location = New Point(1033, 524)
         btnCancel.Text = "Close"
 
         ' Test spin: shows the selected score rolling, as VPX will.
@@ -261,7 +275,7 @@ Public Class formSetReelIllumination
             .TextAlign = ContentAlignment.MiddleLeft
         }
         cmbReelStyle.DropDownStyle = ComboBoxStyle.DropDownList
-        cmbReelStyle.Items.AddRange(New Object() {"Classic", "Realistic (curved drum)"})
+        cmbReelStyle.Items.AddRange(New Object() {"Classic", "Realistic (curved drum)", "Behind glass (Reel Glass Lab)"})
         cmbReelStyle.SelectedIndex = 0
         cmbReelStyle.Dock = DockStyle.Fill
         cmbReelStyle.Margin = New Padding(3, 4, 0, 3)
@@ -286,8 +300,8 @@ Public Class formSetReelIllumination
         layout.Controls.Add(glassLabel, 0, 6)
         layout.Controls.Add(cmbGlassStyle, 1, 6)
 
-        AddReelSliderRow(layout, 7, "Drum curve (%)", trackReelCurve, numReelCurve)
-        AddReelSliderRow(layout, 8, "Window shadow (%)", trackReelShadow, numReelShadow)
+        AddReelSliderRow(layout, 7, "Drum curve, Realistic (%)", trackReelCurve, numReelCurve)
+        AddReelSliderRow(layout, 8, "Window shadow, Realistic (%)", trackReelShadow, numReelShadow)
         AddReelSliderRow(layout, 9, "Reel roll time (ms)", trackReelRollTime, numReelRollTime)
         Dim rollTimeTip As New ToolTip()
         rollTimeTip.SetToolTip(trackReelRollTime, "Higher is slower. One value for every reel on this backglass (Reel Type > Rolling interval).")
@@ -353,7 +367,161 @@ Public Class formSetReelIllumination
         group.Controls.Add(layout)
         Controls.Add(group)
         group.BringToFront()
+
+        layout.AutoScroll = True
+        BuildGlassControls()
+        BuildResizingLayout(dividerGroup, group)
     End Sub
+
+    ' The window's layout follows its size, as in the other resizable editors:
+    ' a fixed left column (Illumination settings, Reel dividers), the 3D
+    ' BACKLIT REELS and BEHIND GLASS boxes sharing the rest of the width (their
+    ' sliders grow and shrink), and the buttons in a bottom row. When the
+    ' window is too short for every slider, the box scrolls inside itself.
+    Private Sub BuildResizingLayout(ByVal dividerGroup As GroupBox, ByVal reelGroup As GroupBox)
+        SuspendLayout()
+        For Each child As Control In New Control() {grpGeneral, dividerGroup, reelGroup, glassGroup, btnTestSpin, btnOk, btnCancel}
+            Controls.Remove(child)
+        Next
+
+        ' As in the Text Box editor: the content keeps a free margin to the
+        ' window edge (the strip you grab to resize) and is anchored on all
+        ' sides, so it follows the window.
+        Dim root As New TableLayoutPanel() With {
+            .Bounds = New Rectangle(12, 0, ClientSize.Width - 24, ClientSize.Height - 12),
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right,
+            .ColumnCount = 3,
+            .RowCount = 2,
+            .Margin = New Padding(0),
+            .Padding = New Padding(0)
+        }
+        root.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 246))
+        root.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 52.0F))
+        root.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 48.0F))
+        root.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
+
+        ' Left column: the two fixed boxes, scrolling if the window is short.
+        Dim left As New Panel() With {.Dock = DockStyle.Fill, .AutoScroll = True, .Margin = New Padding(0)}
+        grpGeneral.Location = New Point(10, 7)
+        grpGeneral.Anchor = AnchorStyles.Top Or AnchorStyles.Left
+        dividerGroup.Location = New Point(10, 301)
+        dividerGroup.Anchor = AnchorStyles.Top Or AnchorStyles.Left
+        left.Controls.Add(grpGeneral)
+        left.Controls.Add(dividerGroup)
+        root.Controls.Add(left, 0, 0)
+
+        reelGroup.Dock = DockStyle.Fill
+        reelGroup.Margin = New Padding(0, 7, 5, 0)
+        root.Controls.Add(reelGroup, 1, 0)
+        glassGroup.Dock = DockStyle.Fill
+        glassGroup.Margin = New Padding(5, 7, 10, 0)
+        root.Controls.Add(glassGroup, 2, 0)
+
+        ' Bottom row: Test spin on the left, OK / Close at the right edge.
+        Dim buttons As New Panel() With {.Dock = DockStyle.Fill, .Margin = New Padding(0), .Size = New Size(1134, 44)}
+        btnTestSpin.Location = New Point(256, 6)
+        btnTestSpin.Anchor = AnchorStyles.Top Or AnchorStyles.Left
+        btnOk.Location = New Point(938, 6)
+        btnOk.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        btnCancel.Location = New Point(1033, 6)
+        btnCancel.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        buttons.Controls.Add(btnTestSpin)
+        buttons.Controls.Add(btnOk)
+        buttons.Controls.Add(btnCancel)
+        root.Controls.Add(buttons, 0, 1)
+        root.SetColumnSpan(buttons, 3)
+
+        Controls.Add(root)
+        ResumeLayout(False)
+    End Sub
+
+    ' BEHIND GLASS: the Reel Glass Lab sliders (same names, ranges and order;
+    ' the divider is the REEL DIVIDERS box). Used by the Behind glass style.
+    Private Sub BuildGlassControls()
+        glassGroup = New GroupBox() With {
+            .Text = "REEL GLASS (Reel Glass Lab, every reel style)",
+            .Location = New Point(704, 7),
+            .Size = New Size(420, 507),
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Right Or AnchorStyles.Bottom
+        }
+        Dim layout As New TableLayoutPanel() With {
+            .Dock = DockStyle.Fill,
+            .Padding = New Padding(10, 8, 10, 8),
+            .ColumnCount = 3,
+            .RowCount = 11,
+            .AutoScroll = True
+        }
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 175))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 66))
+        For i As Integer = 0 To 8
+            layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 43))
+        Next
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50))
+        layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+
+        Dim rows As Object()() = {
+            New Object() {"Glass reflection", 0, 300},
+            New Object() {"Reflection angle", -50, 50},
+            New Object() {"Shadow under the window edge", 0, 200},
+            New Object() {"Reels set back (dark gap)", 0, 200},
+            New Object() {"Softness behind the glass", 0, 200},
+            New Object() {"Reel brightness", 40, 160},
+            New Object() {"Paper warmth (cream)", 0, 200},
+            New Object() {"Drum curve, Behind glass", 0, 200},
+            New Object() {"Number size", 50, 150}
+        }
+        For i As Integer = 0 To rows.Length - 1
+            Dim slider As New TrackBar()
+            Dim number As New NumericUpDown()
+            ConfigureReelSlider(slider, CInt(rows(i)(1)), CInt(rows(i)(2)), CInt(rows(i)(1)), 10, 1, 10)
+            AddReelSliderRow(layout, i, CStr(rows(i)(0)), slider, number)
+            AddHandler slider.ValueChanged, AddressOf Reel3DValueChanged
+            glassBars.Add(slider)
+            glassNumbers.Add(number)
+        Next
+        Dim wasIgnoring As Boolean = ignoreChanges
+        ignoreChanges = True
+        SetGlassSliders(New ReelBehindGlass.Settings())
+        ignoreChanges = wasIgnoring
+
+        Dim note As New Label() With {
+            .Text = "All settings work together on every reel style. Divider width: REEL DIVIDERS box.",
+            .Dock = DockStyle.Fill
+        }
+        layout.Controls.Add(note, 0, 9)
+        layout.SetColumnSpan(note, 3)
+
+        glassGroup.Controls.Add(layout)
+        Controls.Add(glassGroup)
+        glassGroup.BringToFront()
+    End Sub
+
+    Private Sub SetGlassSliders(ByVal settings As ReelBehindGlass.Settings)
+        If glassBars.Count < 9 OrElse settings Is Nothing Then Return
+        Dim s As ReelBehindGlass.Settings = settings.Clone()
+        s.Clamp()
+        Dim values As Integer() = {s.Reflection, s.Angle, s.Shadow, s.SetBack, s.Softness, s.Brightness, s.Warmth, s.Curve, s.NumberSize}
+        For i As Integer = 0 To 8
+            glassBars(i).Value = Math.Max(glassBars(i).Minimum, Math.Min(glassBars(i).Maximum, values(i)))
+        Next
+    End Sub
+
+    Private Function GlassSettingsFromSliders() As ReelBehindGlass.Settings
+        Dim s As New ReelBehindGlass.Settings()
+        If glassBars.Count < 9 Then Return s
+        s.Reflection = glassBars(0).Value
+        s.Angle = glassBars(1).Value
+        s.Shadow = glassBars(2).Value
+        s.SetBack = glassBars(3).Value
+        s.Softness = glassBars(4).Value
+        s.Brightness = glassBars(5).Value
+        s.Warmth = glassBars(6).Value
+        s.Curve = glassBars(7).Value
+        s.NumberSize = glassBars(8).Value
+        Return s
+    End Function
 
     Private Shared Sub ConfigureReelSlider(ByVal slider As TrackBar,
                                            ByVal minimum As Integer,
@@ -395,22 +563,32 @@ Public Class formSetReelIllumination
     Private Sub Reel3DValueChanged(ByVal sender As Object, ByVal e As EventArgs)
         UpdateReel3DEnabledState()
         If ignoreChanges Then Return
+        ' Picking Behind glass while the reel glass sliders are still unused
+        ' starts them at the lab look (the lab defaults).
+        If Object.ReferenceEquals(sender, cmbReelStyle) AndAlso cmbReelStyle.SelectedIndex = ReelBehindGlass.Style AndAlso
+           GlassSettingsFromSliders().IsNeutral() Then
+            ignoreChanges = True
+            SetGlassSliders(New ReelBehindGlass.Settings())
+            ignoreChanges = False
+        End If
         IsDirty = True
         RaiseLivePreview()
     End Sub
 
     Private Sub UpdateReel3DEnabledState()
         Dim enabled As Boolean = chkReel3D.Checked
+        ' Every setting works with every reel style.
+        For Each slider As TrackBar In glassBars
+            slider.Enabled = enabled
+        Next
         trackReelBrightness.Enabled = enabled
         trackReelTemperature.Enabled = enabled
         trackReelDepth.Enabled = enabled
         trackReelGlass.Enabled = enabled
         cmbGlassStyle.Enabled = enabled
         cmbReelStyle.Enabled = enabled
-        ' Drum curve and window shadow belong to the Realistic style only.
-        Dim realistic As Boolean = enabled AndAlso cmbReelStyle.SelectedIndex = 1
-        trackReelCurve.Enabled = realistic
-        trackReelShadow.Enabled = realistic
+        trackReelCurve.Enabled = enabled
+        trackReelShadow.Enabled = enabled
         ' Dividers belong to the 3D window (both styles).
         chkReelDividers.Enabled = enabled
         trackReelDividerWidth.Enabled = enabled AndAlso chkReelDividers.Checked
@@ -690,8 +868,7 @@ Friend Class ReelTestSpinWindow
                         ReelDivider.Draw(og, New Rectangle(0, 0, frameWidth, frameHeight),
                                          ReelDivider.Centers(lefts, designWidth), score.Reel3DDividerWidth)
                     End If
-                    ReelAndLED.Reel3DEffect.DrawWindowOverlay(og, New Rectangle(0, 0, frameWidth, frameHeight),
-                                                             score.Reel3DDepth, score.Reel3DGlass, score.Reel3DGlassStyle)
+                    B2SPictureBox.DrawScoreWindowOverlay(og, New Rectangle(0, 0, frameWidth, frameHeight), score)
                 End Using
             End If
             Using g As Graphics = Graphics.FromImage(frame)
@@ -728,7 +905,7 @@ Friend Class ReelTestSpinWindow
     End Sub
 
     Private Function RenderDigit(ByVal digit As Integer, ByVal roll As Double, ByVal size As Size) As Image
-        If score.Reel3DEnabled AndAlso score.Reel3DStyle = ReelRealistic.StyleRealistic AndAlso numberSet IsNot Nothing Then
+        If score.Reel3DEnabled AndAlso (score.Reel3DStyle = ReelRealistic.StyleRealistic OrElse score.Reel3DStyle = ReelBehindGlass.Style) AndAlso numberSet IsNot Nothing Then
             Return B2SPictureBox.RenderRealisticReelDigit(score, numberSet, size, digit, roll)
         End If
         ' Classic: the number jumps at each step, sized and lit like the Designer preview.
@@ -748,7 +925,7 @@ Friend Class ReelTestSpinWindow
             End If
         End If
         If score.Reel3DEnabled Then
-            Dim enhanced As Bitmap = ReelAndLED.Reel3DEffect.RenderReel(reelImage, score.Reel3DBrightness, score.Reel3DTemperature, score.Reel3DDepth)
+            Dim enhanced As Bitmap = B2SPictureBox.RenderClassicReel(score, reelImage)
             If enhanced IsNot Nothing Then
                 reelImage.Dispose()
                 reelImage = enhanced
